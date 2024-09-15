@@ -1,0 +1,12 @@
+[submodule "benchmarks/XLCoST"]
+	path = benchmarks/XLCoST
+	url = git@github.com:reddy-lab-code-research/XLCoST.git
+[submodule "benchmarks/CodeXGLUE"]
+	path = benchmarks/CodeXGLUE
+	url = git@github.com:microsoft/CodeXGLUE.git
+[submodule "benchmarks/humaneval-x"]
+	path = benchmarks/humaneval-x
+	url = git@hf.co:datasets/THUDM/humaneval-x
+[submodule "benchmarks/xCodeEval"]
+	path = benchmarks/xCodeEval
+	url = git@github.com:ntunlp/xCodeEval.git
