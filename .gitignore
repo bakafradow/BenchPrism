@@ -1,1 +1,22 @@
-g4g/XLCoST_data
+# Manually downloaded data
+data/*
+!data/xCodeEval/
+
+# Python
+__pycache__/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.idea/
+.vscode/
+
+# MacOS
+.DS_Store
