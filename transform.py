@@ -1,8 +1,8 @@
-import numpy as np
+import pandas as pd
 from typing import List
 
 
-def transform_exhaustively(source_code):
+def transform_exhaustively(source_code: pd.DataFrame) -> List[pd.DataFrame]:
   """
   Transform source code with Java-implemented transformer which is implemented in Java, applying variant
   :param source_code: array of source code

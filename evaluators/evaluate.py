@@ -1,4 +1,8 @@
-def evaluate(source_code, translated_set) -> None:
+import pandas as pd
+from typing import List
+
+
+def evaluate(source_code: pd.DataFrame, translated_set: List[pd.DataFrame]) -> None:
   """
   evaluates the space spanned by the translated code relative to the source code
   :param source_code: array of source code

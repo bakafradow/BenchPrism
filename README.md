@@ -19,7 +19,7 @@ See `python3 main.py --help`.
 
 - [x] How does the transformer work?
 - [x] How to evaluate the code set with CodeBLEU, etc.?
-- [ ] Pick up datasets for testing
+- [x] Pick up datasets for testing
   - humanEvalX
     1. load source code from HF
     2. mutate code (optional)
@@ -37,3 +37,5 @@ See `python3 main.py --help`.
     - only evaluator with CodeBLEU
   - G-TransEval?
     - too small
+- [ ] Mark datasets which have no unit tests
+- [ ] Interact with transformer

@@ -1,4 +1,8 @@
-def translate_with_model(code_set, model: str, src_lang: str, dst_lang: str):
+import pandas as pd
+from typing import List
+
+
+def translate_with_model(code_set: List[pd.DataFrame], model: str, src_lang: str, dst_lang: str) -> List[pd.DataFrame]:
   """
   translates code in `code_set` from `src_lang` to `dst_lang` using `model`.
   :param code_set: the set code to be translated
