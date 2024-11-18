@@ -48,9 +48,20 @@ def parse_args():
 
 
 def main():
+  """
+  Assesses the robustness of code translation models by the following steps:
+
+  1. Extracts source code from different datasets into unified data structure.
+
+  2. Applies transformations to the source code to generate a set of mutated code with a code style transformer.
+
+  3. Translates snippets in code set with code translation model.
+
+  4. Evaluates the space spanned by the translated code relative to the original source code.
+  """
   parse_args()
-  for dataset in tqdm(DATASETS, desc='Datasets'):
-    source_code = extract(dataset)
+  for dataset in DATASETS:
+    source_code = extract(dataset, SRC_LANG)
     mutated_set = transform_exhaustively(source_code)
     translated_set = translate_with_model(mutated_set, MODEL, SRC_LANG, DEST_LANG)
     evaluate(source_code, translated_set)

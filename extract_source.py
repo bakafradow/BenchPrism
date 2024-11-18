@@ -14,7 +14,7 @@ def _to_dataframe(ids: list[str | int], snippets: [list[str]]) -> pd.DataFrame:
 
 def extract(dataset: str, src_lang: str) -> pd.DataFrame:
   """
-  Extracts source code from different datasets into unified format.
+  Extracts source code from different datasets into unified data structure.
   :param dataset: dataset name
   :param src_lang: source language
   :return: source code extracted from the dataset

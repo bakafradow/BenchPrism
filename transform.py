@@ -4,7 +4,7 @@ from typing import List
 
 def transform_exhaustively(source_code: pd.DataFrame) -> List[pd.DataFrame]:
   """
-  Transform source code with Java-implemented transformer which is implemented in Java, applying variant
+  Applies transformations to the source code to generate a set of mutated code with a code style transformer.
   :param source_code: array of source code
   :return: a set of code which indicates different combinations of mutations
   """
