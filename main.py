@@ -3,18 +3,15 @@ Usage: python3 main.py [OPTIONS]...
 """
 
 import argparse
-from pprint import pprint
-from tqdm import tqdm
-from typing import List
-from extract_source import extract
-from transform import transform_exhaustively
+from extract import extract_source
+from transform import transform_source
 from translate import translate_with_model
-from evaluators.evaluate import evaluate
+from evaluate import evaluate
 
-DATASETS: List[str]
+DATASETS: list[str]
 MODEL: str
 SRC_LANG: str
-DEST_LANG: str
+DST_LANG: str
 
 
 def parse_args():
@@ -27,7 +24,7 @@ def parse_args():
                       choices=default_datasets,
                       help='Specify one dataset to evaluate.')
   parser.add_argument('-m', '--model', type=str,
-                      choices=['CodeLamma'], required=True,
+                      choices=['bigcode/starcoder2-3b'], required=True,
                       help='Specify the model to use.')
   parser.add_argument('--src-lang', default=default_src_lang, type=str,
                       choices=['java'],
@@ -36,14 +33,14 @@ def parse_args():
                       choices=['c', 'cpp', 'cs', 'go', 'java', 'js', 'kotlin', 'php', 'python', 'ruby', 'rust'],
                       help=f'Specify the destination language, {default_dst_lang} by default.')
   args = parser.parse_args()
-  global DATASETS, MODEL, SRC_LANG, DEST_LANG
+  global DATASETS, MODEL, SRC_LANG, DST_LANG
   DATASETS = args.dataset if args.dataset else default_datasets
   if args.model:
     MODEL = args.model
   if args.src_lang:
     SRC_LANG = args.src_lang
   if args.dst_lang:
-    DEST_LANG = args.dst_lang
+    DST_LANG = args.dst_lang
   return args
 
 
@@ -61,10 +58,11 @@ def main():
   """
   parse_args()
   for dataset in DATASETS:
-    source_code = extract(dataset, SRC_LANG)
-    mutated_set = transform_exhaustively(source_code)
-    translated_set = translate_with_model(mutated_set, MODEL, SRC_LANG, DEST_LANG)
-    evaluate(source_code, translated_set)
+    snippets = extract_source(dataset, SRC_LANG)
+    mutations = transform_source(snippets)
+    translated_snippets = translate_with_model(snippets, MODEL, SRC_LANG, DST_LANG)
+    translated_mutations = translate_with_model(mutations, MODEL, SRC_LANG, DST_LANG)
+    evaluate(translated_snippets, translated_mutations, DST_LANG)
 
 
 if __name__ == '__main__':

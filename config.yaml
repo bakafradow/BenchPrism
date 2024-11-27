@@ -1,0 +1,3 @@
+transformer:
+  jvmpath: # fill in the path to the libjvm.so (on Linux) or jvm.dll (on Windows)
+  classpath: # fill in the path to the jar package of the transformer

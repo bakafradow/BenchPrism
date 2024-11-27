@@ -3,23 +3,23 @@ from datasets import load_dataset
 from pprint import pprint
 
 
-def _check_lang_support(src_lang: str, supported_langs: list[str]):
+def _check_lang_support(src_lang: str, supported_langs: list[str]) -> None:
   if src_lang not in supported_langs:
     raise ValueError(f'{src_lang} is not supported in current dataset.')
 
 
-def _to_dataframe(ids: list[str | int], snippets: [list[str]]) -> pd.DataFrame:
+def _to_dataframe(ids: list[str | int], snippets: list[str]) -> pd.DataFrame:
   return pd.DataFrame({'id': ids, 'snippet': snippets}, dtype=str)
 
 
-def extract(dataset: str, src_lang: str) -> pd.DataFrame:
+def extract_source(dataset: str, src_lang: str) -> pd.DataFrame:
   """
   Extracts source code from different datasets into unified data structure.
   :param dataset: dataset name
   :param src_lang: source language
   :return: source code extracted from the dataset
   """
-  print(f'\nExtracting source code from {dataset} dataset...')
+  print(f'Extracting {src_lang} snippets from {dataset}...')
   match dataset:
     case 'HumanEvalX':
       supported_langs = ['python', 'cpp', 'go', 'java', 'js']

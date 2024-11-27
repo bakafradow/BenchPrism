@@ -2,14 +2,14 @@
 
 ## Setup
 
-Download `XLCoST_data` from [here](https://drive.google.com/file/d/1tZfsYQgWmc2gG340ru5VbrZ5aLIZ41_6/edit) and place it
+1. Download `XLCoST_data` from [here](https://drive.google.com/file/d/1tZfsYQgWmc2gG340ru5VbrZ5aLIZ41_6/edit) and place it
 in `${ROOT}/data/`.
 
 > If you're working with PyCharm, it's recommended to exclude the `data` directory from indexing in
 `File | Settings | Project: PROJECT_NAME | Project Structure` and from SonarLint analysis in
 `File | Settings | Other Settings | SonarLint | File Exclusions`, to avoid performance issues in the IDE.
-
-Install the required packages by running `pip install -r requirements.txt`.
+2. Install the required packages by running `pip install -r requirements.txt`.
+3. Package `code-style-transformer` with Maven, configure the path to the JAR file and your JVM in `config.py`.
 
 ## Usage
 
@@ -39,3 +39,7 @@ See `python3 main.py --help`.
     - too small
 - [ ] Mark datasets which have no unit tests
 - [ ] Interact with transformer
+  - [x] Current project side
+  - [ ] Transformer side
+- [ ] Call code translation models
+- [ ] Evaluate correctness of the translation
