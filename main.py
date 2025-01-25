@@ -4,7 +4,7 @@ Usage: python3 main.py [OPTIONS]...
 
 import argparse
 from extract import extract_source
-from transform import transform_source
+from mutate import mutate_source
 from translate import translate_with_model
 from evaluate import evaluate
 
@@ -58,8 +58,8 @@ def main():
   """
   parse_args()
   for dataset in DATASETS:
-    snippets = extract_source(dataset, SRC_LANG)
-    mutations = transform_source(snippets)
+    snippets = extract_source(dataset, SRC_LANG, DST_LANG)
+    mutations = mutate_source(snippets, SRC_LANG)
     translated_snippets = translate_with_model(snippets, MODEL, SRC_LANG, DST_LANG)
     translated_mutations = translate_with_model(mutations, MODEL, SRC_LANG, DST_LANG)
     evaluate(translated_snippets, translated_mutations, DST_LANG)

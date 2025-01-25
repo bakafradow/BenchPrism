@@ -1,11 +1,15 @@
+from typing import Sequence
+
 import pandas as pd
+
+from snippet import Snippet, SnippetSequence
 
 
 def _load_model(model: str):
   pass
 
 
-def translate_with_model(snippets: pd.DataFrame, model: str, src_lang: str, dst_lang: str) -> pd.DataFrame:
+def translate_with_model(snippets: SnippetSequence, model: str, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
   """
   Translates snippets in code set with code translation model.
   :param snippets: the snippets to be translated

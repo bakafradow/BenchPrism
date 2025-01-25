@@ -1,4 +1,4 @@
-# Code Translator
+# Code Translator Assessment
 
 ## Setup
 

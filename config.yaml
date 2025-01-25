@@ -1,3 +1,11 @@
-transformer:
-  jvmpath: # fill in the path to the libjvm.so (on Linux) or jvm.dll (on Windows)
-  classpath: # fill in the path to the jar package of the transformer
+mutator:
+  legacy: false # if true, use the legacy mutator, i.e. CodeStyleTransformer
+
+  jvmpath: /usr/local/lib/jdk-19.0.2/lib/server/libjvm.so # fill in the path to the libjvm.so (on Linux) or jvm.dll (on Windows)
+  classpath: ../code-style-transformer/target/transformer-1.0-SNAPSHOT.jar # fill in the path to the jar package of the transformer
+  class: org.example.StringTransformer
+
+  rule: 1
+
+translator:
+  prompt: ''
