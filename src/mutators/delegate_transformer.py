@@ -1,13 +1,13 @@
 import jpype as jp
 import yaml
 
-from snippet import SnippetSequence
-from mutators.mutator import BaseMutator
+from ..snippet import SnippetSequence
+from .mutator import BaseMutator
 
 
-class CodeStyleTransformer(BaseMutator):
+class DelegateTransformer(BaseMutator):
   def __init__(self, src_lang):
-    with open('config.yaml', 'r') as f:
+    with open('config/settings.yaml', 'r') as f:
       config = yaml.safe_load(f)['mutator']
     jp.startJVM('-ea', jvmpath=config['jvmpath'],
                 classpath=[config['classpath']])

@@ -1,8 +1,4 @@
-from typing import Sequence
-
-import pandas as pd
-
-from snippet import Snippet, SnippetSequence
+from . import SnippetSequence
 
 
 def evaluate(snippets: SnippetSequence, mutations: SnippetSequence, dst_lang: str) -> None:

@@ -2,7 +2,7 @@ from typing import Collection
 
 from datasets import load_dataset
 
-from snippet import Snippet, SnippetSequence
+from . import Snippet, SnippetSequence
 
 
 def _check_lang_support(src_lang: str, dst_lang: str, supported_langs: Collection[str]):

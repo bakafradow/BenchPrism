@@ -1,4 +1,4 @@
-from snippet import SnippetSequence
+from ..snippet import SnippetSequence
 
 
 class BaseMutator:

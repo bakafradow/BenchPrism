@@ -3,10 +3,10 @@ Usage: python3 main.py [OPTIONS]...
 """
 
 import argparse
-from extract import extract_source
-from mutate import mutate_source
-from translate import translate_with_model
-from evaluate import evaluate
+from src.extract import extract_source
+from src.mutate import mutate_source
+from src.translate import translate_with_model
+from src.evaluate import evaluate
 
 DATASETS: list[str]
 MODEL: str
@@ -27,7 +27,7 @@ def parse_args():
                       choices=['bigcode/starcoder2-3b'], required=True,
                       help='Specify the model to use.')
   parser.add_argument('--src-lang', default=default_src_lang, type=str,
-                      choices=['java'],
+                      choices=['java', 'cpp'],
                       help=f'Specify the source language, {default_src_lang} by default.')
   parser.add_argument('--dst-lang', default=default_dst_lang,type=str,
                       choices=['c', 'cpp', 'cs', 'go', 'java', 'js', 'kotlin', 'php', 'python', 'ruby', 'rust'],

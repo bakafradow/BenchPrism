@@ -1,8 +1,8 @@
 import yaml
 
-from mutators.tree_transformer import TreeTransformer
-from snippet import SnippetSequence
-from mutators.style_transformer import CodeStyleTransformer
+from .mutators.delegate_transformer import DelegateTransformer
+from .mutators.tree_transformer import TreeTransformer
+from . import SnippetSequence
 
 
 def mutate_source(snippets: SnippetSequence, src_lang: str) -> SnippetSequence:
@@ -13,10 +13,10 @@ def mutate_source(snippets: SnippetSequence, src_lang: str) -> SnippetSequence:
   :return: a set of code which indicates different combinations of mutations
   """
   print('Applying transformations...')
-  with open('config.yaml', 'r') as f:
+  with open('config/settings.yaml', 'r') as f:
     config = yaml.safe_load(f)['mutator']
   if config['legacy']:
-    mutator = CodeStyleTransformer(src_lang=src_lang)
+    mutator = DelegateTransformer(src_lang=src_lang)
   else:
     mutator = TreeTransformer(src_lang=src_lang)
   return mutator.apply_one(snippets)

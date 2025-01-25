@@ -1,8 +1,6 @@
 from typing import Sequence
 
-import pandas as pd
-
-from snippet import Snippet, SnippetSequence
+from . import Snippet, SnippetSequence
 
 
 def _load_model(model: str):
@@ -24,4 +22,4 @@ def translate_with_model(snippets: SnippetSequence, model: str, src_lang: str, d
   #  3. return the translated code set
   print(f'Translating from {src_lang} to {dst_lang} with {model}...')
   model = _load_model(model)
-  return pd.DataFrame()
+  return []
