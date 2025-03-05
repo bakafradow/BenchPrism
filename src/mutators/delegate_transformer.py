@@ -1,7 +1,7 @@
 import jpype as jp
 import yaml
 
-from ..snippet import SnippetSequence
+from .. import SnippetSequence
 from .mutator import BaseMutator
 
 

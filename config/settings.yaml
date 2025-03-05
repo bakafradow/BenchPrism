@@ -5,7 +5,7 @@ mutator:
   classpath: ../code-style-transformer/target/transformer-1.0-SNAPSHOT.jar # fill in the path to the jar package of the transformer
   class: org.example.StringTransformer
 
-  rule_id: 14
+  rule_id: 13
 
 translator:
   prompt: ''
