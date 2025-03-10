@@ -1,8 +1,8 @@
-from typing import Collection
+from typing import Collection, Sequence
 
 from datasets import load_dataset
 
-from . import Snippet, SnippetSequence
+from . import Snippet
 
 
 def _check_lang_support(src_lang: str, dst_lang: str, supported_langs: Collection[str]):
@@ -12,7 +12,7 @@ def _check_lang_support(src_lang: str, dst_lang: str, supported_langs: Collectio
     raise ValueError(f'{dst_lang} is not supported in current dataset.')
 
 
-def extract_source(dataset: str, src_lang: str, dst_lang: str) -> SnippetSequence:
+def extract_source(dataset: str, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
   """
   Extracts source code from different datasets into unified data structure.
   :param dataset: dataset name

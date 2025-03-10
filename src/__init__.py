@@ -1,9 +1,6 @@
-from typing import NamedTuple, TypeAlias, Sequence
+from typing import NamedTuple
 
 
 class Snippet(NamedTuple):
   id: int
   code: str
-
-
-SnippetSequence: TypeAlias = Sequence[Snippet]

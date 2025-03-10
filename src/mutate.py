@@ -1,22 +1,57 @@
+import sys
+from typing import Sequence
+
+import jpype as jp
 import yaml
 
-from .mutators.delegate_transformer import DelegateTransformer
-from .mutators.tree_transformer import TreeTransformer
-from . import SnippetSequence
+from . import Snippet
 
 
-def mutate_source(snippets: SnippetSequence, src_lang: str) -> SnippetSequence:
+class Mutator():
+  def __init__(self, src_lang, style_file):
+    with open('config/settings.yaml', 'r') as f:
+      config = yaml.safe_load(f)['mutator']
+    jp.startJVM('-ea', jvmpath=config['jvmpath'],
+                classpath=[config['classpath']])
+    self.src_lang = src_lang
+    self.instance = jp.JClass(config['class']).createMutator(src_lang, style_file)
+    if not self.instance:
+      raise ValueError(f'Failed to create a mutator with {style_file} in {src_lang}.')
+
+  def __del__(self):
+    jp.shutdownJVM()
+
+  def apply(self, snippets: Sequence[Snippet]) -> Sequence[Snippet]:
+    mutants = [None] * len(snippets)
+    for i, snippet in enumerate(snippets):
+      mutant = self.instance.apply(snippet.code)
+      if not mutant:
+        print(f'Failed to apply mutation to {snippet.id}.', file=sys.stderr)
+        mutants[i] = snippet
+      else:
+        mutants[i] = snippet._replace(code=str(mutant))
+    return mutants
+
+
+def mutate_source(snippets: Sequence[Snippet], src_lang: str) -> Sequence[Snippet]:
   """
-  Applies transformations to the source code to generate a set of mutated code with a code style transformer.
+  Applies transformations to the source code and generates mutant sequence.
   :param snippets: the snippets to be transformed
   :param src_lang: source language
-  :return: a set of code which indicates different combinations of mutations
+  :return: the mutant sequence
   """
   print('Applying transformations...')
-  with open('config/settings.yaml', 'r') as f:
-    config = yaml.safe_load(f)['mutator']
-  if config['legacy']:
-    mutator = DelegateTransformer(src_lang=src_lang)
-  else:
-    mutator = TreeTransformer(src_lang=src_lang)
-  return mutator.apply_one(snippets)
+  style_file = generate_styles(src_lang)
+  # TODO: multi-threading optimization
+  mutator = Mutator(src_lang, style_file)
+  return mutator.apply(snippets)
+
+
+def generate_styles(src_lang: str) -> str:
+  """
+  Generates rules for code transformation.
+  :param src_lang: source language
+  :return: the path to the rules file
+  """
+  # TODO: generate a style file in XML based on rules.yaml
+  return '/home/fantasia/playground/research/samples/ref.xml'

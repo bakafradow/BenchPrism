@@ -3,10 +3,11 @@ Usage: python3 main.py [OPTIONS]...
 """
 
 import argparse
+
+from src.evaluate import evaluate
 from src.extract import extract_source
 from src.mutate import mutate_source
 from src.translate import translate_with_model
-from src.evaluate import evaluate
 
 DATASETS: list[str]
 MODEL: str

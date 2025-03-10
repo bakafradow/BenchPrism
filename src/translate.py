@@ -1,13 +1,12 @@
 from typing import Sequence
 
-from . import Snippet, SnippetSequence
+from . import Snippet
 
 
 def _load_model(model: str):
-  pass
+  ...
 
-
-def translate_with_model(snippets: SnippetSequence, model: str, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
+def translate_with_model(snippets: Sequence[Snippet], model: str, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
   """
   Translates snippets in code set with code translation model.
   :param snippets: the snippets to be translated
