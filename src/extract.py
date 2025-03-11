@@ -21,6 +21,7 @@ def extract_source(dataset: str, src_lang: str, dst_lang: str) -> Sequence[Snipp
   :return: source code extracted from the dataset
   """
   print(f'Extracting {src_lang} snippets from {dataset}...')
+  # TODO: cache extracted data
   match dataset:
     case 'HumanEvalX':
       _check_lang_support(src_lang, dst_lang, ['python', 'cpp', 'go', 'java', 'js'])

@@ -6,11 +6,12 @@ import yaml
 
 from . import Snippet
 
+with open('config/settings.yaml', 'r') as f:
+  config = yaml.safe_load(f)['mutator']
+
 
 class Mutator():
   def __init__(self, src_lang, style_file):
-    with open('config/settings.yaml', 'r') as f:
-      config = yaml.safe_load(f)['mutator']
     jp.startJVM('-ea', jvmpath=config['jvmpath'],
                 classpath=[config['classpath']])
     self.src_lang = src_lang
@@ -54,4 +55,4 @@ def generate_styles(src_lang: str) -> str:
   :return: the path to the rules file
   """
   # TODO: generate a style file in XML based on rules.yaml
-  return '/home/fantasia/playground/research/samples/ref.xml'
+  return config['style_file']

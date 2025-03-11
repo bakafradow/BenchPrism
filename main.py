@@ -25,7 +25,7 @@ def parse_args():
                       choices=default_datasets,
                       help='Specify one dataset to evaluate.')
   parser.add_argument('-m', '--model', type=str,
-                      choices=['bigcode/starcoder2-3b'], required=True,
+                      choices=['deepseek-coder-7b-instruct-v1.5'], required=True,
                       help='Specify the model to use.')
   parser.add_argument('--src-lang', default=default_src_lang, type=str,
                       choices=['java', 'cpp'],

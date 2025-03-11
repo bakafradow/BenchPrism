@@ -2,6 +2,8 @@ mutator:
   jvmpath: /usr/local/lib/jdk-19.0.2/lib/server/libjvm.so # fill in the path to the libjvm.so (on Linux) or jvm.dll (on Windows)
   classpath: ../code-style-transformer/target/transformer-1.0-SNAPSHOT.jar # fill in the path to the jar package of the transformer
   class: org.example.experiment.Mutator
+  style_file: /home/fantasia/playground/research/samples/ref.xml
 
 translator:
-  prompt: ''
+  models:
+    deepseek-coder-7b-instruct-v1.5: /data1/model/deepseek/deepseek-ai/deepseek-coder-7b-instruct-v1.5/
