@@ -7,3 +7,8 @@ mutator:
 translator:
   models:
     deepseek-coder-7b-instruct-v1.5: /data1/model/deepseek/deepseek-ai/deepseek-coder-7b-instruct-v1.5/
+    Qwen2.5-Coder-7B-Instruct: /data1/model/qwen/Qwen/Qwen2.5-Coder-7B-Instruct/
+
+  prompts:
+    prologue: "<task>Perform code translation between 2 programming languages with semantic consistency.</task> \
+               <constraint>Your output must **ONLY** contain the translated code without any explanations so that the generated text can be compiled or interpreted directly.</constraint>"

@@ -7,7 +7,7 @@ import argparse
 from src.evaluate import evaluate
 from src.extract import extract_source
 from src.mutate import mutate_source
-from src.translate import translate_with_model
+from src.translate import load_model, translate_with_model
 
 DATASETS: list[str]
 MODEL: str
@@ -25,7 +25,7 @@ def parse_args():
                       choices=default_datasets,
                       help='Specify one dataset to evaluate.')
   parser.add_argument('-m', '--model', type=str,
-                      choices=['deepseek-coder-7b-instruct-v1.5'], required=True,
+                      choices=['deepseek-coder-7b-instruct-v1.5', 'Qwen2.5-Coder-7B-Instruct'], required=True,
                       help='Specify the model to use.')
   parser.add_argument('--src-lang', default=default_src_lang, type=str,
                       choices=['java', 'cpp'],
@@ -61,8 +61,9 @@ def main():
   for dataset in DATASETS:
     snippets = extract_source(dataset, SRC_LANG, DST_LANG)
     mutations = mutate_source(snippets, SRC_LANG)
-    translated_snippets = translate_with_model(snippets, MODEL, SRC_LANG, DST_LANG)
-    translated_mutations = translate_with_model(mutations, MODEL, SRC_LANG, DST_LANG)
+    translator = load_model(MODEL)
+    translated_snippets = translate_with_model(snippets, translator, SRC_LANG, DST_LANG)
+    translated_mutations = translate_with_model(mutations, translator, SRC_LANG, DST_LANG)
     evaluate(translated_snippets, translated_mutations, DST_LANG)
 
 
