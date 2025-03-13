@@ -1,9 +1,12 @@
+import re
+import subprocess
 from typing import NamedTuple, Sequence
 
-import re
 import torch
 import yaml
-from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer, PreTrainedTokenizerFast, BitsAndBytesConfig
+from transformers import (AutoModelForCausalLM, AutoTokenizer,
+                          BitsAndBytesConfig, PreTrainedTokenizer,
+                          PreTrainedTokenizerFast)
 
 from . import Snippet
 
@@ -15,43 +18,25 @@ class Translator(NamedTuple):
   name: str
   tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast
   model: any
+  gpu: int
 
 
 def _get_largest_free_gpu() -> int:
-    """
-    Finds the GPU with the largest available memory.
+  """
+  Finds the GPU with the largest available memory.
+  Returns:
+      int: The index of the GPU with the largest free memory, or None if no GPU is available.
+  """
+  if not torch.cuda.is_available():
+    raise ValueError('No GPU available.')
+  gpu_count = torch.cuda.device_count()
+  if gpu_count == 0:
+    raise ValueError('Current device has 0 GPUs.')
 
-    Returns:
-        int: The index of the GPU with the largest free memory, or None if no GPU is available.
-    """
-    if not torch.cuda.is_available():
-        raise ValueError('No GPU available.')
-
-    gpu_count = torch.cuda.device_count()
-    if gpu_count == 0:
-        raise ValueError('Current device has 0 GPUs.')
-
-    largest_free_gpu_index = 0
-    largest_free_memory = 0
-
-    for i in range(gpu_count):
-        try:
-            # Get device properties
-            properties = torch.cuda.get_device_properties(i)
-            # Get total memory
-            total_memory = properties.total_memory
-            # Get memory allocated by pytorch
-            allocated_memory = torch.cuda.memory_allocated(i)
-            # Calculate free memory
-            free_memory = total_memory - allocated_memory
-
-            if free_memory > largest_free_memory:
-                largest_free_memory = free_memory
-                largest_free_gpu_index = i
-        except Exception as e:
-            print(f"Error checking GPU {i}: {e}")
-
-    return largest_free_gpu_index
+  returned = subprocess.run(['nvidia-smi', '--query-gpu=memory.total,memory.used', '--format=csv,noheader,nounits'], stdout=subprocess.PIPE)
+  memories = [line.split(', ') for line in returned.stdout.decode('utf-8').strip().split('\n')]
+  free_memories = [int(total) - int(used) for total, used in memories]
+  return max(range(gpu_count), key=lambda i: free_memories[i])
 
 
 def load_model(model_name: str) -> Translator:
@@ -73,16 +58,16 @@ def load_model(model_name: str) -> Translator:
   }
 
   match model_name:
-    case 'deepseek-coder-7b-instruct-v1.5' | 'Qwen/Qwen2.5-Coder-7B-Instruct':
+    case 'deepseek-coder-7b-instruct-v1.5' | 'Qwen2.5-Coder-7B-Instruct':
       tokenizer = AutoTokenizer.from_pretrained(config['models'][model_name], trust_remote_code=True)
       model = AutoModelForCausalLM.from_pretrained(config['models'][model_name], **model_args)
     case _:
-      raise ValueError(f'{model_name} is unsupported yet.')
+      raise TypeError(f'{model_name} is unsupported yet.')
 
   if tokenizer.pad_token_id is None:
     tokenizer.pad_token = tokenizer.eos_token
 
-  return Translator(model_name, tokenizer, model)
+  return Translator(model_name, tokenizer, model, gpu_id)
 
 
 def translate_with_model(snippets: Sequence[Snippet], translator: Translator, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
@@ -102,19 +87,18 @@ def translate_with_model(snippets: Sequence[Snippet], translator: Translator, sr
              <code>```{src_lang}\n%s```</code>'
   translated = [None] * len(snippets)
 
-  gpu_id = _get_largest_free_gpu()
   for i, snippet in enumerate(snippets[:3]):
     messages = [{'role': 'user', 'content': prompt % snippet.code}]
 
     torch.cuda.empty_cache()
 
     match translator.name:
-      case 'deepseek-coder-7b-instruct-v1.5' | 'Qwen/Qwen2.5-Coder-7B-Instruct':
+      case 'deepseek-coder-7b-instruct-v1.5' | 'Qwen2.5-Coder-7B-Instruct':
         inputs = translator.tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors='pt')
-        attention_mask = torch.ones_like(inputs).to(f'cuda:{gpu_id}')
-        inputs = inputs.to(f'cuda:{gpu_id}')
+        attention_mask = torch.ones_like(inputs).to(f'cuda:{translator.gpu}')
+        inputs = inputs.to(f'cuda:{translator.gpu}')
       case _:
-        raise ValueError(f'{translator.name} is unsupported yet.')
+        raise TypeError(f'{translator.name} is unsupported yet.')
 
     outputs = translator.model.generate(
         inputs,
@@ -130,7 +114,7 @@ def translate_with_model(snippets: Sequence[Snippet], translator: Translator, sr
     response = translator.tokenizer.decode(outputs[0][len(inputs[0]):], skip_special_tokens=True)
     matched = re.search(r'```\w+\n(.+)```', response, re.DOTALL)
     if not matched:
-      raise ValueError(f'Incorrect format of {snippet.id}.')
+      raise ValueError(f'Translation of {snippet.id} not found in the response.')
     print(f'Snippet {i}:\n{matched.group(1)}\n')
     translated[i] = snippet._replace(code=matched.group(1))
   return translated
