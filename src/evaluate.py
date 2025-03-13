@@ -1,6 +1,7 @@
-from typing import Sequence
+import re
 import subprocess
 import tempfile
+from typing import Sequence
 
 from datasets import load_dataset
 
@@ -22,7 +23,7 @@ def run_with_test(code: str, test: str, lang: str) -> bool:
       with tempfile.NamedTemporaryFile(suffix='.cpp') as f:
         f.write(to_execute.encode())
         f.flush()
-        returned = subprocess.run(['g++', f.name, '-o', f.name.replace('.cpp$', '')])
+        returned = subprocess.run(['g++', f.name, '-o', re.sub(r'\.cpp$', '', f.name)])
         if returned.returncode != 0:
           print(f'Failed to compile {f.name}.')
           return False
@@ -64,7 +65,7 @@ def evaluate(dataset: str, snippets: Sequence[Snippet], mutants: Sequence[Snippe
     case 'HumanEvalX':
       # load tests in corresponding language
       ds = load_dataset('THUDM/humaneval-x', lang, trust_remote_code=True)
-      tests = [row['test'] for row in ds['test']]
+      tests = [row['test'] for row in ds['test']][:3]
       # evaluate the translated code with the tests, and print the results
       original_correctness = calculate_correctness(snippets, tests, lang)
       mutated_correctness = calculate_correctness(mutants, tests, lang)

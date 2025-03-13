@@ -13,6 +13,7 @@ DATASETS: list[str]
 MODEL: str
 SRC_LANG: str
 DST_LANG: str
+GPU: int = -1
 
 
 def parse_args():
@@ -33,8 +34,10 @@ def parse_args():
   parser.add_argument('--dst-lang', default=default_dst_lang,type=str,
                       choices=['c', 'cpp', 'cs', 'go', 'java', 'js', 'kotlin', 'php', 'python', 'ruby', 'rust'],
                       help=f'Specify the destination language, {default_dst_lang} by default.')
+  parser.add_argument('-i', '--gpu-id', type=int, default=-1,
+                      help='Specify the GPU to use.')
   args = parser.parse_args()
-  global DATASETS, MODEL, SRC_LANG, DST_LANG
+  global DATASETS, MODEL, SRC_LANG, DST_LANG, GPU
   DATASETS = args.dataset if args.dataset else default_datasets
   if args.model:
     MODEL = args.model
@@ -42,6 +45,8 @@ def parse_args():
     SRC_LANG = args.src_lang
   if args.dst_lang:
     DST_LANG = args.dst_lang
+  if args.gpu_id:
+    GPU = args.gpu_id
   return args
 
 
@@ -61,7 +66,7 @@ def main():
   for dataset in DATASETS:
     snippets = extract_source(dataset, SRC_LANG, DST_LANG)
     mutants = mutate_source(snippets, SRC_LANG)
-    translator = load_model(MODEL)
+    translator = load_model(MODEL, gpu_id=GPU)
     translated_snippets = translate_with_model(snippets, translator, SRC_LANG, DST_LANG)
     translated_mutants = translate_with_model(mutants, translator, SRC_LANG, DST_LANG)
     evaluate(dataset, translated_snippets, translated_mutants, DST_LANG)

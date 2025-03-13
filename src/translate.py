@@ -39,7 +39,7 @@ def _get_largest_free_gpu() -> int:
   return max(range(gpu_count), key=lambda i: free_memories[i])
 
 
-def load_model(model_name: str) -> Translator:
+def load_model(model_name: str, /, gpu_id) -> Translator:
   """
   Load the specified model.
   :param model_name: name of the model
@@ -48,7 +48,8 @@ def load_model(model_name: str) -> Translator:
   print(f'Loading model {model_name}...')
 
   torch.cuda.empty_cache()
-  gpu_id = _get_largest_free_gpu()
+  if gpu_id < 0:
+    gpu_id = _get_largest_free_gpu()
   quantization_config = BitsAndBytesConfig(load_in_8bit=True)
   model_args = {
       'trust_remote_code': True,
@@ -85,9 +86,10 @@ def translate_with_model(snippets: Sequence[Snippet], translator: Translator, sr
              <source_language>{src_lang}</source_language> \
              <target_language>{dst_lang}</target_language> \
              <code>```{src_lang}\n%s```</code>'
+  snippets = snippets[:3]
   translated = [None] * len(snippets)
 
-  for i, snippet in enumerate(snippets[:3]):
+  for i, snippet in enumerate(snippets):
     messages = [{'role': 'user', 'content': prompt % snippet.code}]
 
     torch.cuda.empty_cache()
