@@ -16,21 +16,23 @@ def run_with_test(code: str, test: str, lang: str) -> bool:
   :param lang: the language of the code snippet
   :return: whether the code snippet passes the test
   """
-  to_execute = code + test
+  program = code + test
   match lang:
     case 'cpp':
       # compile the code to a temporary file and run it
       with tempfile.NamedTemporaryFile(suffix='.cpp') as f:
-        f.write(to_execute.encode())
+        program = 'using namespace std;\n' + program
+        f.write(program.encode())
         f.flush()
-        returned = subprocess.run(['g++', f.name, '-o', re.sub(r'\.cpp$', '', f.name)])
+        executable = re.sub(r'\.cpp$', '', f.name)
+        returned = subprocess.run(['g++', f.name, '-o', executable])
         if returned.returncode != 0:
           print(f'Failed to compile {f.name}.')
           return False
-        returned = subprocess.run([f.name])
+        returned = subprocess.run([executable])
         return returned.returncode == 0
     case 'python':
-      returned = subprocess.run(['python', '-c', to_execute])
+      returned = subprocess.run(['python', '-c', program])
       return returned.returncode == 0
     case _:
       raise TypeError(f'Unsupported language: {lang}.')
