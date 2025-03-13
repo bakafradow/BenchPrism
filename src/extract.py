@@ -7,9 +7,9 @@ from . import Snippet
 
 def _check_lang_support(src_lang: str, dst_lang: str, supported_langs: Collection[str]):
   if src_lang not in supported_langs:
-    raise ValueError(f'{src_lang} is not supported in current dataset.')
+    raise TypeError(f'{src_lang} is not supported in current dataset.')
   if dst_lang not in supported_langs:
-    raise ValueError(f'{dst_lang} is not supported in current dataset.')
+    raise TypeError(f'{dst_lang} is not supported in current dataset.')
 
 
 def extract_source(dataset: str, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
@@ -21,9 +21,9 @@ def extract_source(dataset: str, src_lang: str, dst_lang: str) -> Sequence[Snipp
   :return: source code extracted from the dataset
   """
   print(f'Extracting {src_lang} snippets from {dataset}...')
-  # TODO: cache extracted data
   match dataset:
     case 'HumanEvalX':
+      # TODO: extract language name mapping into utils.py
       _check_lang_support(src_lang, dst_lang, ['python', 'cpp', 'go', 'java', 'js'])
       ds = load_dataset('THUDM/humaneval-x', src_lang, trust_remote_code=True)
       snippets = [f'{row["declaration"]}{row["canonical_solution"]}' for row in ds['test']]
@@ -70,4 +70,4 @@ def extract_source(dataset: str, src_lang: str, dst_lang: str) -> Sequence[Snipp
       ds = load_dataset(f'xin1997/g-transeval-{src_lang}_all_only_input', trust_remote_code=True)
       return list(map(lambda pair: Snippet(*pair), zip(ds['train']['id'], ds['train']['content'])))
     case _:
-      raise ValueError(f'Unknown dataset: {dataset}.')
+      raise TypeError(f'Unknown dataset: {dataset}.')

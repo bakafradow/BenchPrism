@@ -60,11 +60,11 @@ def main():
   parse_args()
   for dataset in DATASETS:
     snippets = extract_source(dataset, SRC_LANG, DST_LANG)
-    mutations = mutate_source(snippets, SRC_LANG)
+    mutants = mutate_source(snippets, SRC_LANG)
     translator = load_model(MODEL)
     translated_snippets = translate_with_model(snippets, translator, SRC_LANG, DST_LANG)
-    translated_mutations = translate_with_model(mutations, translator, SRC_LANG, DST_LANG)
-    evaluate(translated_snippets, translated_mutations, DST_LANG)
+    translated_mutants = translate_with_model(mutants, translator, SRC_LANG, DST_LANG)
+    evaluate(dataset, translated_snippets, translated_mutants, DST_LANG)
 
 
 if __name__ == '__main__':
