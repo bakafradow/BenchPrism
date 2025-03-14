@@ -3,9 +3,8 @@ import subprocess
 import tempfile
 from typing import Sequence
 
-from datasets import load_dataset
-
 from . import Snippet
+from .utils import extract_field_from
 
 
 def run_with_test(code: str, test: str, lang: str) -> bool:
@@ -21,7 +20,6 @@ def run_with_test(code: str, test: str, lang: str) -> bool:
     case 'cpp':
       # compile the code to a temporary file and run it
       with tempfile.NamedTemporaryFile(suffix='.cpp') as f:
-        program = 'using namespace std;\n' + program
         f.write(program.encode())
         f.flush()
         executable = re.sub(r'\.cpp$', '', f.name)
@@ -54,6 +52,15 @@ def calculate_correctness(snippets: Sequence[Snippet], tests: Sequence[str], lan
   return correct_count / len(snippets)
 
 
+def load_tests(dataset: str, lang: str) -> Sequence[str]:
+  match dataset:
+    case 'HumanEvalX':
+      tests = extract_field_from(dataset, lang, 'test')
+    case _:
+      raise TypeError(f'Unknown dataset: {dataset}.')
+  return tests
+
+
 def evaluate(dataset: str, snippets: Sequence[Snippet], mutants: Sequence[Snippet], lang: str) -> None:
   """
   Evaluates the space spanned by the translated code relative to the original source code
@@ -63,15 +70,8 @@ def evaluate(dataset: str, snippets: Sequence[Snippet], mutants: Sequence[Snippe
   :param lang: the language of the code snippets
   """
   print(f'Evaluating on {dataset}...')
-  match dataset:
-    case 'HumanEvalX':
-      # load tests in corresponding language
-      ds = load_dataset('THUDM/humaneval-x', lang, trust_remote_code=True)
-      tests = [row['test'] for row in ds['test']][:3]
-      # evaluate the translated code with the tests, and print the results
-      original_correctness = calculate_correctness(snippets, tests, lang)
-      mutated_correctness = calculate_correctness(mutants, tests, lang)
-    case _:
-      raise TypeError(f'Unknown dataset: {dataset}.')
+  tests = load_tests(dataset, lang)[:3]
+  original_correctness = calculate_correctness(snippets, tests, lang)
+  mutated_correctness = calculate_correctness(mutants, tests, lang)
   print(f'Original correctness: {original_correctness}.')
   print(f'Mutated correctness: {mutated_correctness}.')

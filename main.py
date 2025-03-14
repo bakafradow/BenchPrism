@@ -26,7 +26,11 @@ def parse_args():
                       choices=default_datasets,
                       help='Specify one dataset to evaluate.')
   parser.add_argument('-m', '--model', type=str,
-                      choices=['deepseek-coder-7b-instruct-v1.5', 'Qwen2.5-Coder-7B-Instruct'], required=True,
+                      choices=['deepseek-coder-7b-instruct-v1.5',
+                               'Qwen2.5-Coder-1.5B-Instruct',
+                               'Qwen2.5-Coder-3B-Instruct',
+                               'Qwen2.5-Coder-7B-Instruct'],
+                      required=True,
                       help='Specify the model to use.')
   parser.add_argument('--src-lang', default=default_src_lang, type=str,
                       choices=['java', 'cpp'],
@@ -64,7 +68,7 @@ def main():
   """
   parse_args()
   for dataset in DATASETS:
-    snippets = extract_source(dataset, SRC_LANG, DST_LANG)
+    snippets = extract_source(dataset, SRC_LANG)
     mutants = mutate_source(snippets, SRC_LANG)
     translator = load_model(MODEL, gpu_id=GPU)
     translated_snippets = translate_with_model(snippets, translator, SRC_LANG, DST_LANG)

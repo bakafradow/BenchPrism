@@ -59,7 +59,7 @@ def load_model(model_name: str, /, gpu_id) -> Translator:
   }
 
   match model_name:
-    case 'deepseek-coder-7b-instruct-v1.5' | 'Qwen2.5-Coder-7B-Instruct':
+    case 'deepseek-coder-7b-instruct-v1.5' | 'Qwen2.5-Coder-1.5B-Instruct' | 'Qwen2.5-Coder-3B-Instruct' | 'Qwen2.5-Coder-7B-Instruct':
       tokenizer = AutoTokenizer.from_pretrained(config['models'][model_name], trust_remote_code=True)
       model = AutoModelForCausalLM.from_pretrained(config['models'][model_name], **model_args)
     case _:
@@ -95,7 +95,7 @@ def translate_with_model(snippets: Sequence[Snippet], translator: Translator, sr
     torch.cuda.empty_cache()
 
     match translator.name:
-      case 'deepseek-coder-7b-instruct-v1.5' | 'Qwen2.5-Coder-7B-Instruct':
+      case 'deepseek-coder-7b-instruct-v1.5' | 'Qwen2.5-Coder-1.5B-Instruct' | 'Qwen2.5-Coder-3B-Instruct' | 'Qwen2.5-Coder-7B-Instruct':
         inputs = translator.tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors='pt')
         attention_mask = torch.ones_like(inputs).to(f'cuda:{translator.gpu}')
         inputs = inputs.to(f'cuda:{translator.gpu}')

@@ -7,8 +7,16 @@ mutator:
 translator:
   models:
     deepseek-coder-7b-instruct-v1.5: /data1/model/deepseek/deepseek-ai/deepseek-coder-7b-instruct-v1.5/
+    Qwen2.5-Coder-1.5B-Instruct: /data1/model/qwen/Qwen/Qwen2.5-Coder-1.5B-Instruct/
+    Qwen2.5-Coder-3B-Instruct: /data1/model/qwen/Qwen/Qwen2.5-Coder-3B-Instruct/
     Qwen2.5-Coder-7B-Instruct: /data1/model/qwen/Qwen/Qwen2.5-Coder-7B-Instruct/
 
   prompts:
-    prologue: "<task>Perform code translation between 2 programming languages with semantic consistency.</task> \
-               <constraint>Your output must **ONLY** contain the translated code without any explanations so that the generated text can be compiled or interpreted directly.</constraint>"
+    prologue: "<task>
+                Perform code translation between 2 languages with semantic consistency.
+               </task>
+               <constraint>
+                1. Your output MUST only contain the translated code without any explanations for direct compilation.
+                2. If the target language is C++, you MUST use `using namespace std;` and you MUST convert function name from camel case to snake case.
+                3. You should NEVER append main function for test.
+               </constraint>"
