@@ -77,8 +77,6 @@ def calculate_correctness(dataset: str, snippets: Sequence[Snippet], tests: Sequ
   :param tests: the tests
   :param lang: the language of the code snippets
   """
-  if len(snippets) != len(tests):
-    raise ValueError('The number of snippets and tests should equal.')
   correct_count = 0
   for snippet, test in zip(snippets, tests):
     if not snippet:
@@ -121,7 +119,9 @@ def evaluate(dataset: str, snippets: Sequence[Snippet], mutants: Sequence[Snippe
   :param dst_lang: the target language of the code snippets
   """
   print(f'Evaluating on {dataset}...')
-  tests = load_tests(dataset, src_lang, dst_lang)[:1]
+  if len(snippets) != len(mutants):
+    raise ValueError('The number of snippets and mutants should equal.')
+  tests = load_tests(dataset, src_lang, dst_lang)[:len(snippets)]
   original_correctness = calculate_correctness(dataset, snippets, tests, dst_lang)
   mutated_correctness = calculate_correctness(dataset, mutants, tests, dst_lang)
   print(f'Original correctness: {original_correctness}.')
