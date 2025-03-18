@@ -73,7 +73,7 @@ def main():
     translator = load_model(MODEL, gpu_id=GPU)
     translated_snippets = translate_with_model(snippets, translator, SRC_LANG, DST_LANG)
     translated_mutants = translate_with_model(mutants, translator, SRC_LANG, DST_LANG)
-    evaluate(dataset, translated_snippets, translated_mutants, DST_LANG)
+    evaluate(dataset, translated_snippets, translated_mutants, SRC_LANG, DST_LANG)
 
 
 if __name__ == '__main__':

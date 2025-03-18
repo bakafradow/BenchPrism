@@ -93,14 +93,14 @@ def calculate_correctness(dataset: str, snippets: Sequence[Snippet], tests: Sequ
   return correct_count / len(snippets)
 
 
-def load_tests(dataset: str, lang: str) -> Sequence[str]:
+def load_tests(dataset: str, src_lang: str, dst_lang: str) -> Sequence[str]:
   match dataset:
     case 'HumanEvalX':
-      tests = extract_field_from(dataset, lang, 'test')
+      tests = extract_field_from(dataset, dst_lang, 'test')
     case 'xCodeEval':
       with open('data/xCodeEval/unittest_db.json', 'r') as f:
         unittests = json.load(f)
-      uids = extract_field_from(dataset, lang, 'src_uid')
+      uids = extract_field_from(dataset, src_lang, 'src_uid')
       tests = [unittests[uid] for uid in uids]
     case 'CodeXGLUE':
       raise NotImplementedError('CodeXGLUE dataset does not provide tests.')
@@ -109,17 +109,18 @@ def load_tests(dataset: str, lang: str) -> Sequence[str]:
   return tests
 
 
-def evaluate(dataset: str, snippets: Sequence[Snippet], mutants: Sequence[Snippet], lang: str) -> None:
+def evaluate(dataset: str, snippets: Sequence[Snippet], mutants: Sequence[Snippet], src_lang: str, dst_lang: str) -> None:
   """
   Evaluates the space spanned by the translated code relative to the original source code
   :param dataset: dataset name
   :param snippets: the translated original code snippets
   :param mutations: the translated mutated code snippets
-  :param lang: the language of the code snippets
+  :param src_lang: the source language of the code snippets
+  :param dst_lang: the target language of the code snippets
   """
   print(f'Evaluating on {dataset}...')
-  tests = load_tests(dataset, lang)[:1]
-  original_correctness = calculate_correctness(dataset, snippets, tests, lang)
-  mutated_correctness = calculate_correctness(dataset, mutants, tests, lang)
+  tests = load_tests(dataset, src_lang, dst_lang)[:1]
+  original_correctness = calculate_correctness(dataset, snippets, tests, dst_lang)
+  mutated_correctness = calculate_correctness(dataset, mutants, tests, dst_lang)
   print(f'Original correctness: {original_correctness}.')
   print(f'Mutated correctness: {mutated_correctness}.')
