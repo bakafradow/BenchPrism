@@ -81,6 +81,8 @@ def calculate_correctness(dataset: str, snippets: Sequence[Snippet], tests: Sequ
     raise ValueError('The number of snippets and tests should equal.')
   correct_count = 0
   for snippet, test in zip(snippets, tests):
+    if not snippet:
+      continue
     match dataset:
       case 'HumanEvalX':
         if run_with_assertion(snippet.code, test, lang):

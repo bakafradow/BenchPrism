@@ -119,7 +119,8 @@ def translate_with_model(snippets: Sequence[Snippet], translator: Translator, sr
     response = translator.tokenizer.decode(outputs[0][len(inputs[0]):], skip_special_tokens=True)
     matched = re.search(r'```\w+\n(.+)```', response, re.DOTALL)
     if not matched:
-      raise ValueError(f'Translation of {snippet.id} not found in the response:\n{response}')
+      print(f'Translation of {snippet.id} not found.')
+      continue
     print(f'Snippet {i}:\n{matched.group(1)}\n')
     translated[i] = snippet._replace(code=matched.group(1))
   return translated
