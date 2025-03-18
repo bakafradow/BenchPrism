@@ -62,6 +62,9 @@ def load_model(model_name: str, /, gpu_id) -> Translator:
     case 'deepseek-coder-7b-instruct-v1.5' | 'Qwen2.5-Coder-1.5B-Instruct' | 'Qwen2.5-Coder-3B-Instruct' | 'Qwen2.5-Coder-7B-Instruct':
       tokenizer = AutoTokenizer.from_pretrained(config['models'][model_name], trust_remote_code=True)
       model = AutoModelForCausalLM.from_pretrained(config['models'][model_name], **model_args)
+    case 'THUDM/codegeex2-6b':
+      # TODO
+      ...
     case _:
       raise TypeError(f'{model_name} is unsupported yet.')
 
@@ -82,11 +85,11 @@ def translate_with_model(snippets: Sequence[Snippet], translator: Translator, sr
   :return: a set of translated code
   """
   print(f'Translating from {src_lang} to {dst_lang}...')
+  # TODO: add API info in dst_language for better accuracy
   prompt = f'{config["prompts"]["prologue"]} \
              <source_language>{src_lang}</source_language> \
              <target_language>{dst_lang}</target_language> \
              <code>```{src_lang}\n%s```</code>'
-  snippets = snippets[:3]
   translated = [None] * len(snippets)
 
   for i, snippet in enumerate(snippets):
@@ -116,7 +119,7 @@ def translate_with_model(snippets: Sequence[Snippet], translator: Translator, sr
     response = translator.tokenizer.decode(outputs[0][len(inputs[0]):], skip_special_tokens=True)
     matched = re.search(r'```\w+\n(.+)```', response, re.DOTALL)
     if not matched:
-      raise ValueError(f'Translation of {snippet.id} not found in the response.')
+      raise ValueError(f'Translation of {snippet.id} not found in the response:\n{response}')
     print(f'Snippet {i}:\n{matched.group(1)}\n')
     translated[i] = snippet._replace(code=matched.group(1))
   return translated

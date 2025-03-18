@@ -68,7 +68,7 @@ def main():
   """
   parse_args()
   for dataset in DATASETS:
-    snippets = extract_source(dataset, SRC_LANG)
+    snippets = extract_source(dataset, SRC_LANG)[:1]
     mutants = mutate_source(snippets, SRC_LANG)
     translator = load_model(MODEL, gpu_id=GPU)
     translated_snippets = translate_with_model(snippets, translator, SRC_LANG, DST_LANG)

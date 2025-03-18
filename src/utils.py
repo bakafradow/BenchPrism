@@ -39,7 +39,7 @@ def extract_field_from(dataset: str, lang: str, column: str) -> Sequence[str]:
       ds = load_dataset('json', data_dir='data/xCodeEval/code_translation')  # there's an issue when loading from HF
       lang_name = lang_to_name[lang]
       ds = ds.filter(lambda row: row['lang_cluster'] == lang_name)
-      return ds['train'][column]
+      return ds['test'][column]
     case 'XLCoST':
       _check_lang_support(lang, ['c', 'cs', 'cpp', 'java', 'js', 'php', 'python'])
       lang_to_name = {
