@@ -10,7 +10,7 @@ translator:
     Qwen2.5-Coder-1.5B-Instruct: /data1/model/qwen/Qwen/Qwen2.5-Coder-1.5B-Instruct/
     Qwen2.5-Coder-3B-Instruct: /data1/model/qwen/Qwen/Qwen2.5-Coder-3B-Instruct/
     Qwen2.5-Coder-7B-Instruct: /data1/model/qwen/Qwen/Qwen2.5-Coder-7B-Instruct/
-
+  max_new_tokens: 1024
   prompts:
     prologue: "<task>
                 Perform code translation between 2 languages with semantic consistency.

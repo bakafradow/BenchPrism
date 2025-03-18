@@ -4,7 +4,7 @@ from typing import NamedTuple, Sequence
 
 import torch
 import yaml
-from transformers import (AutoModelForCausalLM, AutoTokenizer,
+from transformers import (AutoModel, AutoModelForCausalLM, AutoTokenizer,
                           BitsAndBytesConfig, PreTrainedTokenizer,
                           PreTrainedTokenizerFast)
 
@@ -62,9 +62,10 @@ def load_model(model_name: str, /, gpu_id) -> Translator:
     case 'deepseek-coder-7b-instruct-v1.5' | 'Qwen2.5-Coder-1.5B-Instruct' | 'Qwen2.5-Coder-3B-Instruct' | 'Qwen2.5-Coder-7B-Instruct':
       tokenizer = AutoTokenizer.from_pretrained(config['models'][model_name], trust_remote_code=True)
       model = AutoModelForCausalLM.from_pretrained(config['models'][model_name], **model_args)
-    case 'THUDM/codegeex2-6b':
-      # TODO
-      ...
+    case 'codegeex2-6b':
+      tokenizer = AutoTokenizer.from_pretrained(f'THUDM/{model_name}', trust_remote_code=True)
+      model = AutoModel.from_pretrained(f'THUDM/{model_name}', trust_remote_code=True, torch_dtype=torch.float16, device=f'cuda:{gpu_id}')
+      model = model.eval()
     case _:
       raise TypeError(f'{model_name} is unsupported yet.')
 
@@ -93,31 +94,33 @@ def translate_with_model(snippets: Sequence[Snippet], translator: Translator, sr
   translated = [None] * len(snippets)
 
   for i, snippet in enumerate(snippets):
-    messages = [{'role': 'user', 'content': prompt % snippet.code}]
-
     torch.cuda.empty_cache()
 
     match translator.name:
       case 'deepseek-coder-7b-instruct-v1.5' | 'Qwen2.5-Coder-1.5B-Instruct' | 'Qwen2.5-Coder-3B-Instruct' | 'Qwen2.5-Coder-7B-Instruct':
+        messages = [{'role': 'user', 'content': prompt % snippet.code}]
         inputs = translator.tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors='pt')
-        attention_mask = torch.ones_like(inputs).to(f'cuda:{translator.gpu}')
-        inputs = inputs.to(f'cuda:{translator.gpu}')
+      case 'codegeex2-6b':
+        messages = prompt % snippet.code
+        inputs = translator.tokenizer.encode(messages, return_tensors='pt', padding=True)
       case _:
         raise TypeError(f'{translator.name} is unsupported yet.')
 
+    inputs = inputs.to(f'cuda:{translator.gpu}')
+    attention_mask = torch.ones_like(inputs).to(f'cuda:{translator.gpu}')
     outputs = translator.model.generate(
         inputs,
         attention_mask=attention_mask,
-        max_new_tokens=512,
+        max_new_tokens=config['max_new_tokens'],
         do_sample=False,
         num_return_sequences=1,
         eos_token_id=translator.tokenizer.eos_token_id,
         pad_token_id=translator.tokenizer.pad_token_id,
         use_cache=True,
     )
-
     response = translator.tokenizer.decode(outputs[0][len(inputs[0]):], skip_special_tokens=True)
     matched = re.search(r'```\w+\n(.+)```', response, re.DOTALL)
+    del inputs, attention_mask, outputs
     if not matched:
       print(f'Translation of {snippet.id} not found.')
       continue

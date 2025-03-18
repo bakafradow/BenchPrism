@@ -30,7 +30,8 @@ def parse_args():
                       choices=['deepseek-coder-7b-instruct-v1.5',
                                'Qwen2.5-Coder-1.5B-Instruct',
                                'Qwen2.5-Coder-3B-Instruct',
-                               'Qwen2.5-Coder-7B-Instruct'],
+                               'Qwen2.5-Coder-7B-Instruct',
+                               'codegeex2-6b'],
                       required=True,
                       help='Specify the model to use.')
   parser.add_argument('--src-lang', default=default_src_lang, type=str,
