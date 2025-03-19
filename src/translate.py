@@ -4,6 +4,7 @@ from typing import NamedTuple, Sequence
 
 import torch
 import yaml
+from openai import OpenAI
 from transformers import (AutoModel, AutoModelForCausalLM, AutoTokenizer,
                           BitsAndBytesConfig, PreTrainedTokenizer,
                           PreTrainedTokenizerFast)
@@ -11,15 +12,21 @@ from transformers import (AutoModel, AutoModelForCausalLM, AutoTokenizer,
 from . import Snippet
 from .utils import logger
 
+LOCAL_MODELS = ['deepseek-coder-7b-instruct-v1.5', 'Qwen2.5-Coder-1.5B-Instruct', 'Qwen2.5-Coder-3B-Instruct', 'Qwen2.5-Coder-7B-Instruct', 'codegeex2-6b']
+REMOTE_MODELS = ['gpt-4o-mini']
+
 with open('config/settings.yaml') as f:
   config = yaml.safe_load(f)['translator']
 
 
 class Translator(NamedTuple):
+  """
+  A translator that wraps the components of a translation model. If the model is non-local, the tokenizer and gpu won't be used.
+  """
   name: str
-  tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast
   model: any
-  gpu: int
+  tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast = None
+  gpu: int = -1
 
 
 def _get_largest_free_gpu() -> int:
@@ -40,6 +47,7 @@ def _get_largest_free_gpu() -> int:
   return max(range(gpu_count), key=lambda i: free_memories[i])
 
 
+# TODO: reduce stamp coupling
 def load_model(model_name: str, /, gpu_id) -> Translator:
   """
   Load the specified model.
@@ -47,6 +55,10 @@ def load_model(model_name: str, /, gpu_id) -> Translator:
   :return: the model and tokenizer
   """
   logger.info(f'Loading model {model_name}...')
+
+  if model_name in REMOTE_MODELS:
+    client = OpenAI(base_url=config['base_url'], api_key=config['api_key'])
+    return Translator(model_name, client)
 
   torch.cuda.empty_cache()
   if gpu_id < 0:
@@ -73,7 +85,7 @@ def load_model(model_name: str, /, gpu_id) -> Translator:
   if tokenizer.pad_token_id is None:
     tokenizer.pad_token = tokenizer.eos_token
 
-  return Translator(model_name, tokenizer, model, gpu_id)
+  return Translator(model_name, model, tokenizer, gpu_id)
 
 
 def translate_with_model(snippets: Sequence[Snippet], translator: Translator, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
@@ -87,41 +99,55 @@ def translate_with_model(snippets: Sequence[Snippet], translator: Translator, sr
   :return: a set of translated code
   """
   logger.info(f'Translating from {src_lang} to {dst_lang}...')
-  # TODO: add API info in dst_language for better accuracy
-  prompt = f'{config["prompts"]["prologue"]} \
-             <source_language>{src_lang}</source_language> \
-             <target_language>{dst_lang}</target_language> \
-             <code>```{src_lang}\n%s```</code>'
   translated = [None] * len(snippets)
 
+  # TODO: add API info in dst_language for better accuracy
+  prompt = f'<source_language>{src_lang}</source_language> \
+            <target_language>{dst_lang}</target_language> \
+            <code>```{src_lang}\n%s```</code>'
+
   for i, snippet in enumerate(snippets):
-    torch.cuda.empty_cache()
+    if translator.name in REMOTE_MODELS:
+      completion = translator.model.chat.completions.create(
+        model=translator.name,
+        messages=[
+          {'role': 'system', 'content':config['prompts']['prologue']},
+          {'role': 'user', 'content': prompt % snippet.code}
+        ]
+      )
+      response = completion.choices[0].message.content
+    else:
+      torch.cuda.empty_cache()
 
-    match translator.name:
-      case 'deepseek-coder-7b-instruct-v1.5' | 'Qwen2.5-Coder-1.5B-Instruct' | 'Qwen2.5-Coder-3B-Instruct' | 'Qwen2.5-Coder-7B-Instruct':
-        messages = [{'role': 'user', 'content': prompt % snippet.code}]
-        inputs = translator.tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors='pt')
-      case 'codegeex2-6b':
-        messages = prompt % snippet.code
-        inputs = translator.tokenizer.encode(messages, return_tensors='pt', padding=True)
-      case _:
-        raise TypeError(f'{translator.name} is unsupported yet.')
+      match translator.name:
+        case 'deepseek-coder-7b-instruct-v1.5' | 'Qwen2.5-Coder-1.5B-Instruct' | 'Qwen2.5-Coder-3B-Instruct' | 'Qwen2.5-Coder-7B-Instruct':
+          messages=[
+            {'role': 'system', 'content':config['prompts']['prologue']},
+            {'role': 'user', 'content': prompt % snippet.code}
+          ]
+          inputs = translator.tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors='pt')
+        case 'codegeex2-6b':
+          messages = prompt % snippet.code
+          inputs = translator.tokenizer.encode(messages, return_tensors='pt', padding=True)
+        case _:
+          raise TypeError(f'{translator.name} is unsupported yet.')
 
-    inputs = inputs.to(f'cuda:{translator.gpu}')
-    attention_mask = torch.ones_like(inputs).to(f'cuda:{translator.gpu}')
-    outputs = translator.model.generate(
-        inputs,
-        attention_mask=attention_mask,
-        max_new_tokens=config['max_new_tokens'],
-        do_sample=False,
-        num_return_sequences=1,
-        eos_token_id=translator.tokenizer.eos_token_id,
-        pad_token_id=translator.tokenizer.pad_token_id,
-        use_cache=True,
-    )
-    response = translator.tokenizer.decode(outputs[0][len(inputs[0]):], skip_special_tokens=True)
+      inputs = inputs.to(f'cuda:{translator.gpu}')
+      attention_mask = torch.ones_like(inputs).to(f'cuda:{translator.gpu}')
+      outputs = translator.model.generate(
+          inputs,
+          attention_mask=attention_mask,
+          max_new_tokens=config['max_new_tokens'],
+          do_sample=False,
+          num_return_sequences=1,
+          eos_token_id=translator.tokenizer.eos_token_id,
+          pad_token_id=translator.tokenizer.pad_token_id,
+          use_cache=True,
+      )
+      response = translator.tokenizer.decode(outputs[0][len(inputs[0]):], skip_special_tokens=True)
+      del inputs, attention_mask, outputs
+
     matched = re.search(r'```\w+\n(.+)```', response, re.DOTALL)
-    del inputs, attention_mask, outputs
     if not matched:
       logger.warning(f'Translation of {snippet.id} not found.')
       continue

@@ -7,7 +7,7 @@ import argparse
 from src.evaluate import evaluate
 from src.extract import extract_source
 from src.mutate import mutate_source
-from src.translate import load_model, translate_with_model
+from src.translate import LOCAL_MODELS, REMOTE_MODELS, load_model, translate_with_model
 
 DATASETS: list[str]
 MODEL: str
@@ -27,11 +27,7 @@ def parse_args():
                       choices=default_datasets,
                       help='Specify one dataset to evaluate.')
   parser.add_argument('-m', '--model', type=str,
-                      choices=['deepseek-coder-7b-instruct-v1.5',
-                               'Qwen2.5-Coder-1.5B-Instruct',
-                               'Qwen2.5-Coder-3B-Instruct',
-                               'Qwen2.5-Coder-7B-Instruct',
-                               'codegeex2-6b'],
+                      choices=LOCAL_MODELS + REMOTE_MODELS,
                       required=True,
                       help='Specify the model to use.')
   parser.add_argument('--src-lang', default=default_src_lang, type=str,

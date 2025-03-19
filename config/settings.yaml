@@ -5,6 +5,8 @@ mutator:
   style_file: /home/fantasia/playground/research/samples/ref.xml
 
 translator:
+  base_url: # fill in the base URL of the API server
+  api_key: # fill in the API key of OpenAI
   models:
     deepseek-coder-7b-instruct-v1.5: /data1/model/deepseek/deepseek-ai/deepseek-coder-7b-instruct-v1.5/
     Qwen2.5-Coder-1.5B-Instruct: /data1/model/qwen/Qwen/Qwen2.5-Coder-1.5B-Instruct/
