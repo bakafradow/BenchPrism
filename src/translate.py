@@ -9,6 +9,7 @@ from transformers import (AutoModel, AutoModelForCausalLM, AutoTokenizer,
                           PreTrainedTokenizerFast)
 
 from . import Snippet
+from .utils import logger
 
 with open('config/settings.yaml') as f:
   config = yaml.safe_load(f)['translator']
@@ -45,7 +46,7 @@ def load_model(model_name: str, /, gpu_id) -> Translator:
   :param model_name: name of the model
   :return: the model and tokenizer
   """
-  print(f'Loading model {model_name}...')
+  logger.info(f'Loading model {model_name}...')
 
   torch.cuda.empty_cache()
   if gpu_id < 0:
@@ -85,7 +86,7 @@ def translate_with_model(snippets: Sequence[Snippet], translator: Translator, sr
   :param dst_lang: destination language
   :return: a set of translated code
   """
-  print(f'Translating from {src_lang} to {dst_lang}...')
+  logger.info(f'Translating from {src_lang} to {dst_lang}...')
   # TODO: add API info in dst_language for better accuracy
   prompt = f'{config["prompts"]["prologue"]} \
              <source_language>{src_lang}</source_language> \
@@ -122,8 +123,8 @@ def translate_with_model(snippets: Sequence[Snippet], translator: Translator, sr
     matched = re.search(r'```\w+\n(.+)```', response, re.DOTALL)
     del inputs, attention_mask, outputs
     if not matched:
-      print(f'Translation of {snippet.id} not found.')
+      logger.warning(f'Translation of {snippet.id} not found.')
       continue
-    print(f'Snippet {i}:\n{matched.group(1)}\n')
+    logger.info(f'Snippet {i}:\n{matched.group(1)}')
     translated[i] = snippet._replace(code=matched.group(1))
   return translated

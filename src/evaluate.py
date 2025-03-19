@@ -5,7 +5,7 @@ import tempfile
 from typing import Sequence
 
 from . import Snippet
-from .utils import extract_field_from
+from .utils import extract_field_from, logger
 
 
 def run_with_assertion(code: str, test: str, lang: str) -> bool:
@@ -26,7 +26,7 @@ def run_with_assertion(code: str, test: str, lang: str) -> bool:
         executable = re.sub(r'\.cpp$', '', f.name)
         returned = subprocess.run(['g++', f.name, '-o', executable])
         if returned.returncode != 0:
-          print(f'Failed to compile {f.name}.')
+          logger.warning(f'Failed to compile {f.name}.')
           return False
       returned = subprocess.run([executable])
       return returned.returncode == 0
@@ -54,7 +54,7 @@ def run_with_io(code: str, test: list[dict], lang: str) -> bool:
         executable = re.sub(r'\.cpp$', '', f.name)
         returned = subprocess.run(['g++', f.name, '-o', executable])
         if returned.returncode != 0:
-          print(f'Failed to compile {f.name}.')
+          logger.warning(f'Failed to compile {f.name}.')
           return False
       for pair in test:
         returned = subprocess.run([executable], input=pair['input'], text=True, capture_output=True)
@@ -63,7 +63,7 @@ def run_with_io(code: str, test: list[dict], lang: str) -> bool:
       for pair in test:
         returned = subprocess.run(['python', '-c', code], input=pair['input'], text=True, capture_output=True)
         if returned.returncode != 0 or returned.stdout.strip() != pair['output'][0].strip():
-          print(f'Failed on input: {pair["input"].strip()}\nexpected: {pair["output"][0].strip()}\ngot: {returned.stdout.strip()}')
+          logger.warning(f'Failed on input:\n{pair["input"].strip()}\nExpected:\n{pair["output"][0].strip()}\nActual:\n{returned.stdout.strip()}')
           return False
       return True
     case _:
@@ -118,11 +118,11 @@ def evaluate(dataset: str, snippets: Sequence[Snippet], mutants: Sequence[Snippe
   :param src_lang: the source language of the code snippets
   :param dst_lang: the target language of the code snippets
   """
-  print(f'Evaluating on {dataset}...')
+  logger.info(f'Evaluating on {dataset}...')
   if len(snippets) != len(mutants):
     raise ValueError('The number of snippets and mutants should equal.')
   tests = load_tests(dataset, src_lang, dst_lang)[:len(snippets)]
   original_correctness = calculate_correctness(dataset, snippets, tests, dst_lang)
   mutated_correctness = calculate_correctness(dataset, mutants, tests, dst_lang)
-  print(f'Original correctness: {original_correctness}.')
-  print(f'Mutated correctness: {mutated_correctness}.')
+  logger.info(f'Original correctness: {original_correctness}.')
+  logger.info(f'Mutated correctness: {mutated_correctness}.')

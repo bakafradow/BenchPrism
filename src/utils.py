@@ -1,6 +1,35 @@
+import logging
+import sys
 from typing import Collection, Sequence
 
 from datasets import load_dataset
+
+
+class ColorFormatter(logging.Formatter):
+  COLORS = {
+    'INFO': '\033[38;5;91m',
+    'WARNING': '\033[38;5;202m',
+    'ERROR': '\033[38;5;161m',
+    'CRITICAL': '\033[38;5;76m',
+    'ENDC': '\033[0m',
+  }
+
+  def format(self, record):
+    return f'{self.COLORS[record.levelname]}{super().format(record)}{self.COLORS["ENDC"]}'
+
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+pattern = '%(asctime)s - %(levelname)s - %(message)s'
+
+file_handler = logging.FileHandler('logs/assessment.log')
+file_handler.setFormatter(logging.Formatter(pattern))
+logger.addHandler(file_handler)
+
+stream_handler = logging.StreamHandler(sys.stdout)
+stream_handler.setFormatter(ColorFormatter(pattern))
+logger.addHandler(stream_handler)
 
 
 def _check_lang_support(lang: str, supported_langs: Collection[str]):

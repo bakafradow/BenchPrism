@@ -5,6 +5,7 @@ import jpype as jp
 import yaml
 
 from . import Snippet
+from .utils import logger
 
 with open('config/settings.yaml', 'r') as f:
   config = yaml.safe_load(f)['mutator']
@@ -27,7 +28,7 @@ class Mutator():
     for i, snippet in enumerate(snippets):
       mutant = self.instance.apply(snippet.code)
       if not mutant:
-        print(f'Failed to apply mutation to {snippet.id}.', file=sys.stderr)
+        logger.warning(f'Failed to apply mutation to {snippet.id}.', file=sys.stderr)
         mutants[i] = snippet
       else:
         mutants[i] = snippet._replace(code=str(mutant))
@@ -41,7 +42,7 @@ def mutate_source(snippets: Sequence[Snippet], src_lang: str) -> Sequence[Snippe
   :param src_lang: source language
   :return: the mutant sequence
   """
-  print('Applying transformations...')
+  logger.info('Applying transformations...')
   style_file = generate_styles(src_lang)
   # TODO: multi-threading optimization
   mutator = Mutator(src_lang, style_file)
