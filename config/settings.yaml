@@ -1,24 +1,34 @@
 mutator:
-  jvmpath: /usr/local/lib/jdk-19.0.2/lib/server/libjvm.so # fill in the path to the libjvm.so (on Linux) or jvm.dll (on Windows)
-  classpath: ../code-style-transformer/target/transformer-1.0-SNAPSHOT.jar # fill in the path to the jar package of the transformer
+  jvmpath: /data1/lzy/libraries/jdk-21.0.6/lib/server/libjvm.so # fill in the path to the libjvm.so (on Linux) or jvm.dll (on Windows)
+  classpath: /data1/lzy/playground/transformer-1.0-SNAPSHOT.jar # fill in the path to the jar package of the transformer
   class: org.example.experiment.Mutator
-  style_file: /home/fantasia/playground/research/samples/ref.xml
+  style_file: /data1/lzy/playground/ref.xml
 
 translator:
+  # below are settings for remote API
   base_url: # fill in the base URL of the API server
   api_key: # fill in the API key of OpenAI
+  timeout: 120
+  retry: 3
+  retry_interval: 5
+
+  # below are settings for local models
   models:
     deepseek-coder-7b-instruct-v1.5: /data1/model/deepseek/deepseek-ai/deepseek-coder-7b-instruct-v1.5/
     Qwen2.5-Coder-1.5B-Instruct: /data1/model/qwen/Qwen/Qwen2.5-Coder-1.5B-Instruct/
     Qwen2.5-Coder-3B-Instruct: /data1/model/qwen/Qwen/Qwen2.5-Coder-3B-Instruct/
     Qwen2.5-Coder-7B-Instruct: /data1/model/qwen/Qwen/Qwen2.5-Coder-7B-Instruct/
-  max_new_tokens: 1024
+  max_new_tokens: 4096
   prompts:
     prologue: "<task>
-                Perform code translation between 2 languages with semantic consistency.
+                Translate code from one language to another without changing functionality.
                </task>
                <constraint>
-                1. Your output MUST only contain the translated code without any explanations for direct compilation.
-                2. If the target language is C++, you MUST use `using namespace std;` and you MUST convert function name from camel case to snake case.
-                3. You should NEVER append main function for test.
+                1. Your output MUST only contain the translated code without any explanations for direct compilation, enclosed by triple back quotes.
+                2. If the target language is C++, you MUST use `using namespace std;`.
                </constraint>"
+
+logger:
+  file: logs/assessment/assessment.log
+  max_bytes: 5242880 # 5MB
+  backup_count: 5

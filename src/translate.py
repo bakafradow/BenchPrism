@@ -1,10 +1,12 @@
 import re
 import subprocess
+import time
 from typing import NamedTuple, Sequence
 
 import torch
 import yaml
 from openai import OpenAI
+from requests.exceptions import Timeout
 from transformers import (AutoModel, AutoModelForCausalLM, AutoTokenizer,
                           BitsAndBytesConfig, PreTrainedTokenizer,
                           PreTrainedTokenizerFast)
@@ -13,7 +15,7 @@ from . import Snippet
 from .utils import logger
 
 LOCAL_MODELS = ['deepseek-coder-7b-instruct-v1.5', 'Qwen2.5-Coder-1.5B-Instruct', 'Qwen2.5-Coder-3B-Instruct', 'Qwen2.5-Coder-7B-Instruct', 'codegeex2-6b']
-REMOTE_MODELS = ['gpt-4o-mini']
+REMOTE_MODELS = ['gpt-4o-mini', 'gpt-4o', 'deepseek-r1']
 
 with open('config/settings.yaml') as f:
   config = yaml.safe_load(f)['translator']
@@ -108,14 +110,24 @@ def translate_with_model(snippets: Sequence[Snippet], translator: Translator, sr
 
   for i, snippet in enumerate(snippets):
     if translator.name in REMOTE_MODELS:
-      completion = translator.model.chat.completions.create(
-        model=translator.name,
-        messages=[
-          {'role': 'system', 'content':config['prompts']['prologue']},
-          {'role': 'user', 'content': prompt % snippet.code}
-        ]
-      )
-      response = completion.choices[0].message.content
+      retry = config['retry']
+      retry_interval = config['retry_interval']
+      for attempt in range(retry):
+        try:
+          completion = translator.model.chat.completions.create(
+            model=translator.name,
+            messages=[
+              {'role': 'system', 'content':config['prompts']['prologue']},
+              {'role': 'user', 'content': prompt % snippet.code}
+            ],
+            timeout=120,
+          )
+          response = completion.choices[0].message.content
+          break
+        except Timeout:
+          logger.warning(f'Timeout occurred for snippet {snippet.id}. Retrying {attempt + 1}/{retry}...')
+          time.sleep(retry_interval)
+
     else:
       torch.cuda.empty_cache()
 

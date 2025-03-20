@@ -1,7 +1,11 @@
+import errno
 import logging
+import os
 import sys
+from logging.handlers import RotatingFileHandler
 from typing import Collection, Sequence
 
+import yaml
 from datasets import load_dataset
 
 
@@ -18,12 +22,22 @@ class ColorFormatter(logging.Formatter):
     return f'{self.COLORS[record.levelname]}{super().format(record)}{self.COLORS["ENDC"]}'
 
 
+with open('config/settings.yaml') as f:
+  logger_config = yaml.safe_load(f)['logger']
+
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 pattern = '%(asctime)s - %(levelname)s - %(message)s'
 
-file_handler = logging.FileHandler('logs/assessment.log')
+if not os.path.exists(os.path.dirname(logger_config['file'])):
+  try:
+    os.makedirs(os.path.dirname(logger_config['file']))
+  except OSError as e:
+    if e.errno != errno.EEXIST:
+      raise
+file_handler = RotatingFileHandler(logger_config['file'], mode='a', maxBytes=logger_config['max_bytes'], backupCount=logger_config['backup_count'])
 file_handler.setFormatter(logging.Formatter(pattern))
 logger.addHandler(file_handler)
 
