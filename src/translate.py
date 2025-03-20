@@ -15,7 +15,6 @@ from . import Snippet
 from .utils import logger
 
 LOCAL_MODELS = ['deepseek-coder-7b-instruct-v1.5', 'Qwen2.5-Coder-1.5B-Instruct', 'Qwen2.5-Coder-3B-Instruct', 'Qwen2.5-Coder-7B-Instruct', 'codegeex2-6b']
-REMOTE_MODELS = ['gpt-4o-mini', 'gpt-4o', 'deepseek-r1']
 
 with open('config/settings.yaml') as f:
   config = yaml.safe_load(f)['translator']
@@ -49,7 +48,7 @@ def _get_largest_free_gpu() -> int:
   return max(range(gpu_count), key=lambda i: free_memories[i])
 
 
-# TODO: reduce stamp coupling
+# FIXME: reduce stamp coupling
 def load_model(model_name: str, /, gpu_id) -> Translator:
   """
   Load the specified model.
@@ -58,8 +57,10 @@ def load_model(model_name: str, /, gpu_id) -> Translator:
   """
   logger.info(f'Loading model {model_name}...')
 
-  if model_name in REMOTE_MODELS:
+  if model_name not in LOCAL_MODELS:
     client = OpenAI(base_url=config['base_url'], api_key=config['api_key'])
+    if model_name not in {model.id for model in client.models.list()}:
+      raise ValueError(f'{model_name} is not available.')
     return Translator(model_name, client)
 
   torch.cuda.empty_cache()
@@ -109,7 +110,7 @@ def translate_with_model(snippets: Sequence[Snippet], translator: Translator, sr
             <code>```{src_lang}\n%s```</code>'
 
   for i, snippet in enumerate(snippets):
-    if translator.name in REMOTE_MODELS:
+    if translator.name not in LOCAL_MODELS:
       retry = config['retry']
       retry_interval = config['retry_interval']
       for attempt in range(retry):
@@ -130,7 +131,8 @@ def translate_with_model(snippets: Sequence[Snippet], translator: Translator, sr
         except Exception as e:
           logger.error(f'Error occurred for snippet {snippet.id}: {e}...')
           break
-      logger.warning(f'Failed to translate snippet {snippet.id} after {retry} attempts.')
+      else:
+        logger.warning(f'Failed to translate snippet {snippet.id} after {retry} attempts.')
 
     else:
       torch.cuda.empty_cache()

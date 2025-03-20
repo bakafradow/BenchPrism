@@ -25,7 +25,7 @@ translator:
                </task>
                <constraint>
                 1. Your output MUST only contain the translated code without any explanations for direct compilation, enclosed by triple back quotes.
-                2. If the target language is C++, you MUST use `using namespace std;`.
+                2. If the target language is C++, you MUST use `using namespace std;` and convert function names from camel case to snake case.
                </constraint>"
 
 logger:

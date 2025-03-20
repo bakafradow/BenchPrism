@@ -44,6 +44,7 @@ def mutate_source(snippets: Sequence[Snippet], src_lang: str) -> Sequence[Snippe
   """
   logger.info('Applying transformations...')
   style_file = generate_styles(src_lang)
+  # TODO: load existing mutants if available
   # TODO: multi-threading optimization
   mutator = Mutator(src_lang, style_file)
   return mutator.apply(snippets)

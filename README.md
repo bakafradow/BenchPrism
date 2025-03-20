@@ -37,9 +37,10 @@ See `python3 main.py --help`.
     - only evaluator with CodeBLEU
   - G-TransEval?
     - too small
-- [ ] Mark datasets which have no unit tests
-- [ ] Interact with transformer
+- [x] Mark datasets which have no unit tests
+- [x] Interact with transformer
   - [x] Current project side
   - [ ] Transformer side
-- [ ] Call code translation models
-- [ ] Evaluate correctness of the translation
+    - [ ] Rule generation
+- [x] Call code translation models
+- [x] Evaluate correctness of the translation
