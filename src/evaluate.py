@@ -118,7 +118,7 @@ def evaluate(dataset: str, snippets: Sequence[Snippet], mutants: Sequence[Snippe
   :param src_lang: the source language of the code snippets
   :param dst_lang: the target language of the code snippets
   """
-  logger.info(f'Evaluating on {dataset}...')
+  logger.info(f'Evaluating {len(snippets)} snippets on {dataset}...')
   if len(snippets) != len(mutants):
     raise ValueError('The number of snippets and mutants should equal.')
   tests = load_tests(dataset, src_lang, dst_lang)[:len(snippets)]

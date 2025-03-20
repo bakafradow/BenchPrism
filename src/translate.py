@@ -127,6 +127,10 @@ def translate_with_model(snippets: Sequence[Snippet], translator: Translator, sr
         except Timeout:
           logger.warning(f'Timeout occurred for snippet {snippet.id}. Retrying {attempt + 1}/{retry}...')
           time.sleep(retry_interval)
+        except Exception as e:
+          logger.error(f'Error occurred for snippet {snippet.id}: {e}...')
+          break
+      logger.warning(f'Failed to translate snippet {snippet.id} after {retry} attempts.')
 
     else:
       torch.cuda.empty_cache()
