@@ -69,13 +69,13 @@ def main():
   """
   parse_args()
   for dataset in DATASETS:
-    snippets = extract_source(dataset, SRC_LANG)
+    snippets = extract_source(dataset, SRC_LANG, DST_LANG)
     if NUM_SNIPPETS >= 0:
       snippets = snippets[:NUM_SNIPPETS]
     mutants = mutate_source(snippets, SRC_LANG)
     translator = load_model(MODEL, gpu_id=GPU)
-    translated_snippets = translate_with_model(snippets, translator, SRC_LANG, DST_LANG)
-    translated_mutants = translate_with_model(mutants, translator, SRC_LANG, DST_LANG)
+    translated_snippets = translate_with_model(translator, snippets, SRC_LANG, DST_LANG)
+    translated_mutants = translate_with_model(translator, mutants, SRC_LANG, DST_LANG)
     evaluate(dataset, translated_snippets, translated_mutants, SRC_LANG, DST_LANG)
 
 

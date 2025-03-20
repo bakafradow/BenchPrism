@@ -18,7 +18,7 @@ translator:
     Qwen2.5-Coder-1.5B-Instruct: /data1/model/qwen/Qwen/Qwen2.5-Coder-1.5B-Instruct/
     Qwen2.5-Coder-3B-Instruct: /data1/model/qwen/Qwen/Qwen2.5-Coder-3B-Instruct/
     Qwen2.5-Coder-7B-Instruct: /data1/model/qwen/Qwen/Qwen2.5-Coder-7B-Instruct/
-  max_new_tokens: 4096
+  max_new_tokens: 1024
   prompts:
     prologue: "<task>
                 Translate code from one language to another without changing functionality.
@@ -26,6 +26,7 @@ translator:
                <constraint>
                 1. Your output MUST only contain the translated code without any explanations for direct compilation, enclosed by triple back quotes.
                 2. If the target language is C++, you MUST use `using namespace std;` and convert function names from camel case to snake case.
+                3. If the target_declaration is empty, ignore it.
                </constraint>"
 
 logger:

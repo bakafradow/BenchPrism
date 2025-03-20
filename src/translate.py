@@ -49,10 +49,11 @@ def _get_largest_free_gpu() -> int:
 
 
 # FIXME: reduce stamp coupling
-def load_model(model_name: str, /, gpu_id) -> Translator:
+def load_model(model_name: str, *, gpu_id: int = -1) -> Translator:
   """
   Load the specified model.
   :param model_name: name of the model
+  :param gpu_id: the GPU id to run locally. If negative, the largest free GPU will be used. If model is remote, this parameter will be ignored.
   :return: the model and tokenizer
   """
   logger.info(f'Loading model {model_name}...')
@@ -91,80 +92,94 @@ def load_model(model_name: str, /, gpu_id) -> Translator:
   return Translator(model_name, model, tokenizer, gpu_id)
 
 
-def translate_with_model(snippets: Sequence[Snippet], translator: Translator, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
+class PromptPair(NamedTuple):
+  system: str
+  user: str
+
+
+def _build_prompt(src_lang: str, dst_lang: str) -> PromptPair:
+  system = config['prompts']['prologue']
+  user = f'<source_language>{src_lang}</source_language> \
+            <target_language>{dst_lang}</target_language> \
+            <source_code>```{src_lang}\n%s```</source_code> \
+            <target_declaration>```{dst_lang}\n%s```</target_declaration>'
+  return PromptPair(system, user)
+
+
+def _translate_remotely(translator: Translator, snippet: Snippet, prompt: PromptPair) -> str:
+  retry = config['retry']
+  retry_interval = config['retry_interval']
+  for attempt in range(retry):
+    try:
+      completion = translator.model.chat.completions.create(
+        model=translator.name,
+        messages=[
+          {'role': 'system', 'content': prompt.system},
+          {'role': 'user', 'content': prompt.user % (snippet.code, snippet.ref)}
+        ],
+        timeout=120,
+      )
+      return completion.choices[0].message.content
+    except Timeout:
+      logger.warning(f'Timeout occurred for snippet {snippet.id}. Retrying {attempt + 1}/{retry}...')
+      time.sleep(retry_interval)
+    except Exception as e:
+      logger.error(f'Error occurred for snippet {snippet.id}: {e}...')
+      break
+  logger.warning(f'Failed to translate snippet {snippet.id} after {retry} attempts.')
+
+
+def _translate_locally(translator: Translator, snippet: Snippet, prompt: PromptPair) -> str:
+  torch.cuda.empty_cache()
+
+  match translator.name:
+    case 'deepseek-coder-7b-instruct-v1.5' | 'Qwen2.5-Coder-1.5B-Instruct' | 'Qwen2.5-Coder-3B-Instruct' | 'Qwen2.5-Coder-7B-Instruct':
+      messages=[
+        {'role': 'system', 'content': prompt.system},
+        {'role': 'user', 'content': prompt.user % (snippet.code, snippet.ref)}
+      ]
+      inputs = translator.tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors='pt')
+    case 'codegeex2-6b':
+      messages = prompt % (snippet.code, snippet.ref)
+      inputs = translator.tokenizer.encode(messages, return_tensors='pt', padding=True)
+    case _:
+      raise TypeError(f'{translator.name} is unsupported yet.')
+
+  inputs = inputs.to(f'cuda:{translator.gpu}')
+  attention_mask = torch.ones_like(inputs).to(f'cuda:{translator.gpu}')
+  outputs = translator.model.generate(
+      inputs,
+      attention_mask=attention_mask,
+      max_new_tokens=config['max_new_tokens'],
+      do_sample=False,
+      num_return_sequences=1,
+      eos_token_id=translator.tokenizer.eos_token_id,
+      pad_token_id=translator.tokenizer.pad_token_id,
+      use_cache=True,
+  )
+  response = translator.tokenizer.decode(outputs[0][len(inputs[0]):], skip_special_tokens=True)
+  del inputs, attention_mask, outputs
+  return response
+
+
+def translate_with_model(translator: Translator, snippets: Sequence[Snippet], src_lang: str, dst_lang: str) -> Sequence[Snippet]:
   """
   Translates snippets in code set with code translation model.
+  :param translator: the translation model
   :param snippets: the snippets to be translated
-  :param model: the translation model
-  :param tokenizer: the tokenizer
+  :param dataset: dataset name
   :param src_lang: source language
   :param dst_lang: destination language
-  :return: a set of translated code
+  :return: a sequence of translated code
   """
   logger.info(f'Translating from {src_lang} to {dst_lang}...')
   translated = [None] * len(snippets)
-
-  # TODO: add API info in dst_language for better accuracy
-  prompt = f'<source_language>{src_lang}</source_language> \
-            <target_language>{dst_lang}</target_language> \
-            <code>```{src_lang}\n%s```</code>'
-
+  prompt = _build_prompt(src_lang, dst_lang)
   for i, snippet in enumerate(snippets):
     if translator.name not in LOCAL_MODELS:
-      retry = config['retry']
-      retry_interval = config['retry_interval']
-      for attempt in range(retry):
-        try:
-          completion = translator.model.chat.completions.create(
-            model=translator.name,
-            messages=[
-              {'role': 'system', 'content':config['prompts']['prologue']},
-              {'role': 'user', 'content': prompt % snippet.code}
-            ],
-            timeout=120,
-          )
-          response = completion.choices[0].message.content
-          break
-        except Timeout:
-          logger.warning(f'Timeout occurred for snippet {snippet.id}. Retrying {attempt + 1}/{retry}...')
-          time.sleep(retry_interval)
-        except Exception as e:
-          logger.error(f'Error occurred for snippet {snippet.id}: {e}...')
-          break
-      else:
-        logger.warning(f'Failed to translate snippet {snippet.id} after {retry} attempts.')
-
+      response = _translate_remotely(translator, snippet, prompt)
     else:
-      torch.cuda.empty_cache()
-
-      match translator.name:
-        case 'deepseek-coder-7b-instruct-v1.5' | 'Qwen2.5-Coder-1.5B-Instruct' | 'Qwen2.5-Coder-3B-Instruct' | 'Qwen2.5-Coder-7B-Instruct':
-          messages=[
-            {'role': 'system', 'content':config['prompts']['prologue']},
-            {'role': 'user', 'content': prompt % snippet.code}
-          ]
-          inputs = translator.tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors='pt')
-        case 'codegeex2-6b':
-          messages = prompt % snippet.code
-          inputs = translator.tokenizer.encode(messages, return_tensors='pt', padding=True)
-        case _:
-          raise TypeError(f'{translator.name} is unsupported yet.')
-
-      inputs = inputs.to(f'cuda:{translator.gpu}')
-      attention_mask = torch.ones_like(inputs).to(f'cuda:{translator.gpu}')
-      outputs = translator.model.generate(
-          inputs,
-          attention_mask=attention_mask,
-          max_new_tokens=config['max_new_tokens'],
-          do_sample=False,
-          num_return_sequences=1,
-          eos_token_id=translator.tokenizer.eos_token_id,
-          pad_token_id=translator.tokenizer.pad_token_id,
-          use_cache=True,
-      )
-      response = translator.tokenizer.decode(outputs[0][len(inputs[0]):], skip_special_tokens=True)
-      del inputs, attention_mask, outputs
-
+      response = _translate_locally(translator, snippet, prompt)
     matched = re.search(r'```\w+\n(.+)```', response, re.DOTALL)
     if not matched:
       logger.warning(f'Translation of {snippet.id} not found.')

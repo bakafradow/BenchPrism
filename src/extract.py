@@ -4,7 +4,7 @@ from . import Snippet
 from .utils import extract_field_from, logger
 
 
-def extract_source(dataset: str, src_lang: str) -> Sequence[Snippet]:
+def extract_source(dataset: str, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
   """
   Extracts source code from different datasets into unified data structure.
   :param dataset: dataset name
@@ -19,7 +19,8 @@ def extract_source(dataset: str, src_lang: str) -> Sequence[Snippet]:
       declarations = extract_field_from(dataset, src_lang, 'declaration')
       canonical_solutions = extract_field_from(dataset, src_lang, 'canonical_solution')
       sources = [declaration + '\n' + canonical_solution for declaration, canonical_solution in zip(declarations, canonical_solutions)]
-      return list(map(lambda pair: Snippet(*pair), zip(task_ids, sources)))
+      dst_declarations = extract_field_from(dataset, dst_lang, 'declaration')
+      return list(map(lambda pair: Snippet(*pair), zip(task_ids, sources, dst_declarations)))
     case 'xCodeEval':
       src_uids = extract_field_from(dataset, src_lang, 'src_uid')
       sources = extract_field_from(dataset, src_lang, 'source_code')
