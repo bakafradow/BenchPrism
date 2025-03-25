@@ -93,15 +93,19 @@ def calculate_correctness(dataset: str, snippets: Sequence[Snippet], tests: Sequ
   return correct_count / len(snippets)
 
 
-def load_tests(dataset: str, src_lang: str, dst_lang: str) -> Sequence[str]:
+def load_tests(dataset: str, src_lang: str, dst_lang: str, *, translated: bool = False) -> Sequence[str]:
   match dataset:
     case 'HumanEvalX':
-      tests = extract_field_from(dataset, dst_lang, 'test')
+      tests = extract_field_from(dataset, dst_lang if translated else src_lang, 'test')
     case 'xCodeEval':
       with open('data/xCodeEval/unittest_db.json', 'r') as f:
         unittests = json.load(f)
       uids = extract_field_from(dataset, src_lang, 'src_uid')
       tests = [unittests[uid] for uid in uids]
+      for test in tests:
+        for pair in test:
+          pair['input'] = pair['input'].replace('\r\n', '\n')
+          pair['output'] = [line.replace('\r\n', '\n') for line in pair['output']]
     case 'CodeXGLUE':
       raise NotImplementedError('CodeXGLUE dataset does not provide tests.')
     case _:
@@ -109,7 +113,7 @@ def load_tests(dataset: str, src_lang: str, dst_lang: str) -> Sequence[str]:
   return tests
 
 
-def evaluate(dataset: str, snippets: Sequence[Snippet], mutants: Sequence[Snippet], src_lang: str, dst_lang: str) -> None:
+def evaluate(dataset: str, mutants: Sequence[Snippet], translated_snippets: Sequence[Snippet], translated_mutants: Sequence[Snippet], src_lang: str, dst_lang: str) -> None:
   """
   Evaluates the space spanned by the translated code relative to the original source code
   :param dataset: dataset name
@@ -118,11 +122,14 @@ def evaluate(dataset: str, snippets: Sequence[Snippet], mutants: Sequence[Snippe
   :param src_lang: the source language of the code snippets
   :param dst_lang: the target language of the code snippets
   """
-  logger.info(f'Evaluating {len(snippets)} snippets on {dataset}...')
-  if len(snippets) != len(mutants):
+  logger.info(f'Evaluating {len(translated_snippets)} snippets on {dataset}...')
+  if not len(mutants) == len(translated_snippets) == len(translated_mutants):
     raise ValueError('The number of snippets and mutants should equal.')
-  tests = load_tests(dataset, src_lang, dst_lang)[:len(snippets)]
-  original_correctness = calculate_correctness(dataset, snippets, tests, dst_lang)
-  mutated_correctness = calculate_correctness(dataset, mutants, tests, dst_lang)
-  logger.info(f'Original correctness: {original_correctness}.')
+  src_tests = load_tests(dataset, src_lang, dst_lang)[:len(mutants)]
+  dst_tests = load_tests(dataset, src_lang, dst_lang, translated=True)[:len(mutants)]
+  mutated_correctness = calculate_correctness(dataset, mutants, src_tests, src_lang)
+  translated_correctness = calculate_correctness(dataset, translated_snippets, dst_tests, dst_lang)
+  mutated_translated_correctness = calculate_correctness(dataset, translated_mutants, dst_tests, dst_lang)
   logger.info(f'Mutated correctness: {mutated_correctness}.')
+  logger.info(f'Translated correctness: {translated_correctness}.')
+  logger.info(f'Mutated-translated correctness: {mutated_translated_correctness}.')

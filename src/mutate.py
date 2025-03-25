@@ -26,9 +26,13 @@ class Mutator():
   def apply(self, snippets: Sequence[Snippet]) -> Sequence[Snippet]:
     mutants = [None] * len(snippets)
     for i, snippet in enumerate(snippets):
-      mutant = self.instance.apply(snippet.code)
+      try:
+        mutant = self.instance.apply(snippet.code)
+      except Exception as e:
+        logger.error(f'Error occurred for snippet {snippet.id}:\n{e}')
+        mutant = None
       if not mutant:
-        logger.warning(f'Failed to apply mutation to {snippet.id}.', file=sys.stderr)
+        logger.warning(f'Failed to apply mutation to {snippet.id}.')
         mutants[i] = snippet
       else:
         mutants[i] = snippet._replace(code=str(mutant))
