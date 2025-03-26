@@ -8,6 +8,45 @@ from . import Snippet
 from .utils import extract_field_from, logger
 
 
+class CompilationError(Exception):
+  def __init__(self, message: str, stderr: str = ''):
+    self.stderr = stderr
+    super().__init__(message)
+
+
+def _compile(code: str, lang: str) -> str:
+  """
+  Compiles the code snippet.
+  :param code: the code snippet to be compiled
+  :param lang: the language of the code snippet
+  :return: the path of the compiled executable or the code itself for interpreted languages
+  """
+  match lang:
+    case 'java':
+      class_name = re.search(r'public class (\w+)', code).group(1)
+      with tempfile.TemporaryDirectory() as tmpdir, open(f'{tmpdir}/{class_name}.java', 'w') as f:
+        f.write(code)
+        f.flush()
+        executable = re.sub(r'\.java$', '', f.name)
+        returned = subprocess.run(['javac', f.name], stderr=subprocess.PIPE)
+        if returned.returncode != 0:
+          raise CompilationError(f'Failed to compile {f.name}.', returned.stderr)
+      return executable
+    case 'cpp':
+      with tempfile.NamedTemporaryFile(suffix='.cpp') as f:
+        f.write(code.encode())
+        f.flush()
+        executable = re.sub(r'\.cpp$', '', f.name)
+        returned = subprocess.run(['g++', f.name, '-o', executable], stderr=subprocess.PIPE)
+        if returned.returncode != 0:
+          raise CompilationError(f'Failed to compile {f.name}.', returned.stderr)
+      return executable
+    case 'python':
+      return code
+    case _:
+      raise TypeError(f'Unsupported language: {lang}.')
+
+
 def run_with_assertion(code: str, test: str, lang: str) -> bool:
   """
   Runs the code snippet with the test which asserts the correctness of the code.
@@ -16,25 +55,23 @@ def run_with_assertion(code: str, test: str, lang: str) -> bool:
   :param lang: the language of the code snippet
   :return: whether the code snippet passes the test
   """
-  program = code + test
+  try:
+    executable = _compile(code + test, lang)
+  except CompilationError as err:
+    logger.warning(err)
+    logger.verbose(err.stderr)
+    return False
   match lang:
+    case 'java':
+      args = ['java']
     case 'cpp':
-      # compile the code to a temporary file and run it
-      with tempfile.NamedTemporaryFile(suffix='.cpp') as f:
-        f.write(program.encode())
-        f.flush()
-        executable = re.sub(r'\.cpp$', '', f.name)
-        returned = subprocess.run(['g++', f.name, '-o', executable])
-        if returned.returncode != 0:
-          logger.warning(f'Failed to compile {f.name}.')
-          return False
-      returned = subprocess.run([executable])
-      return returned.returncode == 0
+      args = []
     case 'python':
-      returned = subprocess.run(['python', '-c', program])
-      return returned.returncode == 0
+      args = ['python', '-c']
     case _:
       raise TypeError(f'Unsupported language: {lang}.')
+  returned = subprocess.run(args + [executable])
+  return returned.returncode == 0
 
 
 def run_with_io(code: str, test: list[dict], lang: str) -> bool:
@@ -45,34 +82,33 @@ def run_with_io(code: str, test: list[dict], lang: str) -> bool:
   :param lang: the language of the code snippet
   :return: whether the code snippet passes the test
   """
+  try:
+    executable = _compile(code, lang)
+  except CompilationError as err:
+    logger.warning(err)
+    logger.verbose(err.stderr)
+    return False
   match lang:
+    case 'java':
+      args = ['java']
     case 'cpp':
-      # compile the code to a temporary file and run it
-      with tempfile.NamedTemporaryFile(suffix='.cpp') as f:
-        f.write(code.encode())
-        f.flush()
-        executable = re.sub(r'\.cpp$', '', f.name)
-        returned = subprocess.run(['g++', f.name, '-o', executable])
-        if returned.returncode != 0:
-          logger.warning(f'Failed to compile {f.name}.')
-          return False
-      for pair in test:
-        returned = subprocess.run([executable], input=pair['input'], text=True, capture_output=True)
-        return returned.returncode == 0 and returned.stdout.strip() == pair['output'][0].strip()
+      args = []
     case 'python':
-      for pair in test:
-        returned = subprocess.run(['python', '-c', code], input=pair['input'], text=True, capture_output=True)
-        if returned.returncode != 0 or returned.stdout.strip() != pair['output'][0].strip():
-          logger.warning(f'Failed on input:\n{pair["input"].strip()}\nExpected:\n{pair["output"][0].strip()}\nActual:\n{returned.stdout.strip()}')
-          return False
-      return True
+      args = ['python', '-c']
     case _:
       raise TypeError(f'Unsupported language: {lang}.')
+  for pair in test:
+    returned = subprocess.run(args + [executable], input=pair['input'], text=True, capture_output=True)
+    if returned.returncode != 0 or returned.stdout.strip() != pair['output'][0].strip():
+      logger.verbose(f'Failed on input:\n{pair["input"].strip()}\nExpected:\n{pair["output"][0].strip()}\nActual:\n{returned.stdout.strip()}')
+      return False
+  return True
 
 
 def calculate_correctness(dataset: str, snippets: Sequence[Snippet], tests: Sequence[str], lang: str) -> float:
   """
   Checks the correctness of the translated code with the tests.
+  :param dataset: the dataset name
   :param snippets: the translated code snippets
   :param tests: the tests
   :param lang: the language of the code snippets
@@ -113,12 +149,13 @@ def load_tests(dataset: str, src_lang: str, dst_lang: str, *, translated: bool =
   return tests
 
 
-def evaluate(dataset: str, mutants: Sequence[Snippet], translated_snippets: Sequence[Snippet], translated_mutants: Sequence[Snippet], src_lang: str, dst_lang: str) -> None:
+def evaluate(dataset: str, snippets: Sequence[Snippet], mutants: Sequence[Snippet], translated_snippets: Sequence[Snippet], translated_mutants: Sequence[Snippet], src_lang: str, dst_lang: str) -> None:
   """
   Evaluates the space spanned by the translated code relative to the original source code
   :param dataset: dataset name
-  :param snippets: the translated original code snippets
-  :param mutations: the translated mutated code snippets
+  :param mutants: the original mutated code snippets
+  :param translated_snippets: the translated original code snippets
+  :param translated_mutants: the translated mutated code snippets
   :param src_lang: the source language of the code snippets
   :param dst_lang: the target language of the code snippets
   """
@@ -127,9 +164,11 @@ def evaluate(dataset: str, mutants: Sequence[Snippet], translated_snippets: Sequ
     raise ValueError('The number of snippets and mutants should equal.')
   src_tests = load_tests(dataset, src_lang, dst_lang)[:len(mutants)]
   dst_tests = load_tests(dataset, src_lang, dst_lang, translated=True)[:len(mutants)]
+  original_correctness = calculate_correctness(dataset, snippets, src_tests, src_lang)
   mutated_correctness = calculate_correctness(dataset, mutants, src_tests, src_lang)
   translated_correctness = calculate_correctness(dataset, translated_snippets, dst_tests, dst_lang)
   mutated_translated_correctness = calculate_correctness(dataset, translated_mutants, dst_tests, dst_lang)
+  logger.info(f'Original correctness: {original_correctness}.')
   logger.info(f'Mutated correctness: {mutated_correctness}.')
   logger.info(f'Translated correctness: {translated_correctness}.')
   logger.info(f'Mutated-translated correctness: {mutated_translated_correctness}.')
