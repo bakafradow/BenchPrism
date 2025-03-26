@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -32,11 +33,10 @@ def _compile(code: str, lang: str) -> str:
       with tempfile.TemporaryDirectory() as tmpdir, open(f'{tmpdir}/{class_name}.java', 'w') as f:
         f.write(code)
         f.flush()
-        executable = re.sub(r'\.java$', '', f.name)
-        returned = subprocess.run(['javac', f.name], stderr=subprocess.PIPE)
+        returned = subprocess.run(['javac', '-d', 'target/', f.name], stderr=subprocess.PIPE)
         if returned.returncode != 0:
           raise CompilationError(f'Failed to compile {f.name}.', returned.stderr)
-      return executable
+      return class_name
     case 'cpp':
       with tempfile.NamedTemporaryFile(suffix='.cpp') as f:
         f.write(code.encode())
@@ -68,7 +68,7 @@ def run_with_assertion(code: str, test: str, lang: str) -> bool:
     return False
   match lang:
     case 'java':
-      args = ['java']
+      args = ['java', '-classpath', 'target/']
     case 'cpp':
       args = []
     case 'python':
@@ -96,7 +96,7 @@ def run_with_io(code: str, test: list[dict], lang: str) -> bool:
     return False
   match lang:
     case 'java':
-      args = ['java']
+      args = ['java', '-classpath', 'target/']
     case 'cpp':
       args = []
     case 'python':
@@ -106,10 +106,10 @@ def run_with_io(code: str, test: list[dict], lang: str) -> bool:
   for pair in test:
     returned = subprocess.run(args + [executable], input=pair['input'], text=True, capture_output=True)
     if returned.returncode != 0:
-      logger.verbose(f'Returned {returned.returncode} on input:\n{pair["input"].strip()}\nStandard Error:\n{returned.stderr}')
+      logger.verbose(f'Returned {returned.returncode} on input {pair["input"].strip()}\nStandard Error:\n{returned.stderr}')
       return False
     if returned.stdout.strip() != pair['output'][0].strip():
-      logger.verbose(f'Failed on input:\n{pair["input"].strip()}\nExpected:\n{pair["output"][0].strip()}\nActual:\n{returned.stdout.strip()}')
+      logger.verbose(f'Failed on input {pair["input"].strip()}\nExpected:\n{pair["output"][0]}\nActual:\n{returned.stdout}')
       return False
   return True
 

@@ -8,6 +8,9 @@ logs
 # Python
 __pycache__/
 
+# Generated Java classes
+target/
+
 # Environments
 .env/
 .venv/
