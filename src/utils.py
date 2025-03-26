@@ -11,6 +11,7 @@ from datasets import load_dataset
 
 class ColorFormatter(logging.Formatter):
   COLORS = {
+    'VERBOSE': '\033[38;5;54m',
     'INFO': '\033[38;5;91m',
     'WARNING': '\033[38;5;202m',
     'ERROR': '\033[38;5;161m',
@@ -26,8 +27,22 @@ with open('config/settings.yaml') as f:
   logger_config = yaml.safe_load(f)['logger']
 
 
+VERBOSE_LEVEL = 15
+logging.addLevelName(VERBOSE_LEVEL, 'VERBOSE')
+
+
+def verbose(self, message, *args, **kwargs):
+  if self.isEnabledFor(VERBOSE_LEVEL):
+    self._log(VERBOSE_LEVEL, message, args, **kwargs)
+
+
+logging.Logger.verbose = verbose
+
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+if logger_config['verbose']:
+  logger.setLevel(VERBOSE_LEVEL)
+else:
+  logger.setLevel(logging.INFO)
 
 pattern = '%(asctime)s - %(levelname)s - %(message)s'
 

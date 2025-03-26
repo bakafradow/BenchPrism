@@ -183,7 +183,8 @@ def translate_with_model(translator: Translator, snippets: Sequence[Snippet], sr
     matched = re.search(r'```\w+\n(.+)```', response, re.DOTALL)
     if not matched:
       logger.warning(f'Translation of {snippet.id} not found.')
+      logger.verbose(response)
       continue
-    logger.info(f'Snippet {i}:\n{matched.group(1)}')
+    logger.verbose(f'Snippet {i}:\n{matched.group(1)}')
     translated[i] = snippet._replace(code=matched.group(1))
   return translated

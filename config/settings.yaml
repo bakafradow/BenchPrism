@@ -33,3 +33,4 @@ logger:
   file: logs/assessment/assessment.log
   max_bytes: 5242880 # 5MB
   backup_count: 5
+  verbose: false
