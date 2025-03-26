@@ -75,7 +75,8 @@ def run_with_assertion(code: str, test: str, lang: str) -> bool:
       args = ['python', '-c']
     case _:
       raise TypeError(f'Unsupported language: {lang}.')
-  returned = subprocess.run(args + [executable])
+  returned = subprocess.run(args + [executable], stderr=subprocess.PIPE)
+  logger.verbose(f'Failed assertion:\n{returned.stderr}')
   return returned.returncode == 0
 
 
@@ -104,7 +105,10 @@ def run_with_io(code: str, test: list[dict], lang: str) -> bool:
       raise TypeError(f'Unsupported language: {lang}.')
   for pair in test:
     returned = subprocess.run(args + [executable], input=pair['input'], text=True, capture_output=True)
-    if returned.returncode != 0 or returned.stdout.strip() != pair['output'][0].strip():
+    if returned.returncode != 0:
+      logger.verbose(f'Returned {returned.returncode} on input:\n{pair["input"].strip()}\nStandard Error:\n{returned.stderr}')
+      return False
+    if returned.stdout.strip() != pair['output'][0].strip():
       logger.verbose(f'Failed on input:\n{pair["input"].strip()}\nExpected:\n{pair["output"][0].strip()}\nActual:\n{returned.stdout.strip()}')
       return False
   return True
