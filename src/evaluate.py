@@ -4,6 +4,8 @@ import subprocess
 import tempfile
 from typing import Sequence
 
+from tqdm import tqdm
+
 from . import Snippet
 from .utils import extract_field_from, logger
 
@@ -114,7 +116,7 @@ def calculate_correctness(dataset: str, snippets: Sequence[Snippet], tests: Sequ
   :param lang: the language of the code snippets
   """
   correct_count = 0
-  for snippet, test in zip(snippets, tests):
+  for snippet, test in tqdm(zip(snippets, tests), desc='Evaluating', total=len(snippets), leave=False):
     if not snippet:
       continue
     match dataset:

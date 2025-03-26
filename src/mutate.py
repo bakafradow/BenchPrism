@@ -3,6 +3,7 @@ from typing import Sequence
 
 import jpype as jp
 import yaml
+from tqdm import tqdm
 
 from . import Snippet
 from .utils import logger
@@ -25,7 +26,7 @@ class Mutator():
 
   def apply(self, snippets: Sequence[Snippet]) -> Sequence[Snippet]:
     mutants = [None] * len(snippets)
-    for i, snippet in enumerate(snippets):
+    for i, snippet in tqdm(enumerate(snippets), desc='Mutating', total=len(snippets), leave=False):
       try:
         mutant = self.instance.apply(snippet.code)
       except Exception as e:

@@ -7,6 +7,7 @@ import torch
 import yaml
 from openai import OpenAI
 from requests.exceptions import Timeout
+from tqdm import tqdm
 from transformers import (AutoModel, AutoModelForCausalLM, AutoTokenizer,
                           BitsAndBytesConfig, PreTrainedTokenizer,
                           PreTrainedTokenizerFast)
@@ -175,7 +176,7 @@ def translate_with_model(translator: Translator, snippets: Sequence[Snippet], sr
   logger.info(f'Translating from {src_lang} to {dst_lang}...')
   translated = [None] * len(snippets)
   prompt = _build_prompt(src_lang, dst_lang)
-  for i, snippet in enumerate(snippets):
+  for i, snippet in tqdm(enumerate(snippets), desc='Translating', total=len(snippets), leave=False):
     if translator.name not in LOCAL_MODELS:
       response = _translate_remotely(translator, snippet, prompt)
     else:
