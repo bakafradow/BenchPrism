@@ -11,7 +11,7 @@ from datasets import load_dataset
 
 class ColorFormatter(logging.Formatter):
   COLORS = {
-    'VERBOSE': '\033[38;5;54m',
+    'VERBOSE': '\033[38;5;52m',
     'INFO': '\033[38;5;91m',
     'WARNING': '\033[38;5;202m',
     'ERROR': '\033[38;5;161m',

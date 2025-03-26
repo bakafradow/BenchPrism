@@ -25,7 +25,10 @@ def _compile(code: str, lang: str) -> str:
   """
   match lang:
     case 'java':
-      class_name = re.search(r'public class (\w+)', code).group(1)
+      matched = re.search(r'public\s+(?:final\s+)?class\s+(\w+)', code)
+      if not matched:
+        raise CompilationError('Failed to extract class name from Java code.')
+      class_name = matched.group(1)
       with tempfile.TemporaryDirectory() as tmpdir, open(f'{tmpdir}/{class_name}.java', 'w') as f:
         f.write(code)
         f.flush()
