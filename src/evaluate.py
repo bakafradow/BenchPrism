@@ -1,14 +1,17 @@
 import json
-import os
 import re
 import subprocess
 import tempfile
 from typing import Sequence
 
+import yaml
 from tqdm import tqdm
 
 from . import Snippet
 from .utils import extract_field_from, logger
+
+with open('config/settings.yaml') as f:
+  config = yaml.safe_load(f)['evaluator']
 
 
 class CompilationError(Exception):
@@ -33,7 +36,10 @@ def _compile(code: str, lang: str) -> str:
       with tempfile.TemporaryDirectory() as tmpdir, open(f'{tmpdir}/{class_name}.java', 'w') as f:
         f.write(code)
         f.flush()
-        returned = subprocess.run(['javac', '-d', 'target/', f.name], stderr=subprocess.PIPE)
+        try:
+          returned = subprocess.run(['javac', '-d', config['target_dir'], f.name], stderr=subprocess.PIPE, timeout=config['timeout'])
+        except subprocess.TimeoutExpired:
+          raise CompilationError(f'Compilation of {f.name} timed out.')
         if returned.returncode != 0:
           raise CompilationError(f'Failed to compile {f.name}.', returned.stderr)
       return class_name
@@ -42,7 +48,10 @@ def _compile(code: str, lang: str) -> str:
         f.write(code.encode())
         f.flush()
         executable = re.sub(r'\.cpp$', '', f.name)
-        returned = subprocess.run(['g++', f.name, '-o', executable], stderr=subprocess.PIPE)
+        try:
+          returned = subprocess.run(['g++', f.name, '-o', executable], stderr=subprocess.PIPE, timeout=config['timeout'])
+        except subprocess.TimeoutExpired:
+          raise CompilationError(f'Compilation of {f.name} timed out.')
         if returned.returncode != 0:
           raise CompilationError(f'Failed to compile {f.name}.', returned.stderr)
       return executable
@@ -68,16 +77,22 @@ def run_with_assertion(code: str, test: str, lang: str) -> bool:
     return False
   match lang:
     case 'java':
-      args = ['java', '-classpath', 'target/']
+      args = ['java', '-classpath', config['target_dir']]
     case 'cpp':
       args = []
     case 'python':
       args = ['python', '-c']
     case _:
       raise TypeError(f'Unsupported language: {lang}.')
-  returned = subprocess.run(args + [executable], stderr=subprocess.PIPE)
-  logger.verbose(f'Failed assertion:\n{returned.stderr}')
-  return returned.returncode == 0
+  try:
+    returned = subprocess.run(args + [executable], stderr=subprocess.PIPE, timeout=config['timeout'])
+  except subprocess.TimeoutExpired:
+    logger.verbose(f'Timeout on {executable}.')
+    return False
+  if returned.returncode != 0:
+    logger.verbose(f'Failed assertion:\n{returned.stderr}')
+    return False
+  return True
 
 
 def run_with_io(code: str, test: list[dict], lang: str) -> bool:
@@ -96,7 +111,7 @@ def run_with_io(code: str, test: list[dict], lang: str) -> bool:
     return False
   match lang:
     case 'java':
-      args = ['java', '-classpath', 'target/']
+      args = ['java', '-classpath', config['target_dir']]
     case 'cpp':
       args = []
     case 'python':
@@ -104,7 +119,11 @@ def run_with_io(code: str, test: list[dict], lang: str) -> bool:
     case _:
       raise TypeError(f'Unsupported language: {lang}.')
   for pair in test:
-    returned = subprocess.run(args + [executable], input=pair['input'], text=True, capture_output=True)
+    try:
+      returned = subprocess.run(args + [executable], input=pair['input'], text=True, capture_output=True, timeout=config['timeout'])
+    except subprocess.TimeoutExpired:
+      logger.verbose(f'Timeout on {executable} with input {pair["input"].strip()}.')
+      return False
     if returned.returncode != 0:
       logger.verbose(f'Returned {returned.returncode} on input {pair["input"].strip()}\nStandard Error:\n{returned.stderr}')
       return False

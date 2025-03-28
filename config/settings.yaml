@@ -1,24 +1,10 @@
 mutator:
-  jvmpath: /data1/lzy/libraries/jdk-21.0.6/lib/server/libjvm.so # fill in the path to the libjvm.so (on Linux) or jvm.dll (on Windows)
-  classpath: /data1/lzy/playground/transformer-1.0-SNAPSHOT.jar # fill in the path to the jar package of the transformer
+  jvmpath: /data1/lzy/libraries/jdk-21.0.6/lib/server/libjvm.so # the path to the libjvm.so (on Linux) or jvm.dll (on Windows)
+  classpath: /data1/lzy/playground/egsi-1.0-SNAPSHOT.jar # the path to the jar package of the transformer
   class: org.example.experiment.Mutator
   style_file: /data1/lzy/playground/ref.xml
 
 translator:
-  # below are settings for remote API
-  base_url: # fill in the base URL of the API server
-  api_key: # fill in the API key of OpenAI
-  timeout: 120
-  retry: 3
-  retry_interval: 5
-
-  # below are settings for local models
-  models:
-    deepseek-coder-7b-instruct-v1.5: /data1/model/deepseek/deepseek-ai/deepseek-coder-7b-instruct-v1.5/
-    Qwen2.5-Coder-1.5B-Instruct: /data1/model/qwen/Qwen/Qwen2.5-Coder-1.5B-Instruct/
-    Qwen2.5-Coder-3B-Instruct: /data1/model/qwen/Qwen/Qwen2.5-Coder-3B-Instruct/
-    Qwen2.5-Coder-7B-Instruct: /data1/model/qwen/Qwen/Qwen2.5-Coder-7B-Instruct/
-  max_new_tokens: 1024
   prompts:
     prologue: "<task>
                 Translate code from one language to another without changing functionality.
@@ -29,8 +15,27 @@ translator:
                 3. If the target_declaration is empty, ignore it.
                </constraint>"
 
+  ######### settings for remote API #########
+  base_url: # the base URL of the API server
+  api_key: # the API key of OpenAI
+  timeout: 120
+  retry: 3
+  retry_interval: 5
+
+  ######## settings for local models ########
+  models:
+    deepseek-coder-7b-instruct-v1.5: /data1/model/deepseek/deepseek-ai/deepseek-coder-7b-instruct-v1.5/
+    Qwen2.5-Coder-1.5B-Instruct: /data1/model/qwen/Qwen/Qwen2.5-Coder-1.5B-Instruct/
+    Qwen2.5-Coder-3B-Instruct: /data1/model/qwen/Qwen/Qwen2.5-Coder-3B-Instruct/
+    Qwen2.5-Coder-7B-Instruct: /data1/model/qwen/Qwen/Qwen2.5-Coder-7B-Instruct/
+  max_new_tokens: 1024
+
 logger:
   file: logs/assessment/assessment.log
   max_bytes: 5242880 # 5MB
   backup_count: 5
   verbose: false
+
+evaluator:
+  target_dir: target/ # the path where compiled files are stored
+  timeout: 60 # unit: seconds
