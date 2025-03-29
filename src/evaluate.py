@@ -17,12 +17,12 @@ with open('config/settings.yaml') as f:
 
 
 class CompilationError(Exception):
-  def __init__(self, message: str, stderr: str = ''):
+  def __init__(self, id: int, message: str, stderr: str = ''):
     self.stderr = stderr
-    super().__init__(message)
+    super().__init__(f'{id}: {message}')
 
 
-def _compile(code: str, lang: str) -> str:
+def _compile(snippet: Snippet, lang: str) -> str:
   """
   Compiles the code snippet.
   :param code: the code snippet to be compiled
@@ -31,12 +31,12 @@ def _compile(code: str, lang: str) -> str:
   """
   match lang:
     case 'java':
-      matched = re.search(r'public\s+(?:final\s+)?class\s+(\w+)', code)
+      matched = re.search(r'public\s+(?:final\s+)?class\s+(\w+)', snippet.code)
       if not matched:
         raise CompilationError('Failed to extract class name from Java code.')
       class_name = matched.group(1)
       with tempfile.TemporaryDirectory() as tmpdir, open(f'{tmpdir}/{class_name}.java', 'w') as f:
-        f.write(code)
+        f.write(snippet.code)
         f.flush()
         try:
           returned = subprocess.run(['javac', '-d', config['target_dir'], f.name], stderr=subprocess.PIPE, timeout=config['timeout'])
@@ -47,7 +47,7 @@ def _compile(code: str, lang: str) -> str:
       return class_name
     case 'cpp':
       with tempfile.NamedTemporaryFile(suffix='.cpp') as f:
-        f.write(code.encode())
+        f.write(snippet.code.encode())
         f.flush()
         executable = re.sub(r'\.cpp$', '', f.name)
         try:
@@ -58,12 +58,12 @@ def _compile(code: str, lang: str) -> str:
           raise CompilationError(f'Failed to compile {f.name}.', returned.stderr)
       return executable
     case 'python':
-      return code
+      return snippet.code
     case _:
       raise TypeError(f'Unsupported language: {lang}.')
 
 
-def run_with_assertion(code: str, test: str, lang: str) -> bool:
+def run_with_assertion(snippet: Snippet, test: str, lang: str) -> bool:
   """
   Runs the code snippet with the test which asserts the correctness of the code.
   :param code: the code snippet to be tested WITHOUT main function
@@ -72,7 +72,7 @@ def run_with_assertion(code: str, test: str, lang: str) -> bool:
   :return: whether the code snippet passes the test
   """
   try:
-    executable = _compile(code + test, lang)
+    executable = _compile(snippet._replace(code=snippet.code + test), lang)
   except CompilationError as err:
     logger.warning(err)
     logger.verbose(err.stderr)
@@ -89,15 +89,15 @@ def run_with_assertion(code: str, test: str, lang: str) -> bool:
   try:
     returned = subprocess.run(args + [executable], stderr=subprocess.PIPE, timeout=config['timeout'])
   except subprocess.TimeoutExpired:
-    logger.verbose(f'Timeout on {executable}.')
+    logger.verbose(f'Time out on {snippet.id}.')
     return False
   if returned.returncode != 0:
-    logger.verbose(f'Failed assertion:\n{returned.stderr}')
+    logger.verbose(f'Failed assertion on {snippet.id}:\n{returned.stderr}')
     return False
   return True
 
 
-def run_with_io(code: str, test: list[dict], lang: str) -> bool:
+def run_with_io(snippet: Snippet, test: list[dict], lang: str) -> bool:
   """
   Runs the code snippet with the test which checks the input-output behavior of the code.
   :param code: the code snippet to be tested with main function
@@ -106,7 +106,7 @@ def run_with_io(code: str, test: list[dict], lang: str) -> bool:
   :return: whether the code snippet passes the test
   """
   try:
-    executable = _compile(code, lang)
+    executable = _compile(snippet, lang)
   except CompilationError as err:
     logger.warning(err)
     logger.verbose(err.stderr)
@@ -124,13 +124,13 @@ def run_with_io(code: str, test: list[dict], lang: str) -> bool:
     try:
       returned = subprocess.run(args + [executable], input=pair['input'], text=True, capture_output=True, timeout=config['timeout'])
     except subprocess.TimeoutExpired:
-      logger.verbose(f'Timeout on {executable} with input {pair["input"].strip()}.')
+      logger.verbose(f'Time out on {snippet.id} with input {pair["input"].strip()}.')
       return False
     if returned.returncode != 0:
-      logger.verbose(f'Returned {returned.returncode} on input {pair["input"].strip()}\nStandard Error:\n{returned.stderr}')
+      logger.verbose(f'{snippet.id} returned {returned.returncode} on input {pair["input"].strip()}\nStandard Error:\n{returned.stderr}')
       return False
     if returned.stdout.strip() != pair['output'][0].strip():
-      logger.verbose(f'Failed on input {pair["input"].strip()}\nExpected:\n{pair["output"][0]}\nActual:\n{returned.stdout}')
+      logger.verbose(f'{snippet.id} failed on input {pair["input"].strip()}\nExpected:\n{pair["output"][0]}\nActual:\n{returned.stdout}')
       return False
   return True
 
@@ -148,9 +148,9 @@ def calculate_correctness(dataset: str, snippets: Sequence[Snippet], tests: Sequ
       return False
     match dataset:
       case 'HumanEvalX':
-        return run_with_assertion(snippet.code, test, lang)
+        return run_with_assertion(snippet, test, lang)
       case 'xCodeEval':
-        return run_with_io(snippet.code, test, lang)
+        return run_with_io(snippet, test, lang)
       case _:
         raise TypeError(f'Unsupported dataset: {dataset}.')
   max_workers = min(max(1, config['max_workers']), os.cpu_count())
@@ -189,7 +189,7 @@ def evaluate(dataset: str, snippets: Sequence[Snippet], mutants: Sequence[Snippe
   :param src_lang: the source language of the code snippets
   :param dst_lang: the target language of the code snippets
   """
-  logger.info(f'Evaluating {len(translated_snippets)} snippets on {dataset}...')
+  logger.info(f'Evaluating {len(snippets)} snippets on {dataset}...')
   if not len(mutants) == len(translated_snippets) == len(translated_mutants):
     raise ValueError('The number of snippets and mutants should equal.')
   src_tests = load_tests(dataset, src_lang, dst_lang)[:len(mutants)]
