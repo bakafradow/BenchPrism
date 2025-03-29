@@ -2,8 +2,10 @@ import json
 import re
 import subprocess
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from typing import Sequence
 
+import os
 import yaml
 from tqdm import tqdm
 
@@ -141,20 +143,20 @@ def calculate_correctness(dataset: str, snippets: Sequence[Snippet], tests: Sequ
   :param tests: the tests
   :param lang: the language of the code snippets
   """
-  correct_count = 0
-  for snippet, test in tqdm(zip(snippets, tests), desc='Evaluating', total=len(snippets), leave=False):
+  def worker(snippet: Snippet, test: str) -> bool:
     if not snippet:
-      continue
+      return False
     match dataset:
       case 'HumanEvalX':
-        if run_with_assertion(snippet.code, test, lang):
-          correct_count += 1
+        return run_with_assertion(snippet.code, test, lang)
       case 'xCodeEval':
-        if run_with_io(snippet.code, test, lang):
-          correct_count += 1
+        return run_with_io(snippet.code, test, lang)
       case _:
         raise TypeError(f'Unsupported dataset: {dataset}.')
-  return correct_count / len(snippets)
+  max_workers = min(max(1, config['max_workers']), os.cpu_count())
+  with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    results = list(tqdm(executor.map(worker, snippets, tests), desc='Evaluating', total=len(snippets), leave=False))
+  return sum(results) / len(snippets)
 
 
 def load_tests(dataset: str, src_lang: str, dst_lang: str, *, translated: bool = False) -> Sequence[str]:

@@ -39,3 +39,4 @@ logger:
 evaluator:
   target_dir: target/ # the path where compiled files are stored
   timeout: 60 # unit: seconds
+  max_workers: 8
