@@ -128,6 +128,7 @@ def _translate_remotely(translator: Translator, snippet: Snippet, prompt: Prompt
       logger.error(f'Error occurred for snippet {snippet.id}: {e}...')
       break
   logger.warning(f'Failed to translate snippet {snippet.id} after {retry} attempts.')
+  return ''
 
 
 def _translate_locally(translator: Translator, snippet: Snippet, prompt: PromptPair) -> str:
