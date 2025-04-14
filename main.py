@@ -2,57 +2,11 @@
 Usage: python3 main.py [OPTIONS]...
 """
 
-import argparse
-
 from src.evaluate import evaluate
 from src.extract import extract_source
 from src.mutate import mutate_source
 from src.translate import load_model, translate_with_model
-
-DATASETS: list[str]
-MODEL: str
-SRC_LANG: str
-DST_LANG: str
-GPU: int = -1
-NUM_SNIPPETS: int = -1
-
-
-def parse_args():
-  default_datasets = ['HumanEvalX', 'xCodeEval', 'XLCoST', 'CodeXGLUE', 'G-TransEval']
-  default_src_lang = 'java'
-  default_dst_lang = 'cpp'
-  parser = argparse.ArgumentParser(description='Code translation evaluation tool.'
-                                               'All the datasets are evaluated by default.')
-  parser.add_argument('-d', '--dataset', nargs=1, type=str,
-                      choices=default_datasets,
-                      help='Specify one dataset to evaluate.')
-  parser.add_argument('-m', '--model', type=str,
-                      required=True,
-                      help='Specify the model to use.')
-  parser.add_argument('--src-lang', default=default_src_lang, type=str,
-                      choices=['java', 'cpp'],
-                      help=f'Specify the source language, {default_src_lang} by default.')
-  parser.add_argument('--dst-lang', default=default_dst_lang,type=str,
-                      choices=['c', 'cpp', 'cs', 'go', 'java', 'js', 'kotlin', 'php', 'python', 'ruby', 'rust'],
-                      help=f'Specify the destination language, {default_dst_lang} by default.')
-  parser.add_argument('-i', '--gpu-id', type=int, default=-1,
-                      help='Specify the GPU to use.')
-  parser.add_argument('-n', '--num-snippets', type=int, default=-1,
-                      help='Limit the number of snippets to test.')
-  args = parser.parse_args()
-  global DATASETS, MODEL, SRC_LANG, DST_LANG, GPU, NUM_SNIPPETS
-  DATASETS = args.dataset if args.dataset else default_datasets
-  if args.model:
-    MODEL = args.model
-  if args.src_lang:
-    SRC_LANG = args.src_lang
-  if args.dst_lang:
-    DST_LANG = args.dst_lang
-  if args.gpu_id:
-    GPU = args.gpu_id
-  if args.num_snippets:
-    NUM_SNIPPETS = args.num_snippets
-  return args
+from src.utils import parse_args
 
 
 def main():
@@ -67,16 +21,16 @@ def main():
 
   4. Evaluates the space spanned by the translated code relative to the original source code.
   """
-  parse_args()
-  for dataset in DATASETS:
-    snippets = extract_source(dataset, SRC_LANG, DST_LANG)
-    if NUM_SNIPPETS >= 0:
-      snippets = snippets[:NUM_SNIPPETS]
-    mutants = mutate_source(snippets, SRC_LANG)
-    translator = load_model(MODEL, gpu_id=GPU)
-    translated_snippets = translate_with_model(translator, snippets, SRC_LANG, DST_LANG)
-    translated_mutants = translate_with_model(translator, mutants, SRC_LANG, DST_LANG)
-    evaluate(dataset, snippets, mutants, translated_snippets, translated_mutants, SRC_LANG, DST_LANG)
+  args = parse_args()
+  for dataset in args.datasets:
+    snippets = extract_source(dataset, args.src_lang, args.dst_lang)
+    if args.num_snippets >= 0:
+      snippets = snippets[:args.num_snippets]
+    mutants = mutate_source(snippets, args.src_lang)
+    translator = load_model(args.model, gpu_id=args.gpu_id)
+    translated_snippets = translate_with_model(translator, snippets, args.src_lang, args.dst_lang)
+    translated_mutants = translate_with_model(translator, mutants, args.src_lang, args.dst_lang)
+    evaluate(dataset, snippets, mutants, translated_snippets, translated_mutants, args.src_lang, args.dst_lang)
 
 
 if __name__ == '__main__':

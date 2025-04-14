@@ -1,13 +1,59 @@
+import argparse
 import errno
 import logging
 import os
 import sys
 from logging.handlers import RotatingFileHandler
-from typing import Collection, Sequence
+from typing import Collection, NamedTuple, Sequence
 
 import yaml
 from datasets import load_dataset
 
+### CLI arguments
+
+class Arguments(NamedTuple):
+  datasets: list[str]
+  model: str
+  src_lang: str
+  dst_lang: str
+  gpu_id: int = -1
+  num_snippets: int = -1
+
+
+def parse_args() -> Arguments:
+  default_datasets = ['HumanEvalX', 'xCodeEval', 'XLCoST', 'CodeXGLUE', 'G-TransEval']
+  default_src_lang = 'java'
+  default_dst_lang = 'cpp'
+  parser = argparse.ArgumentParser(description='Code translation evaluation tool.'
+                                               'All the datasets are evaluated by default.')
+  parser.add_argument('-d', '--dataset', nargs=1, type=str,
+                      choices=default_datasets,
+                      help='Specify one dataset to evaluate.')
+  parser.add_argument('-m', '--model', type=str,
+                      required=True,
+                      help='Specify the model to use.')
+  parser.add_argument('--src-lang', default=default_src_lang, type=str,
+                      choices=['java', 'cpp'],
+                      help=f'Specify the source language, {default_src_lang} by default.')
+  parser.add_argument('--dst-lang', default=default_dst_lang,type=str,
+                      choices=['c', 'cpp', 'cs', 'go', 'java', 'js', 'kotlin', 'php', 'python', 'ruby', 'rust'],
+                      help=f'Specify the destination language, {default_dst_lang} by default.')
+  parser.add_argument('-i', '--gpu-id', type=int, default=-1,
+                      help='Specify the GPU to use.')
+  parser.add_argument('-n', '--num-snippets', type=int, default=-1,
+                      help='Limit the number of snippets to test.')
+  args = parser.parse_args()
+  return Arguments(
+    datasets=args.dataset if args.dataset else default_datasets,
+    model=args.model,
+    src_lang=args.src_lang,
+    dst_lang=args.dst_lang,
+    gpu_id=args.gpu_id,
+    num_snippets=args.num_snippets,
+  )
+
+
+### Logging configuration
 
 class ColorFormatter(logging.Formatter):
   COLORS = {
@@ -60,6 +106,8 @@ stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(ColorFormatter(pattern))
 logger.addHandler(stream_handler)
 
+
+### Dataset field extraction
 
 def _check_lang_support(lang: str, supported_langs: Collection[str]):
   if lang not in supported_langs:
