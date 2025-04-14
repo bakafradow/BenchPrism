@@ -1,4 +1,5 @@
 import json
+import jsonlines
 import re
 import subprocess
 import tempfile
@@ -33,7 +34,7 @@ def _compile(snippet: Snippet, lang: str) -> str:
     case 'java':
       matched = re.search(r'public\s+(?:final\s+)?class\s+(\w+)', snippet.code)
       if not matched:
-        raise CompilationError('Failed to extract class name from Java code.')
+        raise CompilationError(snippet.id, 'Failed to extract class name from Java code.')
       class_name = matched.group(1)
       with tempfile.TemporaryDirectory() as tmpdir, open(f'{tmpdir}/{class_name}.java', 'w') as f:
         f.write(snippet.code)
@@ -41,9 +42,9 @@ def _compile(snippet: Snippet, lang: str) -> str:
         try:
           returned = subprocess.run(['javac', '-d', config['target_dir'], f.name], stderr=subprocess.PIPE, timeout=config['timeout'])
         except subprocess.TimeoutExpired:
-          raise CompilationError(f'Compilation of {f.name} timed out.')
+          raise CompilationError(snippet.id, f'Compilation of {f.name} timed out.')
         if returned.returncode != 0:
-          raise CompilationError(f'Failed to compile {f.name}.', returned.stderr)
+          raise CompilationError(snippet.id, f'Failed to compile {f.name}.', returned.stderr)
       return class_name
     case 'cpp':
       with tempfile.NamedTemporaryFile(suffix='.cpp') as f:
@@ -53,9 +54,9 @@ def _compile(snippet: Snippet, lang: str) -> str:
         try:
           returned = subprocess.run(['g++', f.name, '-o', executable], stderr=subprocess.PIPE, timeout=config['timeout'])
         except subprocess.TimeoutExpired:
-          raise CompilationError(f'Compilation of {f.name} timed out.')
+          raise CompilationError(snippet.id, f'Compilation of {f.name} timed out.')
         if returned.returncode != 0:
-          raise CompilationError(f'Failed to compile {f.name}.', returned.stderr)
+          raise CompilationError(snippet.id, f'Failed to compile {f.name}.', returned.stderr)
       return executable
     case 'python':
       return snippet.code
@@ -149,7 +150,7 @@ def calculate_correctness(dataset: str, snippets: Sequence[Snippet], tests: Sequ
     match dataset:
       case 'HumanEvalX':
         return run_with_assertion(snippet, test, lang)
-      case 'xCodeEval':
+      case 'xCodeEval' | 'CodeNet':
         return run_with_io(snippet, test, lang)
       case _:
         raise TypeError(f'Unsupported dataset: {dataset}.')
@@ -172,6 +173,12 @@ def load_tests(dataset: str, src_lang: str, dst_lang: str, *, translated: bool =
         for pair in test:
           pair['input'] = pair['input'].replace('\r\n', '\n')
           pair['output'] = [line.replace('\r\n', '\n') for line in pair['output']]
+    case 'CodeNet':
+      with jsonlines.open('data/CodeNet/codenet_test.jsonl', 'r') as reader:
+        tests_dict = {obj['id']: obj['test'] for obj in reader}
+      with jsonlines.open('data/CodeNet/dataset/codenet/gpt4o_codenet_in_out.jsonl', 'r') as reader:
+        ids = [obj['id'] for obj in reader]
+      tests = [[{'input': pair[0], 'output': [pair[1]]} for pair in tests_dict[id]] for id in ids]
     case 'CodeXGLUE':
       raise NotImplementedError('CodeXGLUE dataset does not provide tests.')
     case _:

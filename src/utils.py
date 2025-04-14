@@ -21,7 +21,7 @@ class Arguments(NamedTuple):
 
 
 def parse_args() -> Arguments:
-  default_datasets = ['HumanEvalX', 'xCodeEval', 'XLCoST', 'CodeXGLUE', 'G-TransEval']
+  default_datasets = ['HumanEvalX', 'xCodeEval', 'XLCoST', 'CodeXGLUE', 'G-TransEval', 'CodeNet']
   default_src_lang = 'java'
   default_dst_lang = 'cpp'
   parser = argparse.ArgumentParser(description='Code translation evaluation tool.'
