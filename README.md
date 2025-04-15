@@ -22,13 +22,13 @@ See `python3 main.py --help`.
 - [x] Pick up datasets for testing
   - humanEvalX
     1. load source code from HF
-    2. mutate code (optional)
+    2. transform code (optional)
     3. translate code by model
     4. generate JSON
     5. run evaluate_humaneval_x.sh (in Docker)
   - xCodeEval
     1. load source code from HF
-    2. mutate code (optional)
+    2. transform code (optional)
     3. translate code by model
     4. HOW DOES IT WORK?
   - XLCoST?
@@ -40,7 +40,7 @@ See `python3 main.py --help`.
 - [x] Mark datasets which have no unit tests
 - [x] Interact with transformer
   - [x] Current project side
-  - [ ] Transformer side
-    - [ ] Rule generation
+  - [x] Transformer side
+    - [ ] Rule shuffle
 - [x] Call code translation models
 - [x] Evaluate correctness of the translation

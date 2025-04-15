@@ -25,31 +25,31 @@ class Mutator():
     jp.shutdownJVM()
 
   def apply(self, snippets: Sequence[Snippet]) -> Sequence[Snippet]:
-    mutants = [None] * len(snippets)
+    variants = [None] * len(snippets)
     for i, snippet in tqdm(enumerate(snippets), desc='Mutating', total=len(snippets), leave=False):
       try:
-        mutant = self.instance.apply(snippet.code)
+        variant = self.instance.apply(snippet.code)
       except Exception as e:
         logger.error(f'Error occurred for snippet {snippet.id}:\n{e}')
-        mutant = None
-      if not mutant:
+        variant = None
+      if not variant:
         logger.warning(f'Failed to apply mutation to {snippet.id}.')
-        mutants[i] = snippet
+        variants[i] = snippet
       else:
-        mutants[i] = snippet._replace(code=str(mutant))
-    return mutants
+        variants[i] = snippet._replace(code=str(variant))
+    return variants
 
 
-def mutate_source(snippets: Sequence[Snippet], src_lang: str) -> Sequence[Snippet]:
+def transform_source(snippets: Sequence[Snippet], src_lang: str) -> Sequence[Snippet]:
   """
-  Applies transformations to the source code and generates mutant sequence.
+  Applies transformations to the source code and generates variant sequence.
   :param snippets: the snippets to be transformed
   :param src_lang: source language
-  :return: the mutant sequence
+  :return: the variant sequence
   """
   logger.info('Applying transformations...')
   style_file = generate_styles(src_lang)
-  # TODO: load existing mutants if available
+  # TODO: load existing variants if available
   # TODO: multi-threading optimization
   mutator = Mutator(src_lang, style_file)
   return mutator.apply(snippets)

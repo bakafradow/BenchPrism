@@ -198,26 +198,29 @@ def load_tests(dataset: str, src_lang: str, dst_lang: str, *, translated: bool =
   return tests
 
 
-def evaluate(dataset: str, snippets: Sequence[Snippet], mutants: Sequence[Snippet], translated_snippets: Sequence[Snippet], translated_mutants: Sequence[Snippet], src_lang: str, dst_lang: str) -> None:
+def evaluate(dataset: str, snippets: Sequence[Snippet], variants: Sequence[Snippet], translated_snippets: Sequence[Snippet], translated_variants: Sequence[Snippet], src_lang: str, dst_lang: str) -> None:
   """
   Evaluates the space spanned by the translated code relative to the original source code
   :param dataset: dataset name
-  :param mutants: the original mutated code snippets
+  :param variants: the original transformed code snippets
   :param translated_snippets: the translated original code snippets
-  :param translated_mutants: the translated mutated code snippets
+  :param translated_variants: the translated transformed code snippets
   :param src_lang: the source language of the code snippets
   :param dst_lang: the target language of the code snippets
   """
   logger.info(f'Evaluating {len(snippets)} snippets on {dataset}...')
-  if not len(mutants) == len(translated_snippets) == len(translated_mutants):
-    raise ValueError('The number of snippets and mutants should equal.')
-  src_tests = load_tests(dataset, src_lang, dst_lang)[:len(mutants)]
-  dst_tests = load_tests(dataset, src_lang, dst_lang, translated=True)[:len(mutants)]
+  if not len(variants) == len(translated_snippets) == len(translated_variants):
+    raise ValueError('The number of snippets and variants should equal.')
+  src_tests = load_tests(dataset, src_lang, dst_lang)[:len(variants)]
+  dst_tests = load_tests(dataset, src_lang, dst_lang, translated=True)[:len(variants)]
   original_correctness = calculate_correctness(dataset, snippets, src_tests, src_lang)
-  mutated_correctness = calculate_correctness(dataset, mutants, src_tests, src_lang)
+  transformed_correctness = calculate_correctness(dataset, variants, src_tests, src_lang)
   translated_correctness = calculate_correctness(dataset, translated_snippets, dst_tests, dst_lang)
-  mutated_translated_correctness = calculate_correctness(dataset, translated_mutants, dst_tests, dst_lang)
-  logger.info(f'Original correctness: {original_correctness}.')
-  logger.info(f'Transformed correctness: {mutated_correctness}.')
-  logger.info(f'Translated correctness: {translated_correctness}.')
-  logger.info(f'Transformed-translated correctness: {mutated_translated_correctness}.')
+  transformed_translated_correctness = calculate_correctness(dataset, translated_variants, dst_tests, dst_lang)
+  logger.info(f'\n'
+              '========  Correctness  ========\n'
+              f'Originals             : {original_correctness * 100:>6.2f}%\n'
+              f'Variants              : {transformed_correctness * 100:>6.2f}%\n'
+              f'Translated Originals  : {translated_correctness * 100:>6.2f}%\n'
+              f'Translated Variants   : {transformed_translated_correctness * 100:>6.2f}%\n'
+              f'===============================')
