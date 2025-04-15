@@ -40,7 +40,7 @@ def _compile(snippet: Snippet, lang: str) -> str:
         f.write(snippet.code)
         f.flush()
         try:
-          returned = subprocess.run(['javac', '-d', config['target_dir'], f.name], stderr=subprocess.PIPE, timeout=config['timeout'])
+          returned = subprocess.run(['javac', '-d', config['target_dir'], f.name], stderr=subprocess.PIPE, encoding='utf-8', timeout=config['timeout'])
         except subprocess.TimeoutExpired:
           raise CompilationError(snippet.id, f'Compilation of {f.name} timed out.')
         if returned.returncode != 0:
@@ -52,7 +52,7 @@ def _compile(snippet: Snippet, lang: str) -> str:
         f.flush()
         executable = re.sub(r'\.cpp$', '', f.name)
         try:
-          returned = subprocess.run(['g++', f.name, '-o', executable], stderr=subprocess.PIPE, timeout=config['timeout'])
+          returned = subprocess.run(['g++', f.name, '-o', executable], stderr=subprocess.PIPE, encoding='utf-8', timeout=config['timeout'])
         except subprocess.TimeoutExpired:
           raise CompilationError(snippet.id, f'Compilation of {f.name} timed out.')
         if returned.returncode != 0:
@@ -88,9 +88,15 @@ def run_with_assertion(snippet: Snippet, test: str, lang: str) -> bool:
     case _:
       raise TypeError(f'Unsupported language: {lang}.')
   try:
-    returned = subprocess.run(args + [executable], stderr=subprocess.PIPE, timeout=config['timeout'])
+    returned = subprocess.run(args + [executable], stderr=subprocess.PIPE, encoding='utf-8', timeout=config['timeout'])
+  except KeyboardInterrupt:
+    logger.warning('Keyboard interrupt.')
+    raise
   except subprocess.TimeoutExpired:
     logger.verbose(f'Time out on {snippet.id}.')
+    return False
+  except Exception as e:
+    logger.verbose(f'Error on {snippet.id}: {e}')
     return False
   if returned.returncode != 0:
     logger.verbose(f'Failed assertion on {snippet.id}:\n{returned.stderr}')
@@ -123,9 +129,15 @@ def run_with_io(snippet: Snippet, test: list[dict], lang: str) -> bool:
       raise TypeError(f'Unsupported language: {lang}.')
   for pair in test:
     try:
-      returned = subprocess.run(args + [executable], input=pair['input'], text=True, capture_output=True, timeout=config['timeout'])
+      returned = subprocess.run(args + [executable], input=pair['input'], text=True, capture_output=True, encoding='utf-8', timeout=config['timeout'])
+    except KeyboardInterrupt:
+      logger.warning('Keyboard interrupt.')
+      raise
     except subprocess.TimeoutExpired:
       logger.verbose(f'Time out on {snippet.id} with input {pair["input"].strip()}.')
+      return False
+    except Exception as e:
+      logger.verbose(f'Error on {snippet.id} with input {pair["input"].strip()}: {e}')
       return False
     if returned.returncode != 0:
       logger.verbose(f'{snippet.id} returned {returned.returncode} on input {pair["input"].strip()}\nStandard Error:\n{returned.stderr}')
@@ -206,6 +218,6 @@ def evaluate(dataset: str, snippets: Sequence[Snippet], mutants: Sequence[Snippe
   translated_correctness = calculate_correctness(dataset, translated_snippets, dst_tests, dst_lang)
   mutated_translated_correctness = calculate_correctness(dataset, translated_mutants, dst_tests, dst_lang)
   logger.info(f'Original correctness: {original_correctness}.')
-  logger.info(f'Mutated correctness: {mutated_correctness}.')
+  logger.info(f'Transformed correctness: {mutated_correctness}.')
   logger.info(f'Translated correctness: {translated_correctness}.')
-  logger.info(f'Mutated-translated correctness: {mutated_translated_correctness}.')
+  logger.info(f'Transformed-translated correctness: {mutated_translated_correctness}.')
