@@ -1,3 +1,4 @@
+from pprint import pformat
 from typing import Sequence
 
 import jsonlines
@@ -5,7 +6,7 @@ import jsonlines
 from src import Snippet
 from src.evaluate import evaluate
 from src.translate import load_model, translate_with_model
-from src.utils import parse_args
+from src.utils import average_codebleu_score, logger, parse_args
 
 
 def _load_snippets(path: str) -> Sequence[Snippet]:
@@ -29,11 +30,13 @@ def _load_variants(path: str, snippets: Sequence[Snippet]) -> Sequence[Snippet]:
 def main():
   args = parse_args()
   for dataset in args.datasets:
-    snippets = _load_snippets('data/CodeNet/dataset/codenet/gpt4o_codenet_in_out.jsonl')
-    variants = _load_variants('data/CodeNet/result/codenet_claude35sonnet.jsonl', snippets)
+    snippets = _load_snippets('data/CodeNet/dataset/codenet/wizardcoder_codenet_in_out.jsonl')
+    variants = _load_variants('data/CodeNet/result/codenet_codebuff.jsonl', snippets)
     if args.num_snippets >= 0:
       snippets = snippets[:args.num_snippets]
       variants = variants[:args.num_snippets]
+    similarity = average_codebleu_score(snippets, variants, args.src_lang)
+    logger.info(f'Average code similarity:\n{pformat(similarity)}')
     translator = load_model(args.model, gpu_id=args.gpu_id)
     translated_snippets = translate_with_model(translator, snippets, args.src_lang, args.dst_lang)
     translated_variants = translate_with_model(translator, variants, args.src_lang, args.dst_lang)

@@ -7,7 +7,10 @@ from logging.handlers import RotatingFileHandler
 from typing import Collection, NamedTuple, Sequence
 
 import yaml
+from codebleu import calc_codebleu
 from datasets import load_dataset
+
+from . import Snippet
 
 ### CLI arguments
 
@@ -107,7 +110,7 @@ stream_handler.setFormatter(ColorFormatter(pattern))
 logger.addHandler(stream_handler)
 
 
-### Dataset field extraction
+### Dataset
 
 def _check_lang_support(lang: str, supported_langs: Collection[str]):
   if lang not in supported_langs:
@@ -170,3 +173,24 @@ def extract_field_from(dataset: str, lang: str, column: str) -> Sequence[str]:
       return ds['train'][column]
     case _:
       raise TypeError(f'Unknown dataset: {dataset}.')
+
+
+### Code similarity
+
+def average_codebleu_score(src: Sequence[Snippet], dst: Sequence[Snippet], lang: str) -> dict:
+  """
+  Calculate the average CodeBLEU score for the variants code.
+  :param src: the source code snippets
+  :param dst: the translated code snippets
+  :param lang: the language of the code snippets
+  :return: the average CodeBLEU score for each pair of snippets
+  """
+  if len(src) != len(dst):
+    raise ValueError('The size of 2 snippet sequences should equal.')
+  match lang:
+    case 'java' | 'cpp' | 'python':
+      pass  # do nothing
+    case _:
+      raise TypeError(f'Unsupported language: {lang}.')
+  return calc_codebleu([snippet.code for snippet in src], [snippet.code for snippet in dst],
+                       lang, weights=(.25, .25, .25, .25), tokenizer=None)

@@ -26,14 +26,14 @@ class Mutator():
 
   def apply(self, snippets: Sequence[Snippet]) -> Sequence[Snippet]:
     variants = [None] * len(snippets)
-    for i, snippet in tqdm(enumerate(snippets), desc='Mutating', total=len(snippets), leave=False):
+    for i, snippet in tqdm(enumerate(snippets), desc='Transforming', total=len(snippets), leave=False):
       try:
         variant = self.instance.apply(snippet.code)
       except Exception as e:
         logger.error(f'Error occurred for snippet {snippet.id}:\n{e}')
         variant = None
       if not variant:
-        logger.warning(f'Failed to apply mutation to {snippet.id}.')
+        logger.warning(f'Failed to transform to {snippet.id}.')
         variants[i] = snippet
       else:
         variants[i] = snippet._replace(code=str(variant))
