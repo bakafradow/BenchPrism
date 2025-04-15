@@ -1,6 +1,8 @@
+import os
 import re
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import NamedTuple, Sequence
 
 import torch
@@ -175,9 +177,8 @@ def translate_with_model(translator: Translator, snippets: Sequence[Snippet], sr
   :return: a sequence of translated code
   """
   logger.info(f'Translating from {src_lang} to {dst_lang}...')
-  translated = [None] * len(snippets)
   prompt = _build_prompt(src_lang, dst_lang)
-  for i, snippet in tqdm(enumerate(snippets), desc='Translating', total=len(snippets), leave=False):
+  def worker(i: int, snippet: Snippet) -> Snippet | None:
     if translator.name not in LOCAL_MODELS:
       response = _translate_remotely(translator, snippet, prompt)
     else:
@@ -186,7 +187,9 @@ def translate_with_model(translator: Translator, snippets: Sequence[Snippet], sr
     if not matched:
       logger.warning(f'Translation of {snippet.id} not found.')
       logger.verbose(response)
-      continue
+      return None
     logger.verbose(f'Snippet {i}:\n{matched.group(1)}')
-    translated[i] = snippet._replace(code=matched.group(1))
-  return translated
+    return snippet._replace(code=matched.group(1))
+  max_workers = min(max(1, config['max_workers']), os.cpu_count()) if translator.name not in LOCAL_MODELS else 1
+  with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    return list(tqdm(executor.map(worker, range(len(snippets)), snippets), desc='Translating', total=len(snippets), leave=False))
