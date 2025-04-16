@@ -14,16 +14,14 @@ def _load_snippets(path: str) -> Sequence[Snippet]:
     return [Snippet(snippet['id'], snippet['code']) for snippet in reader]
 
 
-def _load_variants(path: str, snippets: Sequence[Snippet]) -> Sequence[Snippet]:
+def _load_variants(path: str, snippets: Sequence[Snippet], generator: str) -> Sequence[Snippet]:
   with jsonlines.open(path) as reader:
-    objects = [obj for obj in reader]
+    objects = [obj for obj in reader if obj['src']['author_name'] == generator]
   variants = [None] * len(snippets)
   for i, snippet in enumerate(snippets):
     target = next((obj for obj in objects if obj['src']['problem_id'] == snippet.id), None)
     if target:
       variants[i] = Snippet(snippet.id, target['result']['file_name'])
-    else:
-      variants[i] = Snippet(snippet.id, snippet.code)
   return variants
 
 
@@ -34,7 +32,9 @@ def main():
   transformer = 'deepseekcoder'
   logger.info(f'Evaluating {dataset} from {generator} to {transformer}...')
   snippets = _load_snippets(f'data/CodeNet/dataset/codenet/{generator}_codenet_in_out.jsonl')
-  variants = _load_variants(f'data/CodeNet/result/codenet_{transformer}.jsonl', snippets)
+  variants = _load_variants(f'data/CodeNet/result/codenet_{transformer}.jsonl', snippets, generator)
+  snippets = [snippet for snippet, variant in zip(snippets, variants) if variant is not None]
+  variants = [variant for variant in variants if variant is not None]
   if args.num_snippets >= 0:
     snippets = snippets[:args.num_snippets]
     variants = variants[:args.num_snippets]

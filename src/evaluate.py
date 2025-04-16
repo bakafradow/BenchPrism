@@ -181,15 +181,14 @@ def calculate_correctness(dataset: str, snippets: Sequence[Snippet], tests: Sequ
   return sum(results) / len(snippets)
 
 
-def load_tests(dataset: str, src_lang: str, dst_lang: str, *, translated: bool = False) -> Sequence[Sequence[dict]]:
+def load_tests(dataset: str, src_lang: str, dst_lang: str, ids: Sequence[str], *, translated: bool = False) -> Sequence[Sequence[dict]]:
   match dataset:
     case 'HumanEvalX':
       tests = extract_field_from(dataset, dst_lang if translated else src_lang, 'test')
     case 'xCodeEval':
       with open('data/xCodeEval/unittest_db.json', 'r') as f:
         unittests = json.load(f)
-      uids = extract_field_from(dataset, src_lang, 'src_uid')
-      tests = [unittests[uid] for uid in uids]
+      tests = [unittests[uid] for uid in ids]
       for test in tests:
         for pair in test:
           pair['input'] = pair['input'].replace('\r\n', '\n')
@@ -197,9 +196,7 @@ def load_tests(dataset: str, src_lang: str, dst_lang: str, *, translated: bool =
     case 'CodeNet':
       with jsonlines.open('data/CodeNet/codenet_test.jsonl', 'r') as reader:
         tests_dict = {obj['id']: obj['test'] for obj in reader}
-      with jsonlines.open('data/CodeNet/dataset/codenet/gpt4o_codenet_in_out.jsonl', 'r') as reader:
-        ids = [obj['id'] for obj in reader]
-      tests = [[{'input': pair[0], 'output': [pair[1]]} for pair in tests_dict[id]] for id in ids]
+      tests = [[{'input': pair[0], 'output': [pair[1]]} for pair in tests_dict[id_]] for id_ in ids]
     case 'CodeXGLUE':
       raise NotImplementedError('CodeXGLUE dataset does not provide tests.')
     case _:
@@ -220,8 +217,9 @@ def evaluate(dataset: str, snippets: Sequence[Snippet], variants: Sequence[Snipp
   logger.info(f'Evaluating {len(snippets)} snippets on {dataset}...')
   if not len(variants) == len(translated_snippets) == len(translated_variants):
     raise ValueError('The number of snippets and variants should equal.')
-  src_tests = load_tests(dataset, src_lang, dst_lang)[:len(variants)]
-  dst_tests = load_tests(dataset, src_lang, dst_lang, translated=True)[:len(variants)]
+  ids = tuple(snippet.id for snippet in snippets)
+  src_tests = load_tests(dataset, src_lang, dst_lang, ids)[:len(variants)]
+  dst_tests = load_tests(dataset, src_lang, dst_lang, ids, translated=True)[:len(variants)]
   logger.info('Testing originals.')
   original_correctness = calculate_correctness(dataset, snippets, src_tests, src_lang)
   logger.info('Testing variants.')
