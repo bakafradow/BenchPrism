@@ -35,6 +35,8 @@ def _compile(snippet: Snippet, lang: str) -> str:
     case 'java':
       matched = re.search(r'public\s+(?:final\s+)?class\s+(\w+)', snippet.code)
       if not matched:
+        matched = re.search(r'(?:final\s+)?class\s+(Main|Solution)', snippet.code)
+      if not matched:
         raise CompilationError(snippet.id, 'Failed to extract class name from Java code.', f'Generated code:\n{snippet.code}')
       classname = matched.group(1)
       with tempfile.TemporaryDirectory() as tmpdir, open(f'{tmpdir}/{classname}.java', 'w') as f:
@@ -67,7 +69,7 @@ def _compile(snippet: Snippet, lang: str) -> str:
       raise TypeError(f'Unsupported language: {lang}.')
 
 
-def run_with_assertion(snippet: Snippet, test: str, lang: str) -> bool:
+def run_with_assertion(snippet: Snippet, test: Sequence[dict], lang: str) -> bool:
   """
   Runs the code snippet with the test which asserts the correctness of the code.
   :param code: the code snippet to be tested WITHOUT main function
@@ -109,7 +111,7 @@ def run_with_assertion(snippet: Snippet, test: str, lang: str) -> bool:
   return True
 
 
-def run_with_io(snippet: Snippet, test: list[dict], lang: str) -> bool:
+def run_with_io(snippet: Snippet, test: Sequence[dict], lang: str) -> bool:
   """
   Runs the code snippet with the test which checks the input-output behavior of the code.
   :param code: the code snippet to be tested with main function
@@ -155,7 +157,7 @@ def run_with_io(snippet: Snippet, test: list[dict], lang: str) -> bool:
   return True
 
 
-def calculate_correctness(dataset: str, snippets: Sequence[Snippet], tests: Sequence[str], lang: str) -> float:
+def calculate_correctness(dataset: str, snippets: Sequence[Snippet], tests: Sequence[Sequence[dict]], lang: str) -> float:
   """
   Checks the correctness of the translated code with the tests.
   :param dataset: the dataset name
@@ -163,7 +165,7 @@ def calculate_correctness(dataset: str, snippets: Sequence[Snippet], tests: Sequ
   :param tests: the tests
   :param lang: the language of the code snippets
   """
-  def worker(snippet: Snippet, test: list[dict]) -> bool:
+  def worker(snippet: Snippet, test: Sequence[dict]) -> bool:
     if not snippet:
       return False
     match dataset:
@@ -179,7 +181,7 @@ def calculate_correctness(dataset: str, snippets: Sequence[Snippet], tests: Sequ
   return sum(results) / len(snippets)
 
 
-def load_tests(dataset: str, src_lang: str, dst_lang: str, *, translated: bool = False) -> Sequence[str]:
+def load_tests(dataset: str, src_lang: str, dst_lang: str, *, translated: bool = False) -> Sequence[Sequence[dict]]:
   match dataset:
     case 'HumanEvalX':
       tests = extract_field_from(dataset, dst_lang if translated else src_lang, 'test')

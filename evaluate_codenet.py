@@ -29,18 +29,21 @@ def _load_variants(path: str, snippets: Sequence[Snippet]) -> Sequence[Snippet]:
 
 def main():
   args = parse_args()
-  for dataset in args.datasets:
-    snippets = _load_snippets('data/CodeNet/dataset/codenet/wizardcoder_codenet_in_out.jsonl')
-    variants = _load_variants('data/CodeNet/result/codenet_codebuff.jsonl', snippets)
-    if args.num_snippets >= 0:
-      snippets = snippets[:args.num_snippets]
-      variants = variants[:args.num_snippets]
-    similarity = average_codebleu_score(snippets, variants, args.src_lang)
-    logger.info(f'Average code similarity:\n{pformat(similarity)}')
-    translator = load_model(args.model, gpu_id=args.gpu_id)
-    translated_snippets = translate_with_model(translator, snippets, args.src_lang, args.dst_lang)
-    translated_variants = translate_with_model(translator, variants, args.src_lang, args.dst_lang)
-    evaluate(dataset, snippets, variants, translated_snippets, translated_variants, args.src_lang, args.dst_lang)
+  dataset = 'CodeNet'
+  generator = 'claude35sonnet'
+  transformer = 'deepseekcoder'
+  logger.info(f'Evaluating {dataset} from {generator} to {transformer}...')
+  snippets = _load_snippets(f'data/CodeNet/dataset/codenet/{generator}_codenet_in_out.jsonl')
+  variants = _load_variants(f'data/CodeNet/result/codenet_{transformer}.jsonl', snippets)
+  if args.num_snippets >= 0:
+    snippets = snippets[:args.num_snippets]
+    variants = variants[:args.num_snippets]
+  similarity = average_codebleu_score(snippets, variants, args.src_lang)
+  logger.info(f'Average code similarity:\n{pformat(similarity)}')
+  translator = load_model(args.model, gpu_id=args.gpu_id)
+  translated_snippets = translate_with_model(translator, snippets, args.src_lang, args.dst_lang)
+  translated_variants = translate_with_model(translator, variants, args.src_lang, args.dst_lang)
+  evaluate(dataset, snippets, variants, translated_snippets, translated_variants, args.src_lang, args.dst_lang)
 
 
 if __name__ == '__main__':

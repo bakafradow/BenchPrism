@@ -61,5 +61,5 @@ def generate_styles(src_lang: str) -> str:
   :param src_lang: source language
   :return: the path to the rules file
   """
-  # TODO: generate a style file in XML based on rules.yaml
+  # TODO: generate style file with random rules for each snippet
   return config['style_file']
