@@ -6,6 +6,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from typing import Sequence
 
+import base64
 import os
 import yaml
 from tqdm import tqdm
@@ -34,18 +35,20 @@ def _compile(snippet: Snippet, lang: str) -> str:
     case 'java':
       matched = re.search(r'public\s+(?:final\s+)?class\s+(\w+)', snippet.code)
       if not matched:
-        raise CompilationError(snippet.id, 'Failed to extract class name from Java code.')
-      class_name = matched.group(1)
-      with tempfile.TemporaryDirectory() as tmpdir, open(f'{tmpdir}/{class_name}.java', 'w') as f:
+        raise CompilationError(snippet.id, 'Failed to extract class name from Java code.', f'Generated code:\n{snippet.code}')
+      classname = matched.group(1)
+      with tempfile.TemporaryDirectory() as tmpdir, open(f'{tmpdir}/{classname}.java', 'w') as f:
         f.write(snippet.code)
         f.flush()
+        os.makedirs(config['target_dir'], exist_ok=True)
+        classdir = tempfile.mkdtemp(dir=config['target_dir'])
         try:
-          returned = subprocess.run(['javac', '-d', config['target_dir'], f.name], stderr=subprocess.PIPE, encoding='utf-8', timeout=config['timeout'])
+          returned = subprocess.run(['javac', '-d', classdir, f.name], stderr=subprocess.PIPE, encoding='utf-8', timeout=config['timeout'])
         except subprocess.TimeoutExpired:
           raise CompilationError(snippet.id, f'Compilation of {f.name} timed out.')
         if returned.returncode != 0:
           raise CompilationError(snippet.id, f'Failed to compile {f.name}.', returned.stderr)
-      return class_name
+      return os.path.join(os.path.basename(classdir), classname)
     case 'cpp':
       with tempfile.NamedTemporaryFile(suffix='.cpp') as f:
         f.write(snippet.code.encode())
@@ -80,7 +83,9 @@ def run_with_assertion(snippet: Snippet, test: str, lang: str) -> bool:
     return False
   match lang:
     case 'java':
-      args = ['java', '-classpath', config['target_dir']]
+      parent, classname = os.path.split(executable)
+      args = ['java', '-classpath', f'{os.path.join(config["target_dir"], parent)}']
+      executable = classname
     case 'cpp':
       args = []
     case 'python':
@@ -120,7 +125,9 @@ def run_with_io(snippet: Snippet, test: list[dict], lang: str) -> bool:
     return False
   match lang:
     case 'java':
-      args = ['java', '-classpath', config['target_dir']]
+      parent, classname = os.path.split(executable)
+      args = ['java', '-classpath', f'{os.path.join(config["target_dir"], parent)}']
+      executable = classname
     case 'cpp':
       args = []
     case 'python':
@@ -156,7 +163,7 @@ def calculate_correctness(dataset: str, snippets: Sequence[Snippet], tests: Sequ
   :param tests: the tests
   :param lang: the language of the code snippets
   """
-  def worker(snippet: Snippet, test: str) -> bool:
+  def worker(snippet: Snippet, test: list[dict]) -> bool:
     if not snippet:
       return False
     match dataset:
@@ -213,9 +220,13 @@ def evaluate(dataset: str, snippets: Sequence[Snippet], variants: Sequence[Snipp
     raise ValueError('The number of snippets and variants should equal.')
   src_tests = load_tests(dataset, src_lang, dst_lang)[:len(variants)]
   dst_tests = load_tests(dataset, src_lang, dst_lang, translated=True)[:len(variants)]
+  logger.info('Testing originals.')
   original_correctness = calculate_correctness(dataset, snippets, src_tests, src_lang)
+  logger.info('Testing variants.')
   transformed_correctness = calculate_correctness(dataset, variants, src_tests, src_lang)
+  logger.info('Testing transformed originals.')
   translated_correctness = calculate_correctness(dataset, translated_snippets, dst_tests, dst_lang)
+  logger.info('Testing transformed variants.')
   transformed_translated_correctness = calculate_correctness(dataset, translated_variants, dst_tests, dst_lang)
   logger.info(f'\n'
               '========  Correctness  ========\n'
