@@ -2,7 +2,10 @@
 Usage: python3 main.py [OPTIONS]...
 """
 
+from dotenv import load_dotenv
 from pprint import pformat
+
+load_dotenv()
 
 from src.evaluate import evaluate
 from src.extract import extract_source

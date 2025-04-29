@@ -6,7 +6,6 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from typing import Sequence
 
-import base64
 import os
 import yaml
 from tqdm import tqdm
@@ -14,8 +13,9 @@ from tqdm import tqdm
 from . import Snippet
 from .utils import extract_field_from, logger
 
-with open('config/settings.yaml') as f:
+with open('settings.yml') as f:
   config = yaml.safe_load(f)['evaluator']
+TARGET_DIR = config['target_dir']
 
 
 class CompilationError(Exception):
@@ -42,8 +42,8 @@ def _compile(snippet: Snippet, lang: str) -> str:
       with tempfile.TemporaryDirectory() as tmpdir, open(f'{tmpdir}/{classname}.java', 'w') as f:
         f.write(snippet.code)
         f.flush()
-        os.makedirs(config['target_dir'], exist_ok=True)
-        classdir = tempfile.mkdtemp(dir=config['target_dir'])
+        os.makedirs(TARGET_DIR, exist_ok=True)
+        classdir = tempfile.mkdtemp(dir=TARGET_DIR)
         try:
           returned = subprocess.run(['javac', '-d', classdir, f.name], stderr=subprocess.PIPE, encoding='utf-8', timeout=config['timeout'])
         except subprocess.TimeoutExpired:
@@ -86,7 +86,7 @@ def run_with_assertion(snippet: Snippet, test: Sequence[dict], lang: str) -> boo
   match lang:
     case 'java':
       parent, classname = os.path.split(executable)
-      args = ['java', '-classpath', f'{os.path.join(config["target_dir"], parent)}']
+      args = ['java', '-classpath', f'{os.path.join(TARGET_DIR, parent)}']
       executable = classname
     case 'cpp':
       args = []
@@ -128,7 +128,7 @@ def run_with_io(snippet: Snippet, test: Sequence[dict], lang: str) -> bool:
   match lang:
     case 'java':
       parent, classname = os.path.split(executable)
-      args = ['java', '-classpath', f'{os.path.join(config["target_dir"], parent)}']
+      args = ['java', '-classpath', f'{os.path.join(TARGET_DIR, parent)}']
       executable = classname
     case 'cpp':
       args = []

@@ -19,7 +19,7 @@ from .utils import logger
 
 LOCAL_MODELS = ['deepseek-coder-7b-instruct-v1.5', 'Qwen2.5-Coder-1.5B-Instruct', 'Qwen2.5-Coder-3B-Instruct', 'Qwen2.5-Coder-7B-Instruct', 'codegeex2-6b']
 
-with open('config/settings.yaml') as f:
+with open('settings.yml') as f:
   config = yaml.safe_load(f)['translator']
 
 
@@ -62,7 +62,7 @@ def load_model(model_name: str, *, gpu_id: int = -1) -> Translator:
   logger.info(f'Loading model {model_name}...')
 
   if model_name not in LOCAL_MODELS:
-    client = OpenAI(base_url=config['base_url'], api_key=config['api_key'])
+    client = OpenAI(base_url=os.getenv('BASE_URL'), api_key=os.getenv('API_KEY'))
     if model_name not in {model.id for model in client.models.list()}:
       raise ValueError(f'{model_name} is not available.')
     return Translator(model_name, client)
@@ -79,15 +79,19 @@ def load_model(model_name: str, *, gpu_id: int = -1) -> Translator:
   }
 
   match model_name:
-    case 'deepseek-coder-7b-instruct-v1.5' | 'Qwen2.5-Coder-1.5B-Instruct' | 'Qwen2.5-Coder-3B-Instruct' | 'Qwen2.5-Coder-7B-Instruct':
-      tokenizer = AutoTokenizer.from_pretrained(config['models'][model_name], trust_remote_code=True)
-      model = AutoModelForCausalLM.from_pretrained(config['models'][model_name], **model_args)
     case 'codegeex2-6b':
       tokenizer = AutoTokenizer.from_pretrained(f'THUDM/{model_name}', trust_remote_code=True)
       model = AutoModel.from_pretrained(f'THUDM/{model_name}', trust_remote_code=True, torch_dtype=torch.float16, device=f'cuda:{gpu_id}')
       model = model.eval()
     case _:
-      raise TypeError(f'{model_name} is unsupported yet.')
+      if 'deepseek-coder' in model_name.lower():
+        path = f'{os.getenv("DEEPSEEKCODER_PATH")}/{model_name}'
+      elif 'qwen' in model_name.lower():
+        path = f'{os.getenv("QWEN_PATH")}/{model_name}'
+      else:
+        raise TypeError(f'{model_name} not found.')
+      tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
+      model = AutoModelForCausalLM.from_pretrained(path, **model_args)
 
   if tokenizer.pad_token_id is None:
     tokenizer.pad_token = tokenizer.eos_token

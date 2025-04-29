@@ -1,5 +1,4 @@
 import argparse
-import re
 from itertools import groupby
 from operator import itemgetter
 from pprint import pformat
@@ -7,6 +6,9 @@ from random import sample
 from typing import NamedTuple, Sequence
 
 import jsonlines
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from src import Snippet
 from src.evaluate import evaluate

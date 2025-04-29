@@ -72,7 +72,7 @@ class ColorFormatter(logging.Formatter):
     return f'{self.COLORS[record.levelname]}{super().format(record)}{self.COLORS["ENDC"]}'
 
 
-with open('config/settings.yaml') as f:
+with open('settings.yml') as f:
   logger_config = yaml.safe_load(f)['logger']
 
 
@@ -95,13 +95,14 @@ else:
 
 pattern = '%(asctime)s - %(levelname)s - %(message)s'
 
-if not os.path.exists(os.path.dirname(logger_config['file'])):
+log_path = os.getenv('LOG_FILE')
+if not os.path.exists(os.path.dirname(log_path)):
   try:
-    os.makedirs(os.path.dirname(logger_config['file']))
+    os.makedirs(os.path.dirname(log_path))
   except OSError as e:
     if e.errno != errno.EEXIST:
       raise
-file_handler = RotatingFileHandler(logger_config['file'], mode='a', maxBytes=logger_config['max_bytes'], backupCount=logger_config['backup_count'])
+file_handler = RotatingFileHandler(log_path, mode='a', maxBytes=logger_config['max_bytes'], backupCount=logger_config['backup_count'])
 file_handler.setFormatter(logging.Formatter(pattern))
 logger.addHandler(file_handler)
 

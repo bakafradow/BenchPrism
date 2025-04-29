@@ -3,7 +3,7 @@ data/*
 !data/xCodeEval/
 
 # Logs
-logs
+logs/
 
 # Python
 __pycache__/
@@ -12,8 +12,8 @@ __pycache__/
 target/
 
 # Environments
-.env/
-.venv/
+.env
+.venv
 env/
 venv/
 ENV/

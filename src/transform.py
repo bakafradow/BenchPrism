@@ -1,4 +1,4 @@
-import sys
+import os
 from typing import Sequence
 
 import jpype as jp
@@ -8,14 +8,14 @@ from tqdm import tqdm
 from . import Snippet
 from .utils import logger
 
-with open('config/settings.yaml', 'r') as f:
+with open('settings.yml', 'r') as f:
   config = yaml.safe_load(f)['mutator']
 
 
 class Mutator():
   def __init__(self, src_lang, style_file):
-    jp.startJVM('-ea', jvmpath=config['jvmpath'],
-                classpath=[config['classpath']])
+    jp.startJVM('-ea', jvmpath=os.getenv('JVM_PATH'),
+                classpath=[os.getenv('TSFM_CLASSPATH')])
     self.src_lang = src_lang
     self.instance = jp.JClass(config['class']).createMutator(src_lang, style_file)
     if not self.instance:
@@ -61,5 +61,7 @@ def generate_styles(src_lang: str) -> str:
   :param src_lang: source language
   :return: the path to the rules file
   """
-  # TODO: generate style file with random rules for each snippet
-  return config['style_file']
+  # TODO:
+  #   1. given a code snippet, find all possible points to apply the rules
+  #   2. enumerate all possible combinations of the rules applied to the points above
+  return os.getenv('STYLE_FILE')
