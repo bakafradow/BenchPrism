@@ -196,4 +196,4 @@ def translate_with_model(translator: Translator, snippets: Sequence[Snippet], sr
     return snippet._replace(code=matched.group(1))
   max_workers = min(max(1, config['max_workers']), os.cpu_count()) if translator.name not in LOCAL_MODELS else 1
   with ThreadPoolExecutor(max_workers=max_workers) as executor:
-    return list(tqdm(executor.map(worker, range(len(snippets)), snippets), desc='Translating', total=len(snippets), leave=False))
+    return list(tqdm(executor.map(worker, range(len(snippets)), snippets), desc='Translating snippets', total=len(snippets), leave=False))

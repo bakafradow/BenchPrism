@@ -188,10 +188,7 @@ def average_codebleu_score(src: Sequence[Snippet], dst: Sequence[Snippet], lang:
   """
   if len(src) != len(dst):
     raise ValueError('The size of 2 snippet sequences should equal.')
-  match lang:
-    case 'java' | 'cpp' | 'python':
-      pass  # do nothing
-    case _:
-      raise TypeError(f'Unsupported language: {lang}.')
+  if lang not in ['java', 'cpp', 'python']:
+    raise TypeError(f'Unsupported language: {lang}.')
   return calc_codebleu([snippet.code for snippet in src], [snippet.code for snippet in dst],
                        lang, weights=(.25, .25, .25, .25), tokenizer=None)

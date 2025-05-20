@@ -3,15 +3,15 @@ Usage: python3 main.py [OPTIONS]...
 """
 
 from dotenv import load_dotenv
-from pprint import pformat
+from tqdm import tqdm
 
 load_dotenv()
 
-from src.evaluate import evaluate
+from src.evaluate import evaluate_space
 from src.extract import extract_source
 from src.transform import transform_source
 from src.translate import load_model, translate_with_model
-from src.utils import average_codebleu_score, logger, parse_args
+from src.utils import parse_args
 
 
 def main():
@@ -31,13 +31,12 @@ def main():
     snippets = extract_source(dataset, args.src_lang, args.dst_lang)
     if args.num_snippets >= 0:
       snippets = snippets[:args.num_snippets]
-    variants = transform_source(snippets, args.src_lang)
-    similarity = average_codebleu_score(snippets, variants, args.src_lang)
-    logger.info(f'Average code similarity:\n{pformat(similarity)}')
+    corpus = transform_source(snippets, args.src_lang)
     translator = load_model(args.model, gpu_id=args.gpu_id)
     translated_snippets = translate_with_model(translator, snippets, args.src_lang, args.dst_lang)
-    translated_variants = translate_with_model(translator, variants, args.src_lang, args.dst_lang)
-    evaluate(dataset, snippets, variants, translated_snippets, translated_variants, args.src_lang, args.dst_lang)
+    translated_corpus = [translate_with_model(translator, variants, args.src_lang, args.dst_lang)
+                         for variants in tqdm(corpus, desc='Translating corpus', total=len(corpus), leave=False)]
+    evaluate_space(dataset, snippets, corpus, translated_snippets, translated_corpus, args.src_lang, args.dst_lang)
 
 
 if __name__ == '__main__':

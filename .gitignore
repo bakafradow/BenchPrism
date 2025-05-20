@@ -2,14 +2,13 @@
 data/*
 !data/xCodeEval/
 
-# Logs
+# Generated things
 logs/
+targets/
+results/
 
 # Python
 __pycache__/
-
-# Generated Java classes
-target/
 
 # Environments
 .env

@@ -1,12 +1,15 @@
 import json
-import jsonlines
+import os
 import re
 import subprocess
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from pathlib import Path
 from typing import Sequence
 
-import os
+import jsonlines
+import pandas as pd
 import yaml
 from tqdm import tqdm
 
@@ -15,7 +18,10 @@ from .utils import extract_field_from, logger
 
 with open('settings.yml') as f:
   config = yaml.safe_load(f)['evaluator']
-TARGET_DIR = config['target_dir']
+TARGET_DIR = Path(config['target_dir'])
+RESULT_DIR = Path(config['result_dir'])
+os.makedirs(TARGET_DIR, exist_ok=True)
+os.makedirs(RESULT_DIR, exist_ok=True)
 
 
 class CompilationError(Exception):
@@ -42,7 +48,6 @@ def _compile(snippet: Snippet, lang: str) -> str:
       with tempfile.TemporaryDirectory() as tmpdir, open(f'{tmpdir}/{classname}.java', 'w') as f:
         f.write(snippet.code)
         f.flush()
-        os.makedirs(TARGET_DIR, exist_ok=True)
         classdir = tempfile.mkdtemp(dir=TARGET_DIR)
         try:
           returned = subprocess.run(['javac', '-d', classdir, f.name], stderr=subprocess.PIPE, encoding='utf-8', timeout=config['timeout'])
@@ -86,7 +91,7 @@ def run_with_assertion(snippet: Snippet, test: Sequence[dict], lang: str) -> boo
   match lang:
     case 'java':
       parent, classname = os.path.split(executable)
-      args = ['java', '-classpath', f'{os.path.join(TARGET_DIR, parent)}']
+      args = ['java', '-classpath', f'{TARGET_DIR / parent}']
       executable = classname
     case 'cpp':
       args = []
@@ -128,7 +133,7 @@ def run_with_io(snippet: Snippet, test: Sequence[dict], lang: str) -> bool:
   match lang:
     case 'java':
       parent, classname = os.path.split(executable)
-      args = ['java', '-classpath', f'{os.path.join(TARGET_DIR, parent)}']
+      args = ['java', '-classpath', f'{TARGET_DIR / parent}']
       executable = classname
     case 'cpp':
       args = []
@@ -235,3 +240,29 @@ def evaluate(dataset: str, snippets: Sequence[Snippet], variants: Sequence[Snipp
               f'Translated Originals  : {translated_correctness * 100:>6.2f}%\n'
               f'Translated Variants   : {transformed_translated_correctness * 100:>6.2f}%\n'
               f'===============================')
+
+
+def evaluate_space(dataset: str, snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]], translated_snippets: Sequence[Snippet], translated_corpus: Sequence[Sequence[Snippet]], src_lang: str, dst_lang: str) -> None:
+  logger.info(f'Evaluating {len(snippets)} {len(corpus)} sets of variants on {dataset}...')
+  ids = tuple(snippet.id for snippet in snippets)
+  src_tests = load_tests(dataset, src_lang, dst_lang, ids)[:len(snippets)]
+  dst_tests = load_tests(dataset, src_lang, dst_lang, ids, translated=True)[:len(snippets)]
+  logger.info('Testing originals.')
+  original_correctness = calculate_correctness(dataset, snippets, src_tests, src_lang)
+  logger.info('Testing variants.')
+  transformed_correctness_list = [calculate_correctness(dataset, variants, src_tests, src_lang)
+                                  for variants in tqdm(corpus, desc='Evaluating', total=len(corpus), leave=False)]
+  logger.info('Testing transformed originals.')
+  translated_correctness = calculate_correctness(dataset, translated_snippets, dst_tests, dst_lang)
+  logger.info('Testing transformed variants.')
+  transformed_translated_correctness_list = [calculate_correctness(dataset, variants, dst_tests, dst_lang)
+                                             for variants in tqdm(translated_corpus, desc='Evaluating', total=len(corpus), leave=False)]
+  logger.info(f'\n'
+              '========  Correctness  ========\n'
+              f'Originals             : {original_correctness * 100:>6.2f}%\n'
+              f'Variants              : {sum(transformed_correctness_list) / len(transformed_correctness_list) * 100:>6.2f}%\n'
+              f'Translated Originals  : {translated_correctness * 100:>6.2f}%\n'
+              f'Translated Variants   : {sum(transformed_translated_correctness_list) / len(transformed_translated_correctness_list) * 100:>6.2f}%\n'
+              f'===============================')
+  df = pd.DataFrame({'variants': transformed_correctness_list, 'translated_variants': transformed_translated_correctness_list})
+  df.to_csv(RESULT_DIR / f'{dataset}_correctness_{datetime.now().strftime("%Y%m%d%H%M%S")}.csv', index=False)
