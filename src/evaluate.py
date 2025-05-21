@@ -141,7 +141,7 @@ def run_with_io(snippet: Snippet, test: Sequence[dict], lang: str) -> bool:
       args = ['python', '-c']
     case _:
       raise TypeError(f'Unsupported language: {lang}.')
-  for pair in test:
+  for pair in tqdm(test, desc='Running tests', total=len(test), leave=False):
     try:
       returned = subprocess.run(args + [executable], input=pair['input'], text=True, capture_output=True, encoding='utf-8', timeout=config['timeout'])
     except KeyboardInterrupt:
@@ -182,7 +182,7 @@ def calculate_correctness(dataset: str, snippets: Sequence[Snippet], tests: Sequ
         raise TypeError(f'Unsupported dataset: {dataset}.')
   max_workers = min(max(1, config['max_workers']), os.cpu_count())
   with ThreadPoolExecutor(max_workers=max_workers) as executor:
-    results = list(tqdm(executor.map(worker, snippets, tests), desc='Evaluating', total=len(snippets), leave=False))
+    results = list(tqdm(executor.map(worker, snippets, tests), desc='Calculating correctness', total=len(snippets), leave=False))
   return sum(results) / len(snippets)
 
 
@@ -243,7 +243,7 @@ def evaluate(dataset: str, snippets: Sequence[Snippet], variants: Sequence[Snipp
 
 
 def evaluate_space(dataset: str, snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]], translated_snippets: Sequence[Snippet], translated_corpus: Sequence[Sequence[Snippet]], src_lang: str, dst_lang: str) -> None:
-  logger.info(f'Evaluating {len(snippets)} {len(corpus)} sets of variants on {dataset}...')
+  logger.info(f'Evaluating {len(corpus)} sets of variants with {len(snippets)} snippets for each on {dataset}...')
   ids = tuple(snippet.id for snippet in snippets)
   src_tests = load_tests(dataset, src_lang, dst_lang, ids)[:len(snippets)]
   dst_tests = load_tests(dataset, src_lang, dst_lang, ids, translated=True)[:len(snippets)]
