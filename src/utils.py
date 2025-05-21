@@ -63,6 +63,7 @@ class ColorFormatter(logging.Formatter):
     'VERBOSE': '\033[38;5;52m',
     'INFO': '\033[38;5;91m',
     'WARNING': '\033[38;5;202m',
+    'DEBUG': '\033[38;5;18m',
     'ERROR': '\033[38;5;161m',
     'CRITICAL': '\033[38;5;76m',
     'ENDC': '\033[0m',
@@ -88,10 +89,11 @@ def verbose(self, message, *args, **kwargs):
 logging.Logger.verbose = verbose
 
 logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 if logger_config['verbose']:
   logger.setLevel(VERBOSE_LEVEL)
-else:
-  logger.setLevel(logging.INFO)
+if logger_config['debug']:  # debug overrides verbose
+  logger.setLevel(logging.DEBUG)
 
 pattern = '%(asctime)s - %(levelname)s - %(message)s'
 

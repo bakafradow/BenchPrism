@@ -25,6 +25,7 @@ logger:
   max_bytes: 5242880 # 5MB
   backup_count: 5
   verbose: true
+  debug: true
 
 evaluator:
   target_dir: targets/ # the path where compiled files are stored
