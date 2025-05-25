@@ -11,7 +11,7 @@ from src.evaluate import evaluate_space
 from src.extract import extract_source
 from src.transform import transform_source
 from src.translate import load_model, translate_with_model
-from src.utils import parse_args
+from src.utils import init_logger, parse_args
 
 
 def main():
@@ -27,11 +27,12 @@ def main():
   4. Evaluates the space spanned by the translated code relative to the original source code.
   """
   args = parse_args()
+  init_logger(verbose=args.verbose, debug=args.debug)
   for dataset in args.datasets:
     snippets = extract_source(dataset, args.src_lang, args.dst_lang)
     if args.num_snippets >= 0:
       snippets = snippets[:args.num_snippets]
-    corpus = transform_source(snippets, args.src_lang)
+    corpus = transform_source(snippets, args.src_lang, args.seed)
     translator = load_model(args.model, gpu_id=args.gpu_id)
     translated_snippets = translate_with_model(translator, snippets, args.src_lang, args.dst_lang)
     translated_corpus = [translate_with_model(translator, variants, args.src_lang, args.dst_lang)

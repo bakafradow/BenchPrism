@@ -1,7 +1,8 @@
+import logging
 from typing import Sequence
 
 from . import Snippet
-from .utils import extract_field_from, logger
+from .utils import extract_field_from
 
 
 def extract_source(dataset: str, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
@@ -12,7 +13,7 @@ def extract_source(dataset: str, src_lang: str, dst_lang: str) -> Sequence[Snipp
   :param dst_lang: destination language
   :return: source code extracted from the dataset
   """
-  logger.info(f'Extracting {src_lang} snippets from {dataset}...')
+  logging.info(f'Extracting {src_lang} snippets from {dataset}...')
   match dataset:
     case 'HumanEvalX':
       task_ids = extract_field_from(dataset, src_lang, 'task_id')

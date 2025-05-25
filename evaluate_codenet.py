@@ -1,4 +1,5 @@
 import argparse
+import logging
 from itertools import groupby
 from operator import itemgetter
 from pprint import pformat
@@ -13,7 +14,7 @@ load_dotenv()
 from src import Snippet
 from src.evaluate import evaluate
 from src.translate import load_model, translate_with_model
-from src.utils import average_codebleu_score, logger, parse_args
+from src.utils import average_codebleu_score, parse_args
 
 
 class Arguments(NamedTuple):
@@ -95,7 +96,7 @@ def _load_variants(generator: str, transformer: str, snippets: Sequence[Snippet]
 def main():
   args = parse_args()
   dataset = 'CodeNet'
-  logger.info(f'Evaluating {dataset} from {args.generator} to {args.transformer}...')
+  logging.info(f'Evaluating {dataset} from {args.generator} to {args.transformer}...')
   snippets = _load_snippets(args.generator, args.transformer)
   variants = _load_variants(args.generator, args.transformer, snippets)
   snippets = [snippet for snippet, variant in zip(snippets, variants) if variant is not None]
@@ -104,7 +105,7 @@ def main():
     snippets = snippets[:args.num_snippets]
     variants = variants[:args.num_snippets]
   similarity = average_codebleu_score(snippets, variants, args.src_lang)
-  logger.info(f'Average code similarity:\n{pformat(similarity)}')
+  logging.info(f'Average code similarity:\n{pformat(similarity)}')
   translator = load_model(args.model, gpu_id=args.gpu_id)
   translated_snippets = translate_with_model(translator, snippets, args.src_lang, args.dst_lang)
   translated_variants = translate_with_model(translator, variants, args.src_lang, args.dst_lang)

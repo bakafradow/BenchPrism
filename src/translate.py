@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import subprocess
@@ -15,7 +16,6 @@ from transformers import (AutoModel, AutoModelForCausalLM, AutoTokenizer,
                           PreTrainedTokenizerFast)
 
 from . import Snippet
-from .utils import logger
 
 LOCAL_MODELS = ['deepseek-coder-7b-instruct-v1.5', 'Qwen2.5-Coder-1.5B-Instruct', 'Qwen2.5-Coder-3B-Instruct', 'Qwen2.5-Coder-7B-Instruct', 'codegeex2-6b']
 
@@ -59,7 +59,7 @@ def load_model(model_name: str, *, gpu_id: int = -1) -> Translator:
   :param gpu_id: the GPU id to run locally. If negative, the largest free GPU will be used. If model is remote, this parameter will be ignored.
   :return: the model and tokenizer
   """
-  logger.info(f'Loading model {model_name}...')
+  logging.info(f'Loading model {model_name}...')
 
   if model_name not in LOCAL_MODELS:
     client = OpenAI(base_url=os.getenv('BASE_URL'), api_key=os.getenv('API_KEY'))
@@ -128,12 +128,12 @@ def _translate_remotely(translator: Translator, snippet: Snippet, prompt: Prompt
       )
       return completion.choices[0].message.content
     except Timeout:
-      logger.warning(f'Timeout occurred for snippet {snippet.id}. Retrying {attempt + 1}/{retry}...')
+      logging.warning(f'Timeout occurred for snippet {snippet.id}. Retrying {attempt + 1}/{retry}...')
       time.sleep(retry_interval)
     except Exception as e:
-      logger.error(f'Error occurred for snippet {snippet.id}: {e}...')
+      logging.error(f'Error occurred for snippet {snippet.id}: {e}...')
       break
-  logger.warning(f'Failed to translate snippet {snippet.id} after {retry} attempts.')
+  logging.warning(f'Failed to translate snippet {snippet.id} after {retry} attempts.')
   return ''
 
 
@@ -180,7 +180,7 @@ def translate_with_model(translator: Translator, snippets: Sequence[Snippet], sr
   :param dst_lang: destination language
   :return: a sequence of translated code
   """
-  logger.info(f'Translating from {src_lang} to {dst_lang}...')
+  logging.info(f'Translating from {src_lang} to {dst_lang}...')
   prompt = _build_prompt(src_lang, dst_lang)
   def worker(i: int, snippet: Snippet) -> Snippet | None:
     if translator.name not in LOCAL_MODELS:
@@ -189,10 +189,10 @@ def translate_with_model(translator: Translator, snippets: Sequence[Snippet], sr
       response = _translate_locally(translator, snippet, prompt)
     matched = re.search(r'```\w+\n(.+)```', response, re.DOTALL)
     if not matched:
-      logger.warning(f'Translation of {snippet.id} not found.')
-      logger.verbose(response)
+      logging.warning(f'Translation of {snippet.id} not found.')
+      logging.verbose(response)
       return None
-    logger.verbose(f'Snippet {i}:\n{matched.group(1)}')
+    logging.verbose(f'Snippet {i}:\n{matched.group(1)}')
     return snippet._replace(code=matched.group(1))
   max_workers = min(max(1, config['max_workers']), os.cpu_count()) if translator.name not in LOCAL_MODELS else 1
   with ThreadPoolExecutor(max_workers=max_workers) as executor:

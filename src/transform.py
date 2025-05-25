@@ -1,15 +1,15 @@
+import logging
 import os
 import shutil
 import subprocess
-from typing import Sequence
 from tempfile import NamedTemporaryFile
+from typing import Sequence
 
 import jpype as jp
 import yaml
 from tqdm import tqdm
 
 from . import Snippet
-from .utils import logger
 
 with open('settings.yml', 'r') as f:
   config = yaml.safe_load(f)['mutator']
@@ -37,24 +37,24 @@ class Mutator():
       try:
         variant = self.cls.apply(self.lang, snippet.code, style_file)
       except Exception as e:
-        logger.error(f'Error occurred for snippet {snippet.id}:\n{e}')
+        logging.error(f'Error occurred for snippet {snippet.id}:\n{e}')
         variant = None
       if not variant:
-        logger.warning(f'Failed to transform to {snippet.id}.')
+        logging.warning(f'Failed to transform to {snippet.id}.')
         variants[i] = snippet
       else:
         variants[i] = snippet._replace(code=str(variant))
     return variants
 
-  def span(self, snippets: Sequence[Snippet]) -> Sequence[Sequence[Snippet]]:
+  def span(self, snippets: Sequence[Snippet], seed: int) -> Sequence[Sequence[Snippet]]:
     equivalent_counts = dict(self.cls.getEquivalentsCounts(self.lang))
     with NamedTemporaryFile('w', encoding='utf-8', prefix='model', suffix='.txt', delete=False) as f:
       f.write('\n'.join([f'{k}: {",".join(map(str, range(v)))}' for k, v in equivalent_counts.items()]))
       f.flush()
     try:
-      returned = subprocess.run([pict_path, f.name], check=True, encoding='utf-8', stdout=subprocess.PIPE)
+      returned = subprocess.run([pict_path, f.name, f'/r:{seed}'], check=True, encoding='utf-8', stdout=subprocess.PIPE)
     except subprocess.CalledProcessError as e:
-      logger.error(f'Error occurred while running pict:\n{e}')
+      logging.error(f'Error occurred while running pict:\n{e}')
       raise e
     os.remove(f.name)
     sequences = [[int(num) for num in line.split()] for line in returned.stdout.splitlines()[1:]]
@@ -66,10 +66,10 @@ class Mutator():
           sequence_list = jp.java.util.List.of(*[jp.java.lang.Integer(num) for num in sequence])
           variant = self.cls.span(self.lang, snippet.code, sequence_list)
         except Exception as e:
-          logger.error(f'Error occurred for snippet {snippet.id}:\n{e}')
+          logging.error(f'Error occurred for snippet {snippet.id}:\n{e}')
           variant = None
         if not variant:
-          logger.warning(f'Failed to transform {snippet.id}.')
+          logging.warning(f'Failed to transform {snippet.id}.')
           variants[j] = snippet
         else:
           variants[j] = snippet._replace(code=str(variant))
@@ -77,7 +77,7 @@ class Mutator():
     return corpus
 
 
-def transform_source(snippets: Sequence[Snippet], src_lang: str) -> Sequence[Sequence[Snippet]]:
+def transform_source(snippets: Sequence[Snippet], src_lang: str, seed: int) -> Sequence[Sequence[Snippet]]:
   """
   Applies transformations to the source code and generates variant sequence.
   :param snippets: the snippets to be transformed
@@ -89,7 +89,7 @@ def transform_source(snippets: Sequence[Snippet], src_lang: str) -> Sequence[Seq
   mutator = Mutator(src_lang)
   style_file = os.getenv('STYLE_FILE')
   if not style_file:
-    logger.info('Spanning styles...')
-    return mutator.span(snippets)
-  logger.info(f'Applying styles from {style_file}...')
+    logging.info('Spanning styles...')
+    return mutator.span(snippets, seed)
+  logging.info(f'Applying styles from {style_file}...')
   return [mutator.apply(src_lang, style_file)]

@@ -45,6 +45,12 @@ def parse_args() -> Arguments:
                       help='Specify the GPU to use.')
   parser.add_argument('-n', '--num-snippets', type=int, default=-1,
                       help='Limit the number of snippets to test.')
+  parser.add_argument('--seed', type=int, default=42,
+                      help='Set the random seed for reproducibility.')
+  parser.add_argument('--verbose', type=bool, default=False, action='store_true',
+                      help='If set, enables verbose level logging.')
+  parser.add_argument('--debug', type=bool, default=False, action='store_true',
+                      help='If set, enables debugging level logging.')
   args = parser.parse_args()
   return Arguments(
     datasets=args.dataset if args.dataset else default_datasets,
@@ -73,44 +79,41 @@ class ColorFormatter(logging.Formatter):
     return f'{self.COLORS[record.levelname]}{super().format(record)}{self.COLORS["ENDC"]}'
 
 
-with open('settings.yml') as f:
-  logger_config = yaml.safe_load(f)['logger']
+def init_logger(verbose: bool = False, debug: bool = False) -> None:
+  with open('settings.yml') as f:
+    logger_config = yaml.safe_load(f)['logger']
 
+  VERBOSE_LEVEL = 15
+  logging.addLevelName(VERBOSE_LEVEL, 'VERBOSE')
 
-VERBOSE_LEVEL = 15
-logging.addLevelName(VERBOSE_LEVEL, 'VERBOSE')
+  def verbose(self, message, *args, **kwargs):
+    if self.isEnabledFor(VERBOSE_LEVEL):
+      self._log(VERBOSE_LEVEL, message, args, **kwargs)
+  logging.Logger.verbose = verbose
 
+  logger = logging.getLogger()  # use the root logger
+  logger.setLevel(logging.INFO)
+  if verbose:
+    logger.setLevel(VERBOSE_LEVEL)
+  if debug:  # debug overrides verbose
+    logger.setLevel(logging.DEBUG)
 
-def verbose(self, message, *args, **kwargs):
-  if self.isEnabledFor(VERBOSE_LEVEL):
-    self._log(VERBOSE_LEVEL, message, args, **kwargs)
+  pattern = '%(asctime)s - %(levelname)s - %(message)s'
 
+  log_path = os.getenv('LOG_FILE')
+  if not os.path.exists(os.path.dirname(log_path)):
+    try:
+      os.makedirs(os.path.dirname(log_path))
+    except OSError as e:
+      if e.errno != errno.EEXIST:
+        raise
+  file_handler = RotatingFileHandler(log_path, mode='a', maxBytes=logger_config['max_bytes'], backupCount=logger_config['backup_count'])
+  file_handler.setFormatter(logging.Formatter(pattern))
+  logger.addHandler(file_handler)
 
-logging.Logger.verbose = verbose
-
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-if logger_config['verbose']:
-  logger.setLevel(VERBOSE_LEVEL)
-if logger_config['debug']:  # debug overrides verbose
-  logger.setLevel(logging.DEBUG)
-
-pattern = '%(asctime)s - %(levelname)s - %(message)s'
-
-log_path = os.getenv('LOG_FILE')
-if not os.path.exists(os.path.dirname(log_path)):
-  try:
-    os.makedirs(os.path.dirname(log_path))
-  except OSError as e:
-    if e.errno != errno.EEXIST:
-      raise
-file_handler = RotatingFileHandler(log_path, mode='a', maxBytes=logger_config['max_bytes'], backupCount=logger_config['backup_count'])
-file_handler.setFormatter(logging.Formatter(pattern))
-logger.addHandler(file_handler)
-
-stream_handler = logging.StreamHandler(sys.stdout)
-stream_handler.setFormatter(ColorFormatter(pattern))
-logger.addHandler(stream_handler)
+  stream_handler = logging.StreamHandler(sys.stdout)
+  stream_handler.setFormatter(ColorFormatter(pattern))
+  logger.addHandler(stream_handler)
 
 
 ### Dataset
