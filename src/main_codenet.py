@@ -4,30 +4,21 @@ from itertools import groupby
 from operator import itemgetter
 from pprint import pformat
 from random import sample
-from typing import NamedTuple, Sequence
+from typing import Sequence
 
 import jsonlines
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from src import Snippet
-from src.evaluate import evaluate
-from src.translate import load_model, translate_with_model
-from src.utils import average_codebleu_score, parse_args
+from . import Snippet
+from .evaluator.evaluator import evaluate
+from .evaluator.metrics import average_codebleu_score
+from .downstream.translator.translator import load_model, translate_with_model
+from .logger import init_logger
 
 
-class Arguments(NamedTuple):
-  model: str
-  src_lang: str
-  dst_lang: str
-  generator: str
-  transformer: str
-  gpu_id: int = -1
-  num_snippets: int = -1
-
-
-def parse_args() -> Arguments:
+def parse_args() -> argparse.Namespace:
   default_src_lang = 'java'
   default_dst_lang = 'cpp'
   generators = ['claude35sonnet', 'deepseekcoder', 'gpt4o', 'wizardcoder', 'human']
@@ -53,16 +44,12 @@ def parse_args() -> Arguments:
                       help='Specify the GPU to use.')
   parser.add_argument('-n', '--num-snippets', type=int, default=-1,
                       help='Limit the number of snippets to test.')
+  parser.add_argument('--verbose', action='store_true', default=False,
+                      help='If set, enables verbose level logging.')
+  parser.add_argument('--debug', action='store_true', default=False,
+                      help='If set, enables debugging level logging.')
   args = parser.parse_args()
-  return Arguments(
-    model=args.model,
-    src_lang=args.src_lang,
-    dst_lang=args.dst_lang,
-    generator=args.generator,
-    transformer=args.transformer,
-    gpu_id=args.gpu_id,
-    num_snippets=args.num_snippets,
-  )
+  return args
 
 
 def _load_snippets(generator: str, transformer: str) -> Sequence[Snippet]:
@@ -95,6 +82,7 @@ def _load_variants(generator: str, transformer: str, snippets: Sequence[Snippet]
 
 def main():
   args = parse_args()
+  init_logger(verbose=args.verbose, debug=args.debug)
   dataset = 'CodeNet'
   logging.info(f'Evaluating {dataset} from {args.generator} to {args.transformer}...')
   snippets = _load_snippets(args.generator, args.transformer)

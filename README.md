@@ -41,6 +41,6 @@ See `python3 main.py --help`.
 - [x] Interact with transformer
   - [x] Current project side
   - [x] Transformer side
-    - [ ] Rule shuffle
+    - [x] Rule shuffle
 - [x] Call code translation models
 - [x] Evaluate correctness of the translation

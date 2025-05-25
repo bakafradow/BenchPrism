@@ -1,5 +1,4 @@
 import json
-import logging
 import os
 import re
 import subprocess
@@ -14,8 +13,9 @@ import pandas as pd
 import yaml
 from tqdm import tqdm
 
-from . import Snippet
-from .utils import extract_field_from
+from ..logger import logger
+from ..dataset.extractor import extract_field_from
+from .. import Snippet
 
 with open('settings.yml') as f:
   config = yaml.safe_load(f)['evaluator']
@@ -86,8 +86,8 @@ def run_with_assertion(snippet: Snippet, test: Sequence[dict], lang: str) -> boo
   try:
     executable = _compile(snippet._replace(code=snippet.code + test), lang)
   except CompilationError as err:
-    logging.warning(err)
-    logging.verbose(err.stderr)
+    logger.warning(err)
+    logger.verbose(err.stderr)
     return False
   match lang:
     case 'java':
@@ -103,16 +103,16 @@ def run_with_assertion(snippet: Snippet, test: Sequence[dict], lang: str) -> boo
   try:
     returned = subprocess.run(args + [executable], stderr=subprocess.PIPE, encoding='utf-8', timeout=config['timeout'])
   except KeyboardInterrupt:
-    logging.warning('Keyboard interrupt.')
+    logger.warning('Keyboard interrupt.')
     raise
   except subprocess.TimeoutExpired:
-    logging.verbose(f'Time out on {snippet.id}.')
+    logger.verbose(f'Time out on {snippet.id}.')
     return False
   except Exception as e:
-    logging.verbose(f'Error on {snippet.id}: {e}')
+    logger.verbose(f'Error on {snippet.id}: {e}')
     return False
   if returned.returncode != 0:
-    logging.verbose(f'Failed assertion on {snippet.id}:\n{returned.stderr}')
+    logger.verbose(f'Failed assertion on {snippet.id}:\n{returned.stderr}')
     return False
   return True
 
@@ -128,8 +128,8 @@ def run_with_io(snippet: Snippet, test: Sequence[dict], lang: str) -> bool:
   try:
     executable = _compile(snippet, lang)
   except CompilationError as err:
-    logging.warning(err)
-    logging.verbose(err.stderr)
+    logger.warning(err)
+    logger.verbose(err.stderr)
     return False
   match lang:
     case 'java':
@@ -146,19 +146,19 @@ def run_with_io(snippet: Snippet, test: Sequence[dict], lang: str) -> bool:
     try:
       returned = subprocess.run(args + [executable], input=pair['input'], text=True, capture_output=True, encoding='utf-8', timeout=config['timeout'])
     except KeyboardInterrupt:
-      logging.warning('Keyboard interrupt.')
+      logger.warning('Keyboard interrupt.')
       raise
     except subprocess.TimeoutExpired:
-      logging.verbose(f'Time out on {snippet.id} with input {pair["input"].strip()}.')
+      logger.verbose(f'Time out on {snippet.id} with input {pair["input"].strip()}.')
       return False
     except Exception as e:
-      logging.verbose(f'Error on {snippet.id} with input {pair["input"].strip()}: {e}')
+      logger.verbose(f'Error on {snippet.id} with input {pair["input"].strip()}: {e}')
       return False
     if returned.returncode != 0:
-      logging.verbose(f'{snippet.id} returned {returned.returncode} on input {pair["input"].strip()}\nStandard Error:\n{returned.stderr}')
+      logger.verbose(f'{snippet.id} returned {returned.returncode} on input {pair["input"].strip()}\nStandard Error:\n{returned.stderr}')
       return False
     if returned.stdout.strip() != pair['output'][0].strip():
-      logging.verbose(f'{snippet.id} failed on input {pair["input"].strip()}\nExpected:\n{pair["output"][0]}\nActual:\n{returned.stdout}')
+      logger.verbose(f'{snippet.id} failed on input {pair["input"].strip()}\nExpected:\n{pair["output"][0]}\nActual:\n{returned.stdout}')
       return False
   return True
 
@@ -187,6 +187,7 @@ def calculate_correctness(dataset: str, snippets: Sequence[Snippet], tests: Sequ
   return sum(results) / len(snippets)
 
 
+# TODO: encapsulate into dataset module
 def load_tests(dataset: str, src_lang: str, dst_lang: str, ids: Sequence[str], *, translated: bool = False) -> Sequence[Sequence[dict]]:
   match dataset:
     case 'HumanEvalX':
@@ -220,21 +221,21 @@ def evaluate(dataset: str, snippets: Sequence[Snippet], variants: Sequence[Snipp
   :param src_lang: the source language of the code snippets
   :param dst_lang: the target language of the code snippets
   """
-  logging.info(f'Evaluating {len(snippets)} snippets on {dataset}...')
+  logger.info(f'Evaluating {len(snippets)} snippets on {dataset}...')
   if not len(variants) == len(translated_snippets) == len(translated_variants):
     raise ValueError('The number of snippets and variants should equal.')
   ids = tuple(snippet.id for snippet in snippets)
   src_tests = load_tests(dataset, src_lang, dst_lang, ids)[:len(variants)]
   dst_tests = load_tests(dataset, src_lang, dst_lang, ids, translated=True)[:len(variants)]
-  logging.info('Testing originals.')
+  logger.info('Testing originals.')
   original_correctness = calculate_correctness(dataset, snippets, src_tests, src_lang)
-  logging.info('Testing variants.')
+  logger.info('Testing variants.')
   transformed_correctness = calculate_correctness(dataset, variants, src_tests, src_lang)
-  logging.info('Testing transformed originals.')
+  logger.info('Testing transformed originals.')
   translated_correctness = calculate_correctness(dataset, translated_snippets, dst_tests, dst_lang)
-  logging.info('Testing transformed variants.')
+  logger.info('Testing transformed variants.')
   transformed_translated_correctness = calculate_correctness(dataset, translated_variants, dst_tests, dst_lang)
-  logging.info(f'\n'
+  logger.info(f'\n'
               '========  Correctness  ========\n'
               f'Originals             : {original_correctness * 100:>6.2f}%\n'
               f'Variants              : {transformed_correctness * 100:>6.2f}%\n'
@@ -244,21 +245,21 @@ def evaluate(dataset: str, snippets: Sequence[Snippet], variants: Sequence[Snipp
 
 
 def evaluate_space(dataset: str, snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]], translated_snippets: Sequence[Snippet], translated_corpus: Sequence[Sequence[Snippet]], src_lang: str, dst_lang: str) -> None:
-  logging.info(f'Evaluating {len(corpus)} sets of variants with {len(snippets)} snippets for each on {dataset}...')
+  logger.info(f'Evaluating {len(corpus)} sets of variants with {len(snippets)} snippets for each on {dataset}...')
   ids = tuple(snippet.id for snippet in snippets)
   src_tests = load_tests(dataset, src_lang, dst_lang, ids)[:len(snippets)]
   dst_tests = load_tests(dataset, src_lang, dst_lang, ids, translated=True)[:len(snippets)]
-  logging.info('Testing originals.')
+  logger.info('Testing originals.')
   original_correctness = calculate_correctness(dataset, snippets, src_tests, src_lang)
-  logging.info('Testing variants.')
+  logger.info('Testing variants.')
   transformed_correctness_list = [calculate_correctness(dataset, variants, src_tests, src_lang)
                                   for variants in tqdm(corpus, desc='Evaluating', total=len(corpus), leave=False)]
-  logging.info('Testing transformed originals.')
+  logger.info('Testing transformed originals.')
   translated_correctness = calculate_correctness(dataset, translated_snippets, dst_tests, dst_lang)
-  logging.info('Testing transformed variants.')
+  logger.info('Testing transformed variants.')
   transformed_translated_correctness_list = [calculate_correctness(dataset, variants, dst_tests, dst_lang)
                                              for variants in tqdm(translated_corpus, desc='Evaluating', total=len(corpus), leave=False)]
-  logging.info(f'\n'
+  logger.info(f'\n'
               '========  Correctness  ========\n'
               f'Originals             : {original_correctness * 100:>6.2f}%\n'
               f'Variants              : {sum(transformed_correctness_list) / len(transformed_correctness_list) * 100:>6.2f}%\n'

@@ -1,4 +1,3 @@
-import logging
 import os
 import re
 import subprocess
@@ -12,10 +11,10 @@ from openai import OpenAI
 from requests.exceptions import Timeout
 from tqdm import tqdm
 from transformers import (AutoModel, AutoModelForCausalLM, AutoTokenizer,
-                          BitsAndBytesConfig, PreTrainedTokenizer,
-                          PreTrainedTokenizerFast)
+                          BitsAndBytesConfig, PreTrainedTokenizerBase)
 
-from . import Snippet
+from ..logger import logger
+from .. import Snippet
 
 LOCAL_MODELS = ['deepseek-coder-7b-instruct-v1.5', 'Qwen2.5-Coder-1.5B-Instruct', 'Qwen2.5-Coder-3B-Instruct', 'Qwen2.5-Coder-7B-Instruct', 'codegeex2-6b']
 
@@ -29,7 +28,7 @@ class Translator(NamedTuple):
   """
   name: str
   model: any
-  tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast = None
+  tokenizer: PreTrainedTokenizerBase = None
   gpu: int = -1
 
 
@@ -59,7 +58,7 @@ def load_model(model_name: str, *, gpu_id: int = -1) -> Translator:
   :param gpu_id: the GPU id to run locally. If negative, the largest free GPU will be used. If model is remote, this parameter will be ignored.
   :return: the model and tokenizer
   """
-  logging.info(f'Loading model {model_name}...')
+  logger.info(f'Loading model {model_name}...')
 
   if model_name not in LOCAL_MODELS:
     client = OpenAI(base_url=os.getenv('BASE_URL'), api_key=os.getenv('API_KEY'))
@@ -119,21 +118,21 @@ def _translate_remotely(translator: Translator, snippet: Snippet, prompt: Prompt
   for attempt in range(retry):
     try:
       completion = translator.model.chat.completions.create(
-        model=translator.name,
-        messages=[
-          {'role': 'system', 'content': prompt.system},
-          {'role': 'user', 'content': prompt.user % (snippet.code, snippet.ref)}
-        ],
-        timeout=120,
+          model=translator.name,
+          messages=[
+              {'role': 'system', 'content': prompt.system},
+              {'role': 'user', 'content': prompt.user % (snippet.code, snippet.ref)}
+          ],
+          timeout=120,
       )
       return completion.choices[0].message.content
     except Timeout:
-      logging.warning(f'Timeout occurred for snippet {snippet.id}. Retrying {attempt + 1}/{retry}...')
+      logger.warning(f'Timeout occurred for snippet {snippet.id}. Retrying {attempt + 1}/{retry}...')
       time.sleep(retry_interval)
     except Exception as e:
-      logging.error(f'Error occurred for snippet {snippet.id}: {e}...')
+      logger.error(f'Error occurred for snippet {snippet.id}: {e}...')
       break
-  logging.warning(f'Failed to translate snippet {snippet.id} after {retry} attempts.')
+  logger.warning(f'Failed to translate snippet {snippet.id} after {retry} attempts.')
   return ''
 
 
@@ -142,9 +141,9 @@ def _translate_locally(translator: Translator, snippet: Snippet, prompt: PromptP
 
   match translator.name:
     case 'deepseek-coder-7b-instruct-v1.5' | 'Qwen2.5-Coder-1.5B-Instruct' | 'Qwen2.5-Coder-3B-Instruct' | 'Qwen2.5-Coder-7B-Instruct':
-      messages=[
-        {'role': 'system', 'content': prompt.system},
-        {'role': 'user', 'content': prompt.user % (snippet.code, snippet.ref)}
+      messages = [
+          {'role': 'system', 'content': prompt.system},
+          {'role': 'user', 'content': prompt.user % (snippet.code, snippet.ref)}
       ]
       inputs = translator.tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors='pt')
     case 'codegeex2-6b':
@@ -180,8 +179,9 @@ def translate_with_model(translator: Translator, snippets: Sequence[Snippet], sr
   :param dst_lang: destination language
   :return: a sequence of translated code
   """
-  logging.info(f'Translating from {src_lang} to {dst_lang}...')
+  logger.info(f'Translating from {src_lang} to {dst_lang}...')
   prompt = _build_prompt(src_lang, dst_lang)
+
   def worker(i: int, snippet: Snippet) -> Snippet | None:
     if translator.name not in LOCAL_MODELS:
       response = _translate_remotely(translator, snippet, prompt)
@@ -189,10 +189,10 @@ def translate_with_model(translator: Translator, snippets: Sequence[Snippet], sr
       response = _translate_locally(translator, snippet, prompt)
     matched = re.search(r'```\w+\n(.+)```', response, re.DOTALL)
     if not matched:
-      logging.warning(f'Translation of {snippet.id} not found.')
-      logging.verbose(response)
+      logger.warning(f'Translation of {snippet.id} not found.')
+      logger.verbose(response)
       return None
-    logging.verbose(f'Snippet {i}:\n{matched.group(1)}')
+    logger.verbose(f'Snippet {i}:\n{matched.group(1)}')
     return snippet._replace(code=matched.group(1))
   max_workers = min(max(1, config['max_workers']), os.cpu_count()) if translator.name not in LOCAL_MODELS else 1
   with ThreadPoolExecutor(max_workers=max_workers) as executor:

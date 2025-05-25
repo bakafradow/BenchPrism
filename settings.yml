@@ -1,4 +1,4 @@
-mutator:
+transformer:
   class: org.example.experiment.Mutator
 
 translator:
