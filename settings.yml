@@ -1,17 +1,7 @@
 transformer:
   class: org.example.experiment.Mutator
 
-translator:
-  prompts:
-    prologue: "<task>
-                Translate code from one language to another without changing functionality.
-               </task>
-               <constraint>
-                1. Your output MUST only contain the translated code without any explanations for direct compilation, enclosed by triple back quotes.
-                2. If the target language is C++, you MUST use `using namespace std;` and convert function names from camel case to snake case.
-                3. If the target_declaration is empty, ignore it.
-               </constraint>"
-
+agent:
   ######### settings for remote API #########
   timeout: 120
   retry: 3
@@ -25,7 +15,7 @@ logger:
   max_bytes: 5242880 # 5MB
   backup_count: 5
 
-evaluator:
+metrics:
   target_dir: targets/ # the path where compiled files are stored
   result_dir: results/ # the path where evaluation results are stored
   timeout: 60 # unit: seconds

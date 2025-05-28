@@ -32,10 +32,10 @@ def init_logger(verbose: bool = False, debug: bool = False) -> None:
   VERBOSE_LEVEL = 15
   logging.addLevelName(VERBOSE_LEVEL, 'VERBOSE')
 
-  def verbose(self, message, *args, **kwargs):
+  def verbose_func(self, message, *args, **kwargs):
     if self.isEnabledFor(VERBOSE_LEVEL):
       self._log(VERBOSE_LEVEL, message, args, **kwargs)
-  logging.Logger.verbose = verbose
+  logging.Logger.verbose = verbose_func
 
   logger.setLevel(logging.INFO)
   if verbose:
@@ -45,7 +45,14 @@ def init_logger(verbose: bool = False, debug: bool = False) -> None:
 
   pattern = '%(asctime)s - %(levelname)s - %(message)s'
 
+  stream_handler = logging.StreamHandler(sys.stdout)
+  stream_handler.setFormatter(ColorFormatter(pattern))
+  logger.addHandler(stream_handler)
+
   log_path = os.getenv('LOG_FILE')
+  if not log_path:
+    logger.warning('LOG_FILE is not set, logging to stdout only.')
+    return
   if not os.path.exists(os.path.dirname(log_path)):
     try:
       os.makedirs(os.path.dirname(log_path))
@@ -55,7 +62,3 @@ def init_logger(verbose: bool = False, debug: bool = False) -> None:
   file_handler = RotatingFileHandler(log_path, mode='a', maxBytes=logger_config['max_bytes'], backupCount=logger_config['backup_count'])
   file_handler.setFormatter(logging.Formatter(pattern))
   logger.addHandler(file_handler)
-
-  stream_handler = logging.StreamHandler(sys.stdout)
-  stream_handler.setFormatter(ColorFormatter(pattern))
-  logger.addHandler(stream_handler)

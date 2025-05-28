@@ -1,51 +1,82 @@
-"""
-Usage: python3 main.py [OPTIONS]...
-"""
-
 import argparse
+import os
+from collections.abc import Sequence
+from datetime import datetime
+from pathlib import Path
+
+import pandas as pd
+import yaml
 from dotenv import load_dotenv
 from tqdm import tqdm
 
 load_dotenv()
 
-from .dataset.extractor import extract_source
-from .evaluator.evaluator import evaluate_space
-from .transformer.transformer import transform_source
-from .downstream.translator.translator import load_model, translate_with_model
-from .logger import init_logger
+from . import Snippet
+from .agent.base import BaseAgent, agent_factory
+from .agent.translator import translate
+from .benchmarks import BaseBenchmark, benchmark_factory
+from .logger import init_logger, logger
+from .metrics.correctness import calculate_correctness
+from .transformer.base import transformer_factory
 
 
 def parse_args() -> argparse.Namespace:
-  default_datasets = ['HumanEvalX', 'xCodeEval', 'XLCoST', 'CodeXGLUE', 'G-TransEval', 'CodeNet']
-  default_src_lang = 'java'
-  default_dst_lang = 'cpp'
   parser = argparse.ArgumentParser(description='Code translation evaluation tool.'
                                                'All the datasets are evaluated by default.')
-  parser.add_argument('-d', '--dataset', nargs=1, type=str,
-                      choices=default_datasets,
+  parser.add_argument('-d', '--dataset', type=str, required=True,
                       help='Specify one dataset to evaluate.')
-  parser.add_argument('-m', '--model', type=str,
-                      required=True,
+  parser.add_argument('-m', '--model', type=str, required=True,
                       help='Specify the model to use.')
-  parser.add_argument('--src-lang', default=default_src_lang, type=str,
-                      choices=['java', 'cpp'],
-                      help=f'Specify the source language, {default_src_lang} by default.')
-  parser.add_argument('--dst-lang', default=default_dst_lang, type=str,
-                      choices=['c', 'cpp', 'cs', 'go', 'java', 'js', 'kotlin', 'php', 'python', 'ruby', 'rust'],
-                      help=f'Specify the destination language, {default_dst_lang} by default.')
-  parser.add_argument('-i', '--gpu-id', type=int, default=-1,
-                      help='Specify the GPU to use.')
+  parser.add_argument('--src-lang', type=str, required=True,
+                      help='Specify the source language.')
+  parser.add_argument('--dst-lang', type=str, required=True,
+                      help='Specify the destination language.')
+  parser.add_argument('--device', type=str, default='auto',
+                      help='Specify the device to use for LLM inference. If set to "auto", it will use the largest available GPU, or CPU if no GPU is available.')
   parser.add_argument('-n', '--num-snippets', type=int, default=-1,
-                      help='Limit the number of snippets to test.')
+                      help='Limit the number of snippets to test. -1 for all.')
   parser.add_argument('--seed', type=int, default=42,
                       help='Set the random seed for reproducibility.')
-  parser.add_argument('--verbose', action='store_true', default=False,
+  parser.add_argument('-v', '--verbose', action='store_true', default=False,
                       help='If set, enables verbose level logging.')
   parser.add_argument('--debug', action='store_true', default=False,
                       help='If set, enables debugging level logging.')
   args = parser.parse_args()
-  args.datasets = args.dataset if args.dataset else default_datasets
   return args
+
+
+def evaluate_translation(benchmark: BaseBenchmark, translator: BaseAgent, snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]], args: argparse.Namespace) -> None:
+  translated_snippets = translate(translator, snippets, args.src_lang, args.dst_lang)
+  translated_corpus = [translate(translator, variants, args.src_lang, args.dst_lang)
+                        for variants in tqdm(corpus, desc='Translating corpus',
+                                             total=len(corpus), leave=False)]
+
+  ids = (snippet.id for snippet in snippets)
+  test_batches = benchmark.load_tests(ids)
+  logger.info('Testing originals.')
+  original_correctness = calculate_correctness(snippets, test_batches, args.src_lang)
+  logger.info('Testing variants.')
+  transformed_correctness_list = [calculate_correctness(variants, test_batches, args.src_lang)
+                                  for variants in tqdm(corpus, desc='Evaluating', total=len(corpus), leave=False)]
+  logger.info('Testing transformed originals.')
+  translated_correctness = calculate_correctness(translated_snippets, test_batches, args.dst_lang)
+  logger.info('Testing transformed variants.')
+  transformed_translated_correctness_list = [calculate_correctness(variants, test_batches, args.dst_lang)
+                                             for variants in tqdm(translated_corpus, desc='Evaluating', total=len(corpus), leave=False)]
+  logger.info(f'\n'
+              f'========  Correctness  ========\n'
+              f'Originals             : {original_correctness * 100:>6.2f}%\n'
+              f'Variants              : {sum(transformed_correctness_list) / len(transformed_correctness_list) * 100:>6.2f}%\n'
+              f'Translated Originals  : {translated_correctness * 100:>6.2f}%\n'
+              f'Translated Variants   : {sum(transformed_translated_correctness_list) / len(transformed_translated_correctness_list) * 100:>6.2f}%\n'
+              f'===============================')
+  df = pd.DataFrame({'variants': transformed_correctness_list, 'translated_variants': transformed_translated_correctness_list})
+
+  with open('settings.yml') as f:
+    config = yaml.safe_load(f)['metrics']
+  result_dir = Path(config['result_dir'])
+  os.makedirs(result_dir, exist_ok=True)
+  df.to_csv(result_dir / f'{args.dataset}_correctness_{datetime.now().strftime("%Y%m%d%H%M%S")}.csv', index=False)
 
 
 def main():
@@ -62,16 +93,18 @@ def main():
   """
   args = parse_args()
   init_logger(verbose=args.verbose, debug=args.debug)
-  for dataset in args.datasets:
-    snippets = extract_source(dataset, args.src_lang, args.dst_lang)
-    if args.num_snippets >= 0:
-      snippets = snippets[:args.num_snippets]
-    corpus = transform_source(snippets, args.src_lang, seed=args.seed)
-    translator = load_model(args.model, gpu_id=args.gpu_id)
-    translated_snippets = translate_with_model(translator, snippets, args.src_lang, args.dst_lang)
-    translated_corpus = [translate_with_model(translator, variants, args.src_lang, args.dst_lang)
-                         for variants in tqdm(corpus, desc='Translating corpus', total=len(corpus), leave=False)]
-    evaluate_space(dataset, snippets, corpus, translated_snippets, translated_corpus, args.src_lang, args.dst_lang)
+  benchmark = benchmark_factory(args.dataset)
+  transformer = transformer_factory()
+  translator = agent_factory(args.model, device=args.device)
+  logger.info(f'Evaluating {args.model} on {args.dataset} with transformer {transformer.__class__.__name__}...')
+
+  snippets = benchmark.load_source(args.src_lang)
+  if args.num_snippets >= 0:
+    snippets = snippets[:args.num_snippets]
+  corpus = transformer.transform(snippets, lang=args.src_lang, seed=args.seed)
+
+  # TODO: filter out invalid variants
+  evaluate_translation(benchmark, translator, snippets, corpus, args)
 
 
 if __name__ == '__main__':

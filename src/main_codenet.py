@@ -1,10 +1,9 @@
 import argparse
-import logging
+from collections.abc import Sequence
 from itertools import groupby
 from operator import itemgetter
 from pprint import pformat
 from random import sample
-from typing import Sequence
 
 import jsonlines
 from dotenv import load_dotenv
@@ -12,15 +11,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from . import Snippet
-from .evaluator.evaluator import evaluate
-from .evaluator.metrics import average_codebleu_score
-from .downstream.translator.translator import load_model, translate_with_model
-from .logger import init_logger
+from .agent.base import agent_factory
+from .benchmarks import benchmark_factory
+from .logger import init_logger, logger
+from .main import evaluate_translation
+from .metrics.similarity import calculate_codebleu
 
 
 def parse_args() -> argparse.Namespace:
-  default_src_lang = 'java'
-  default_dst_lang = 'cpp'
   generators = ['claude35sonnet', 'deepseekcoder', 'gpt4o', 'wizardcoder', 'human']
   transformers = ['claude35sonnet', 'deepseekcoder', 'gpt4o', 'wizardcoder', 'egsi', 'codebuff']
   parser = argparse.ArgumentParser(description='Code translation evaluation tool.'
@@ -28,23 +26,21 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument('-m', '--model', type=str,
                       required=True,
                       help='Specify the model to use.')
-  parser.add_argument('--src-lang', default=default_src_lang, type=str,
-                      choices=['java', 'cpp'],
-                      help=f'Specify the source language, {default_src_lang} by default.')
-  parser.add_argument('--dst-lang', default=default_dst_lang,type=str,
-                      choices=['c', 'cpp', 'cs', 'go', 'java', 'js', 'kotlin', 'php', 'python', 'ruby', 'rust'],
-                      help=f'Specify the destination language, {default_dst_lang} by default.')
+  parser.add_argument('--src-lang', type=str, required=True,
+                      help='Specify the source language.')
+  parser.add_argument('--dst-lang', type=str, required=True,
+                      help='Specify the destination language.')
   parser.add_argument('-g', '--generator', type=str,
                       required=True, choices=generators,
                       help='Specify the code generator.')
   parser.add_argument('-t', '--transformer', type=str,
                       required=True, choices=transformers,
                       help='Specify the code transformer.')
-  parser.add_argument('-i', '--gpu-id', type=int, default=-1,
-                      help='Specify the GPU to use.')
+  parser.add_argument('--device', type=str, default='auto',
+                      help='Specify the device to use for LLM inference. If set to "auto", it will use the largest available GPU, or CPU if no GPU is available.')
   parser.add_argument('-n', '--num-snippets', type=int, default=-1,
-                      help='Limit the number of snippets to test.')
-  parser.add_argument('--verbose', action='store_true', default=False,
+                      help='Limit the number of snippets to test. -1 for all.')
+  parser.add_argument('-v', '--verbose', action='store_true', default=False,
                       help='If set, enables verbose level logging.')
   parser.add_argument('--debug', action='store_true', default=False,
                       help='If set, enables debugging level logging.')
@@ -84,7 +80,10 @@ def main():
   args = parse_args()
   init_logger(verbose=args.verbose, debug=args.debug)
   dataset = 'CodeNet'
-  logging.info(f'Evaluating {dataset} from {args.generator} to {args.transformer}...')
+  benchmark = benchmark_factory(dataset)
+  translator = agent_factory(args.model, device=args.device)
+  logger.info(f'Evaluating {args.model} on {args.dataset} with generator {args.generator} and transformer {args.transformer}...')
+
   snippets = _load_snippets(args.generator, args.transformer)
   variants = _load_variants(args.generator, args.transformer, snippets)
   snippets = [snippet for snippet, variant in zip(snippets, variants) if variant is not None]
@@ -92,12 +91,12 @@ def main():
   if args.num_snippets >= 0:
     snippets = snippets[:args.num_snippets]
     variants = variants[:args.num_snippets]
-  similarity = average_codebleu_score(snippets, variants, args.src_lang)
-  logging.info(f'Average code similarity:\n{pformat(similarity)}')
-  translator = load_model(args.model, gpu_id=args.gpu_id)
-  translated_snippets = translate_with_model(translator, snippets, args.src_lang, args.dst_lang)
-  translated_variants = translate_with_model(translator, variants, args.src_lang, args.dst_lang)
-  evaluate(dataset, snippets, variants, translated_snippets, translated_variants, args.src_lang, args.dst_lang)
+
+  similarity = calculate_codebleu(snippets, variants, args.src_lang)
+  logger.info(f'Average code similarity:\n{pformat(similarity)}')
+
+  corpus = (variants,)
+  evaluate_translation(benchmark, translator, snippets, corpus, args)
 
 
 if __name__ == '__main__':
