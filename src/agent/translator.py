@@ -44,7 +44,7 @@ def translate(translator: BaseAgent, snippets: Sequence[Snippet], src_lang: str,
     prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
                     user=USER_PROMPT.format(src_lang=src_lang, dst_lang=dst_lang, code=snippet.code))
     response = translator.generate(prompt)
-    matched = re.search(r'```\w+\n(.+)```', response, re.DOTALL)
+    matched = re.search(r'```(?:\w+)?\n(.+)```', response, re.DOTALL)
     if not matched:
       logger.warning(f'Translation of {snippet.id} not found.')
       logger.verbose(response)

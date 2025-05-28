@@ -80,67 +80,23 @@ class OpenAIAgent(BaseAgent):
 
 class DeepseekCoder(BaseAgent):
   @empty_cache
-  def __init__(self, name: str, device: str):
-    path = os.getenv("DEEPSEEKCODER_PATH")
-    if not path:
-      raise ValueError('DEEPSEEKCODER_PATH environment variable is not set.')
-    model_args = {
-        'pretrained_model_name_or_path': os.path.join(path, name),
-        'trust_remote_code': True,
-        'torch_dtype': torch.bfloat16,
-        'device_map': 'auto',
-    }
-    self.model = AutoModelForCausalLM.from_pretrained(**model_args).cuda()
-    self.tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
-
-  @empty_cache
-  def generate(self, prompt: Prompt) -> str:
-    messages = [
-        {'role': 'system', 'content': prompt.system},
-        {'role': 'user', 'content': prompt.user}
-    ]
-    inputs = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors='pt').to(self.model.device)
-    outputs = self.model.generate(
-        inputs,
-        max_new_tokens=config['max_new_tokens'],
-        do_sample=False,
-        num_return_sequences=1,
-        eos_token_id=self.tokenizer.eos_token_id,
-        use_cache=True,
+  def __init__(self, name: str):
+    root_path = os.getenv("DEEPSEEK_PATH")
+    if not root_path:
+      raise ValueError('Please set DEEPSEEK_PATH environment variable to the root directory of downloaded DeepSeek Models.')
+    path = os.path.join(root_path, name)
+    self.model = AutoModelForCausalLM.from_pretrained(
+        pretrained_model_name_or_path=path,
+        trust_remote_code=True,
+        torch_dtype=torch.bfloat16,
+        device_map='auto',
     )
-    response = self.tokenizer.decode(outputs[0][len(inputs[0]):], skip_special_tokens=True)
-    del inputs, outputs
-    return response
-
-
-class QwenCoder(DeepseekCoder):
-  @empty_cache
-  def __init__(self, name: str, device: str):
-    path = os.getenv("QWENCODER_PATH")
-    if not path:
-      raise ValueError('QWENCODER_PATH environment variable is not set.')
-    model_args = {
-        'pretrained_model_name_or_path': os.path.join(path, name),
-        'trust_remote_code': True,
-        'torch_dtype': torch.bfloat16,
-        'device_map': 'auto',
-    }
-    self.model = AutoModelForCausalLM.from_pretrained(**model_args).cuda()
-    self.tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
-
-
-class CodeGeeX(BaseAgent):
-  @empty_cache
-  def __init__(self, name: str, device: str):
-    model_args = {
-        'pretrained_model_name_or_path': f'THUDM/{name}',
-        'trust_remote_code': True,
-        'torch_dtype': torch.bfloat16,
-        'low_cpu_mem_usage': True,
-        'device_map': 'auto',
-    }
-    self.model = AutoModelForCausalLM.from_pretrained(**model_args).cuda().eval()
-    self.tokenizer = AutoTokenizer.from_pretrained(f'THUDM/{name}', trust_remote_code=True)
+    self.tokenizer = AutoTokenizer.from_pretrained(
+        path,
+        trust_remote_code=True
+    )
+    if not self.tokenizer.pad_token_id:
+      self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
   @empty_cache
   def generate(self, prompt: Prompt) -> str:
@@ -148,34 +104,111 @@ class CodeGeeX(BaseAgent):
         {'role': 'system', 'content': prompt.system},
         {'role': 'user', 'content': prompt.user}
     ]
-    inputs = self.tokenizer.encode(messages, add_generation_prompt=True, tokenize=True, return_tensors='pt', return_dict=True).to(self.model.device)
+    inputs = self.tokenizer.apply_chat_template(
+        messages,
+        add_generation_prompt=True,
+        return_tensors='pt',
+        return_dict=True,
+    )
+    input_ids = inputs['input_ids'].to(self.model.device)
+    attention_mask = inputs['attention_mask'].to(self.model.device)
     with torch.no_grad():
       outputs = self.model.generate(
-          inputs,
+          input_ids,
+          attention_mask=attention_mask,
           max_new_tokens=config['max_new_tokens'],
           do_sample=False,
+          temperature=None,
           num_return_sequences=1,
           eos_token_id=self.tokenizer.eos_token_id,
           pad_token_id=self.tokenizer.pad_token_id,
           use_cache=True,
       )
     response = self.tokenizer.decode(outputs[0][len(inputs[0]):], skip_special_tokens=True)
-    del inputs, outputs
+    del inputs, input_ids, attention_mask, outputs
     return response
 
 
-def agent_factory(name: str, device: str = 'auto') -> BaseAgent:
+class QwenCoder(DeepseekCoder):
+  @empty_cache
+  def __init__(self, name: str):
+    root_path = os.getenv("QWEN_PATH")
+    if not root_path:
+      raise ValueError('Please set QWEN_PATH environment variable to the root directory of downloaded Qwen Models.')
+    path = os.path.join(root_path, name)
+    self.model = AutoModelForCausalLM.from_pretrained(
+        pretrained_model_name_or_path=path,
+        trust_remote_code=True,
+        torch_dtype=torch.bfloat16,
+        device_map='auto',
+    )
+    self.tokenizer = AutoTokenizer.from_pretrained(
+        path,
+        trust_remote_code=True,
+    )
+    if not self.tokenizer.pad_token_id:
+      self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+
+
+class CodeGeeX(BaseAgent):
+  @empty_cache
+  def __init__(self, name: str):
+    path = f'THUDM/{name}'
+    self.model = AutoModelForCausalLM.from_pretrained(
+        pretrained_model_name_or_path=path,
+        trust_remote_code=True,
+        torch_dtype=torch.bfloat16,
+        low_cpu_mem_usage=True,
+        device_map='auto',
+    ).eval()
+    self.tokenizer = AutoTokenizer.from_pretrained(
+        path,
+        trust_remote_code=True,
+    )
+    if not self.tokenizer.pad_token_id:
+      self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+
+  def generate(self, prompt):
+    messages = [
+        {'role': 'system', 'content': prompt.system},
+        {'role': 'user', 'content': prompt.user}
+    ]
+    inputs = self.tokenizer.apply_chat_template(
+        messages,
+        add_generation_prompt=True,
+        return_tensors='pt',
+        return_dict=True,
+    )
+    input_ids = inputs['input_ids'].to(self.model.device)
+    attention_mask = inputs['attention_mask'].to(self.model.device)
+    with torch.no_grad():
+      outputs = self.model.generate(
+          input_ids,
+          attention_mask=attention_mask,
+          max_new_tokens=config['max_new_tokens'],
+          do_sample=False,
+          temperature=None,
+          num_return_sequences=1,
+          eos_token_id=self.tokenizer.eos_token_id,
+          pad_token_id=self.tokenizer.pad_token_id,
+          use_cache=True,
+      )
+    response = self.tokenizer.decode(outputs[:, input_ids.shape[1]:][0], skip_special_tokens=True)
+    del inputs, input_ids, attention_mask, outputs
+    return response
+
+
+def agent_factory(name: str) -> BaseAgent:
   """
   Load the specified model.
   :param model_name: name of the model
   :param gpu_id: the GPU id to run locally. If negative, the largest free GPU will be used. If model is remote, this parameter will be ignored.
   :return: the model and tokenizer
   """
-  device = get_freest_gpu() if device == 'auto' else device
   if name.startswith('deepseek-coder'):
-    return DeepseekCoder(name, device)
+    return DeepseekCoder(name)
   if name.startswith('Qwen'):
-    return QwenCoder(name, device)
+    return QwenCoder(name)
   if name.startswith('codegeex'):
-    return CodeGeeX(name, device)
+    return CodeGeeX(name)
   return OpenAIAgent(name)

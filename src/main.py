@@ -31,8 +31,6 @@ def parse_args() -> argparse.Namespace:
                       help='Specify the source language.')
   parser.add_argument('--dst-lang', type=str, required=True,
                       help='Specify the destination language.')
-  parser.add_argument('--device', type=str, default='auto',
-                      help='Specify the device to use for LLM inference. If set to "auto", it will use the largest available GPU, or CPU if no GPU is available.')
   parser.add_argument('-n', '--num-snippets', type=int, default=-1,
                       help='Limit the number of snippets to test. -1 for all.')
   parser.add_argument('--seed', type=int, default=42,
@@ -95,7 +93,7 @@ def main():
   init_logger(verbose=args.verbose, debug=args.debug)
   benchmark = benchmark_factory(args.dataset)
   transformer = transformer_factory()
-  translator = agent_factory(args.model, device=args.device)
+  translator = agent_factory(args.model)
   logger.info(f'Evaluating {args.model} on {args.dataset} with transformer {transformer.__class__.__name__}...')
 
   snippets = benchmark.load_source(args.src_lang)

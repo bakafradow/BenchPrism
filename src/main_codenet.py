@@ -36,8 +36,6 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument('-t', '--transformer', type=str,
                       required=True, choices=transformers,
                       help='Specify the code transformer.')
-  parser.add_argument('--device', type=str, default='auto',
-                      help='Specify the device to use for LLM inference. If set to "auto", it will use the largest available GPU, or CPU if no GPU is available.')
   parser.add_argument('-n', '--num-snippets', type=int, default=-1,
                       help='Limit the number of snippets to test. -1 for all.')
   parser.add_argument('-v', '--verbose', action='store_true', default=False,
@@ -81,7 +79,7 @@ def main():
   init_logger(verbose=args.verbose, debug=args.debug)
   dataset = 'CodeNet'
   benchmark = benchmark_factory(dataset)
-  translator = agent_factory(args.model, device=args.device)
+  translator = agent_factory(args.model)
   logger.info(f'Evaluating {args.model} on {args.dataset} with generator {args.generator} and transformer {args.transformer}...')
 
   snippets = _load_snippets(args.generator, args.transformer)
