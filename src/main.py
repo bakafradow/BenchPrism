@@ -1,3 +1,10 @@
+from .transformer.base import transformer_factory
+from .metrics.correctness import calculate_correctness
+from .logger import init_logger, logger
+from .benchmarks import benchmark_factory
+from .agent.translator import translate
+from .agent.base import BaseAgent, agent_factory
+from . import Snippet, TestBatch
 import argparse
 import os
 from collections.abc import Sequence
@@ -10,14 +17,6 @@ from dotenv import load_dotenv
 from tqdm import tqdm
 
 load_dotenv()
-
-from . import Snippet
-from .agent.base import BaseAgent, agent_factory
-from .agent.translator import translate
-from .benchmarks import BaseBenchmark, benchmark_factory
-from .logger import init_logger, logger
-from .metrics.correctness import calculate_correctness
-from .transformer.base import transformer_factory
 
 
 def parse_args() -> argparse.Namespace:
@@ -35,6 +34,8 @@ def parse_args() -> argparse.Namespace:
                       help='Limit the number of snippets to test. -1 for all.')
   parser.add_argument('--seed', type=int, default=42,
                       help='Set the random seed for reproducibility.')
+  parser.add_argument('--prob', type=float, default=1.0,
+                      help='Set the probability of applying transformation for each spot.')
   parser.add_argument('-v', '--verbose', action='store_true', default=False,
                       help='If set, enables verbose level logging.')
   parser.add_argument('--debug', action='store_true', default=False,
@@ -43,14 +44,18 @@ def parse_args() -> argparse.Namespace:
   return args
 
 
-def evaluate_translation(benchmark: BaseBenchmark, translator: BaseAgent, snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]], args: argparse.Namespace) -> None:
+def evaluate_translation(
+    translator: BaseAgent,
+    snippets: Sequence[Snippet],
+    corpus: Sequence[Sequence[Snippet]],
+    test_batches: Sequence[TestBatch],
+    args: argparse.Namespace,
+  ) -> None:
   translated_snippets = translate(translator, snippets, args.src_lang, args.dst_lang)
   translated_corpus = [translate(translator, variants, args.src_lang, args.dst_lang)
-                        for variants in tqdm(corpus, desc='Translating corpus',
-                                             total=len(corpus), leave=False)]
+                       for variants in tqdm(corpus, desc='Translating corpus',
+                                            total=len(corpus), leave=False)]
 
-  ids = (snippet.id for snippet in snippets)
-  test_batches = benchmark.load_tests(ids)
   logger.info('Testing originals.')
   original_correctness = calculate_correctness(snippets, test_batches, args.src_lang)
   logger.info('Testing variants.')
@@ -99,10 +104,23 @@ def main():
   snippets = benchmark.load_source(args.src_lang)
   if args.num_snippets >= 0:
     snippets = snippets[:args.num_snippets]
-  corpus = transformer.transform(snippets, lang=args.src_lang, seed=args.seed)
+  ids = (snippet.id for snippet in snippets)
+  test_batches = benchmark.load_tests(ids)
+  corpus = transformer.transform(
+      snippets=snippets,
+      test_batches=test_batches,
+      lang=args.src_lang,
+      seed=args.seed,
+      prob=args.prob,
+  )
 
-  # TODO: filter out invalid variants
-  evaluate_translation(benchmark, translator, snippets, corpus, args)
+  evaluate_translation(
+    translator=translator,
+    snippets=snippets,
+    corpus=corpus,
+    test_batches=test_batches,
+    args=args,
+  )
 
 
 if __name__ == '__main__':

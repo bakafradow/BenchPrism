@@ -1,5 +1,6 @@
 transformer:
   class: org.example.experiment.Mutator
+  retry: 3
 
 agent:
   ######### settings for remote API #########

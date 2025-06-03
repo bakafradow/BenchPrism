@@ -8,7 +8,6 @@ import jsonlines
 from datasets import load_dataset
 
 from . import Snippet, TestBatch
-from .logger import logger
 
 
 def check_lang_support(func: Callable):

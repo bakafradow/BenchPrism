@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
-from .. import Snippet
+from .. import Snippet, TestBatch
 
 
 class BaseTransformer(ABC):
@@ -10,10 +10,17 @@ class BaseTransformer(ABC):
   """
 
   @abstractmethod
-  def transform(self, snippets: Sequence[Snippet], lang: str) -> Sequence[Sequence[Snippet | None]]:
+  def transform(
+    self,
+    snippets: Sequence[Snippet],
+    test_batches: Sequence[TestBatch],
+    lang: str
+  ) -> Sequence[Sequence[Snippet | None]]:
     """
     Transforms the given code snippet.
     :param snippet: the code snippet to transform
+    :param test_batches: the test cases for the code snippet
+    :param lang: the language of the code snippet
     :return: the transformed code snippet
     """
     return tuple((snippets,))

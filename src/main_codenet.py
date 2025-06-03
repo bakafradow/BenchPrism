@@ -93,8 +93,16 @@ def main():
   similarity = calculate_codebleu(snippets, variants, args.src_lang)
   logger.info(f'Average code similarity:\n{pformat(similarity)}')
 
+  ids = (snippet.id for snippet in snippets)
+  test_batches = benchmark.load_tests(ids)
   corpus = (variants,)
-  evaluate_translation(benchmark, translator, snippets, corpus, args)
+  evaluate_translation(
+    translator=translator,
+    snippets=snippets,
+    corpus=corpus,
+    test_batches=test_batches,
+    args=args,
+  )
 
 
 if __name__ == '__main__':

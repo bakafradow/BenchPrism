@@ -10,7 +10,6 @@ from requests.exceptions import Timeout
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from ..logger import logger
-from .utils import get_freest_gpu
 
 with open('settings.yml') as f:
   config = yaml.safe_load(f)['agent']
@@ -47,7 +46,7 @@ class BaseAgent(ABC):
 class OpenAIAgent(BaseAgent):
   def __init__(self, name: str):
     self.client = OpenAI(base_url=os.getenv('BASE_URL'), api_key=os.getenv('API_KEY'))
-    if name not in {model.id for model in self.client.models.list()}:
+    if name not in {model.id.split('/')[-1] for model in self.client.models.list()}:  # model names from Gemini API have prefix 'models/'
       raise TypeError(f'{name} is not available from {self.client.base_url}.')
     self.name = name
 

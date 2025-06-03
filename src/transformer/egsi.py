@@ -1,3 +1,4 @@
+import math
 import os
 import shutil
 import subprocess
@@ -8,8 +9,9 @@ import jpype as jp
 import yaml
 from tqdm import tqdm
 
-from .. import Snippet
+from .. import Snippet, TestBatch
 from ..logger import logger
+from ..metrics.correctness import calculate_correctness
 from .base import BaseTransformer
 
 with open('settings.yml', 'r') as f:
@@ -31,13 +33,19 @@ class EGSI(BaseTransformer):
   def __del__(self):
     jp.shutdownJVM()
 
-  def _apply(self, snippets: Sequence[Snippet], lang: str, style_file: str) -> Sequence[Snippet | None]:
+  def _apply(
+      self,
+      snippets: Sequence[Snippet],
+      lang: str,
+      style_file: str,
+      prob: float
+  ) -> Sequence[Snippet | None]:
     variants = [None] * len(snippets)
     for i, snippet in tqdm(enumerate(snippets), desc='Transforming', total=len(snippets), leave=False):
       try:
-        variant = self.cls.apply(lang, snippet.code, style_file)
+        variant = self.cls.apply(lang, snippet.code, style_file, prob)
       except Exception as e:
-        logger.error(f'Error occurred for snippet {snippet.id}:\n{e}')
+        logger.error(f'Error occurred for snippet {snippet.id}.\n{e}')
         variant = None
       if not variant:
         logger.warning(f'Failed to transform to {snippet.id}.')
@@ -46,7 +54,12 @@ class EGSI(BaseTransformer):
         variants[i] = snippet._replace(code=str(variant))
     return variants
 
-  def _span(self, snippets: Sequence[Snippet], lang: str, seed: int) -> Sequence[Sequence[Snippet | None]]:
+  # TODO: change the method to a builder that generates the whole style file
+  def _generate_sequences(
+      self,
+      lang: str,
+      seed: int,
+  ) -> Sequence[Sequence[int]]:
     equivalent_counts = dict(self.cls.getEquivalentsCounts(lang))
     with NamedTemporaryFile('w', encoding='utf-8', prefix='model', suffix='.txt', delete=False) as f:
       f.write('\n'.join([f'{k}: {",".join(map(str, range(v)))}' for k, v in equivalent_counts.items()]))
@@ -54,18 +67,52 @@ class EGSI(BaseTransformer):
     try:
       returned = subprocess.run([pict_path, f.name, f'/r:{seed}'], check=True, encoding='utf-8', stdout=subprocess.PIPE)
     except subprocess.CalledProcessError as e:
-      logger.error(f'Error occurred while running pict:\n{e}')
+      logger.error(f'Error occurred while running pict.\n{e}')
       raise e
     os.remove(f.name)
     sequences = [[int(num) for num in line.split()] for line in returned.stdout.splitlines()[1:]]
+    return sequences
+
+  def _span_until_correct(
+      self,
+      snippet: Snippet,
+      sequence: Sequence[int],
+      test_batch: TestBatch,
+      lang: str,
+      prob: float,
+      retry: int = -1,
+  ) -> str:
+    sequence_list = jp.java.util.List.of(*[jp.java.lang.Integer(num) for num in sequence])
+    attempt = 0
+    while retry < 0 or attempt < retry:
+      variant = self.cls.span(lang, snippet.code, sequence_list, prob)
+      if not variant:
+        logger.warning(f'Failed to span {snippet.id} with sequence {sequence}.')
+      else:
+        correctness = calculate_correctness([snippet._replace(code=str(variant))], [test_batch], lang)
+        if math.isclose(correctness, 1.0):
+          return variant
+      attempt += 1
+      logger.verbose(f'{snippet.id} wrongly transformed, {attempt} attempt(s).')
+    return ''
+
+  def _span(
+      self,
+      snippets: Sequence[Snippet],
+      test_batches: Sequence[TestBatch],
+      lang: str,
+      seed: int,
+      prob: float,
+  ) -> Sequence[Sequence[Snippet | None]]:
+    sequences = self._generate_sequences(lang, seed)
+
     corpus = [[None] * len(snippets) for _ in range(len(sequences))]
     for i, sequence in tqdm(enumerate(sequences), desc='Spanning', total=len(sequences), leave=False):
       for j, snippet in tqdm(enumerate(snippets), desc='Transforming', total=len(snippets), leave=False):
         try:
-          sequence_list = jp.java.util.List.of(*[jp.java.lang.Integer(num) for num in sequence])
-          variant = self.cls.span(lang, snippet.code, sequence_list)
+          variant = self._span_until_correct(snippet, sequence, test_batches[j], lang, prob, retry=config['retry'])
         except Exception as e:
-          logger.error(f'Error occurred for snippet {snippet.id}:\n{e}')
+          logger.error(f'Error occurred for snippet {snippet.id}.\n{e}')
           variant = None
         if not variant:
           logger.warning(f'Failed to transform {snippet.id}.')
@@ -75,7 +122,15 @@ class EGSI(BaseTransformer):
     logger.info(f'Spanned {len(corpus)} variant benchmarks.')
     return corpus
 
-  def transform(self, snippets: Sequence[Snippet], lang: str, *, seed: int = 42) -> Sequence[Sequence[Snippet | None]]:
+  def transform(
+      self,
+      snippets: Sequence[Snippet],
+      test_batches: Sequence[TestBatch],
+      lang: str,
+      *,
+      seed: int = 42,
+      prob: float = 1.0,
+  ) -> Sequence[Sequence[Snippet | None]]:
     """
     Applies transformations to the source code and generates variant sequence.
     :param snippets: the snippets to be transformed
@@ -86,6 +141,6 @@ class EGSI(BaseTransformer):
     style_file = os.getenv('STYLE_FILE')
     if not style_file:
       logger.info('Spanning styles...')
-      return self._span(snippets, lang, seed)
+      return self._span(snippets, test_batches, lang, seed, prob)
     logger.info(f'Applying styles from {style_file}...')
-    return [self._apply(snippets, lang, style_file)]
+    return [self._apply(snippets, lang, style_file, prob)]
