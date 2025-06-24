@@ -51,6 +51,7 @@ def translate(translator: BaseAgent, snippets: Sequence[Snippet], src_lang: str,
       return None
     logger.verbose(f'Snippet {i}:\n{matched.group(1)}')
     return snippet._replace(code=matched.group(1))
+
   max_workers = max(1, config['max_workers'])
   with ThreadPoolExecutor(max_workers=max_workers) as executor:
     return tuple(tqdm(executor.map(worker, range(len(snippets)), snippets),

@@ -112,6 +112,7 @@ def calculate_correctness(snippets: Sequence[Snippet], test_batches: Sequence[Te
       return globals()[f'test_{lang}'](snippet, tests)
     except KeyError:
       raise TypeError(f'Unsupported language {lang} for correctness testing.')
+
   max_workers = max(1, config['max_workers'])
   with ThreadPoolExecutor(max_workers=max_workers) as executor:
     results = list(tqdm(executor.map(worker, snippets, test_batches), desc='Calculating correctness', total=len(snippets), leave=False))

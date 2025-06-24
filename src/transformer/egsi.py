@@ -4,6 +4,7 @@ import shutil
 import subprocess
 from collections.abc import Sequence
 from tempfile import NamedTemporaryFile
+from concurrent.futures import ThreadPoolExecutor
 
 import jpype as jp
 import yaml
@@ -106,19 +107,23 @@ class EGSI(BaseTransformer):
   ) -> Sequence[Sequence[Snippet | None]]:
     sequences = self._generate_sequences(lang, seed)
 
-    corpus = [[None] * len(snippets) for _ in range(len(sequences))]
+    def worker(snippet, sequence, test_batch):
+      try:
+        variant = self._span_until_correct(snippet, sequence, test_batch, lang, prob, retry=config['retry'])
+      except Exception as e:
+        logger.error(f'Error occurred for snippet {snippet.id}.\n{e}')
+        return snippet
+      if not variant:
+        logger.warning(f'Failed to transform {snippet.id}.')
+        return snippet
+      return snippet._replace(code=str(variant))
+
+    max_workers = max(1, config['max_workers'])
+    corpus = [None] * len(sequences)
     for i, sequence in tqdm(enumerate(sequences), desc='Spanning', total=len(sequences), leave=False):
-      for j, snippet in tqdm(enumerate(snippets), desc='Transforming', total=len(snippets), leave=False):
-        try:
-          variant = self._span_until_correct(snippet, sequence, test_batches[j], lang, prob, retry=config['retry'])
-        except Exception as e:
-          logger.error(f'Error occurred for snippet {snippet.id}.\n{e}')
-          variant = None
-        if not variant:
-          logger.warning(f'Failed to transform {snippet.id}.')
-          corpus[i][j] = snippet
-        else:
-          corpus[i][j] = snippet._replace(code=str(variant))
+      with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        results = list(tqdm(executor.map(worker, snippets, [sequence] * len(snippets), test_batches), desc=f'Spanning sequence {i + 1}', total=len(snippets), leave=False))
+      corpus[i] = results
     logger.info(f'Spanned {len(corpus)} variant benchmarks.')
     return corpus
 
