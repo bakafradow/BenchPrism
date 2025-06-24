@@ -78,7 +78,7 @@ class HumanEvalX(BaseBenchmark):
     return tuple(map(lambda pair: Snippet(*pair), zip(task_ids, sources)))
 
   def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
-    return tuple()  # HumanEvalX evaluates correctness with assertions
+    return tuple((('', ('',)),) for _ in ids)  # HumanEvalX evaluates correctness with assertions
 
 
 @dataclass
