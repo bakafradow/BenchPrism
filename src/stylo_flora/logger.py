@@ -22,7 +22,7 @@ class ColorFormatter(logging.Formatter):
     return f'{self.COLORS[record.levelname]}{super().format(record)}{self.COLORS["ENDC"]}'
 
 
-logger = logging.getLogger()  # use the root logger
+logger = logging.getLogger('stylo_flora')
 
 
 def init_logger(verbose: bool = False, debug: bool = False) -> None:

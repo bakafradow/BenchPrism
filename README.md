@@ -1,4 +1,4 @@
-# Code Translator Assessment
+# StyloFlora
 
 ## Setup
 
@@ -7,40 +7,30 @@ in `${ROOT}/data/`.
 
 > If you're working with PyCharm, it's recommended to exclude the `data` directory from indexing in
 `File | Settings | Project: PROJECT_NAME | Project Structure` and from SonarLint analysis in
-`File | Settings | Other Settings | SonarLint | File Exclusions`, to avoid performance issues in the IDE.
-2. Install the required packages by running `pip install -r requirements.txt`.
-3. Package `code-style-transformer` with Maven, configure the path to the JAR file and your JVM in `config.py`.
+`File | Settings | Other Settings | SonarLint | File Exclusions` to avoid performance issues in the IDE.
+2. Install the packaged framework by running `pip install -e .`.
+3. Package `code-style-transformer` with Maven, configure the path to the JAR file and your JVM in `settings.yml`.
+
+## Structure
+
+```
+.
+├── data            # benchmarks and datasets
+├── experiments     # scripts for experiments
+├── logs            # logs while running
+├── notebooks       # notebooks for exploration
+├── README.md
+├── results         # outputs for further analysis
+├── scripts         # helper scripts
+├── settings.yml    # configuration file
+├── src             # source code of StyloFlora
+└── targets         # compiled code while running
+```
 
 ## Usage
 
-See `python3 main.py --help`.
-
-## TODOs
-
-- [x] How does the transformer work?
-- [x] How to evaluate the code set with CodeBLEU, etc.?
-- [x] Pick up datasets for testing
-  - humanEvalX
-    1. load source code from HF
-    2. transform code (optional)
-    3. translate code by model
-    4. generate JSON
-    5. run evaluate_humaneval_x.sh (in Docker)
-  - xCodeEval
-    1. load source code from HF
-    2. transform code (optional)
-    3. translate code by model
-    4. HOW DOES IT WORK?
-  - XLCoST?
-    - only evaluator with CodeBLEU
-  - CodeXGLUE?
-    - only evaluator with CodeBLEU
-  - G-TransEval?
-    - too small
-- [x] Mark datasets which have no unit tests
-- [x] Interact with transformer
-  - [x] Current project side
-  - [x] Transformer side
-    - [x] Rule shuffle
-- [x] Call code translation models
-- [x] Evaluate correctness of the translation
+Refer to scripts in `experiments`.
+Example usage:
+```bash
+python3 experiments/evaluate_translation.py -d HumanEvalX -m gemini-2.0-flash --src-lang java --dst-lang python -n 100 --seed 42 --prob 0.5
+```

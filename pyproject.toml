@@ -1,0 +1,31 @@
+[project]
+name = "stylo-flora"
+requires-python = ">=3.10"
+dependencies = [
+  "bs4",
+  "codebleu",
+  "datasets",
+  "dotenv",
+  "jpype1",
+  "jsonlines",
+  "lxml",
+  "openai",
+  "seaborn",
+  "transformers",
+  "tree-sitter-cpp<0.23",
+  "tree-sitter-java<0.23",
+  "tree-sitter-python<0.23",
+]
+version = "0.1.0"
+readme = {file = "README.md", content-type = "text/markdown"}
+description = "A Python package for spanning code corpus to variants with code style transformations and evaluating them."
+
+[project.optional-dependencies]
+dev = [
+  "ipykernel",
+  "websockets",
+]
+
+[build-system]
+requires = ["flit_core>=3.6"]
+build-backend = "flit_core.buildapi"

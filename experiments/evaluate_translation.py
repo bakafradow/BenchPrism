@@ -1,10 +1,3 @@
-from .transformer.base import transformer_factory
-from .metrics.correctness import calculate_correctness
-from .logger import init_logger, logger
-from .benchmarks import benchmark_factory
-from .agent.translator import translate
-from .agent.base import BaseAgent, agent_factory
-from . import Snippet, TestBatch
 import argparse
 import os
 from collections.abc import Sequence
@@ -17,6 +10,14 @@ from dotenv import load_dotenv
 from tqdm import tqdm
 
 load_dotenv()
+
+from stylo_flora import Snippet, TestBatch
+from stylo_flora.agent.base import BaseAgent, agent_factory
+from stylo_flora.agent.translator import translate
+from stylo_flora.benchmarks import benchmark_factory
+from stylo_flora.logger import init_logger, logger
+from stylo_flora.metrics.correctness import calculate_correctness
+from stylo_flora.transformer.base import transformer_factory
 
 
 def parse_args() -> argparse.Namespace:

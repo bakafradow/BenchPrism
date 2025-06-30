@@ -10,12 +10,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from . import Snippet
-from .agent.base import agent_factory
-from .benchmarks import benchmark_factory
-from .logger import init_logger, logger
-from .main import evaluate_translation
-from .metrics.similarity import calculate_codebleu
+from evaluate_translation import evaluate_translation
+
+from stylo_flora import Snippet
+from stylo_flora.agent.base import agent_factory
+from stylo_flora.benchmarks import benchmark_factory
+from stylo_flora.logger import init_logger, logger
+from stylo_flora.metrics.similarity import calculate_codebleu
 
 
 def parse_args() -> argparse.Namespace:
@@ -77,8 +78,8 @@ def _load_variants(generator: str, transformer: str, snippets: Sequence[Snippet]
 def main():
   args = parse_args()
   init_logger(verbose=args.verbose, debug=args.debug)
-  dataset = 'CodeNet'
-  benchmark = benchmark_factory(dataset)
+  args.dataset = 'CodeNet'
+  benchmark = benchmark_factory(args.dataset)
   translator = agent_factory(args.model)
   logger.info(f'Evaluating {args.model} on {args.dataset} with generator {args.generator} and transformer {args.transformer}...')
 
