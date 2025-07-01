@@ -58,28 +58,32 @@ def evaluate_translation(
                                             total=len(corpus), leave=False)]
 
   logger.info('Testing originals.')
-  original_correctness = calculate_correctness(snippets, test_batches, args.src_lang)
+  res_original = calculate_correctness(snippets, test_batches, args.src_lang)
   logger.info('Testing variants.')
-  transformed_correctness_list = [calculate_correctness(variants, test_batches, args.src_lang)
-                                  for variants in tqdm(corpus, desc='Evaluating', total=len(corpus), leave=False)]
+  res_varied = [calculate_correctness(variants, test_batches, args.src_lang)
+                for variants in tqdm(corpus, desc='Evaluating', total=len(corpus), leave=False)]
   logger.info('Testing transformed originals.')
-  translated_correctness = calculate_correctness(translated_snippets, test_batches, args.dst_lang)
+  res_translated = calculate_correctness(translated_snippets, test_batches, args.dst_lang)
   logger.info('Testing transformed variants.')
-  transformed_translated_correctness_list = [calculate_correctness(variants, test_batches, args.dst_lang)
-                                             for variants in tqdm(translated_corpus, desc='Evaluating', total=len(corpus), leave=False)]
+  res_translated_varied = [calculate_correctness(variants, test_batches, args.dst_lang)
+                           for variants in tqdm(translated_corpus, desc='Evaluating', total=len(corpus), leave=False)]
   logger.info(f'\n'
+              f'Correctness of {args.model} on {args.dataset}:\n'
               f'========  Correctness  ========\n'
-              f'Originals             : {original_correctness * 100:>6.2f}%\n'
-              f'Variants              : {sum(transformed_correctness_list) / len(transformed_correctness_list) * 100:>6.2f}%\n'
-              f'Translated Originals  : {translated_correctness * 100:>6.2f}%\n'
-              f'Translated Variants   : {sum(transformed_translated_correctness_list) / len(transformed_translated_correctness_list) * 100:>6.2f}%\n'
+              f'Originals             : {res_original * 100:>6.2f}%\n'
+              f'Variants              : {sum(res_varied) / len(res_varied) * 100:>6.2f}%\n'
+              f'Translated Originals  : {res_translated * 100:>6.2f}%\n'
+              f'Translated Variants   : {sum(res_translated_varied) / len(res_translated_varied) * 100:>6.2f}%\n'
               f'===============================')
-  df = pd.DataFrame({'variants': transformed_correctness_list, 'translated_variants': transformed_translated_correctness_list})
 
   with open('settings.yml') as f:
     config = yaml.safe_load(f)['metrics']
   result_dir = Path(config['result_dir'])
   os.makedirs(result_dir, exist_ok=True)
+  df = pd.DataFrame({'translated': res_translated,
+                     'translated_variants': res_translated_varied,
+                     'fallback_rate': pd.read_csv(result_dir / 'fallback_rates.csv')['fallback_rate']})
+  os.remove(result_dir / 'fallback_rates.csv')
   df.to_csv(result_dir / f'{args.dataset}_correctness_{datetime.now().strftime("%Y%m%d%H%M%S")}.csv', index=False)
 
 

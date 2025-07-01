@@ -8,7 +8,7 @@ agent:
   timeout: 120
   retry: 3
   retry_interval: 5
-  max_workers: 10
+  max_workers: 5
 
   ######## settings for local models ########
   max_new_tokens: 1024

@@ -19,6 +19,7 @@ Translate code from one language to another without changing its behavior.
 </task>
 <constraint>
 Your output MUST only contain the translated code WITHOUT any explanations, enclosed by triple back quotes.
+Assertion statements, if exist, should also be considered.
 </constraint>
 """
 USER_PROMPT = """

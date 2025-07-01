@@ -3,10 +3,12 @@ import os
 import shutil
 import subprocess
 from collections.abc import Sequence
+from pathlib import Path
 from tempfile import NamedTemporaryFile
 from concurrent.futures import ThreadPoolExecutor
 
 import jpype as jp
+import pandas as pd
 import yaml
 from tqdm import tqdm
 
@@ -106,15 +108,18 @@ class EGSI(BaseTransformer):
       prob: float,
   ) -> Sequence[Sequence[Snippet | None]]:
     sequences = self._generate_sequences(lang, seed)
+    fallback_rates = pd.Series([0] * len(sequences), name='fallback_rate')
 
-    def worker(snippet, sequence, test_batch):
+    def worker(i, snippet, sequence, test_batch):
       try:
         variant = self._span_until_correct(snippet, sequence, test_batch, lang, prob, retry=config['retry'])
       except Exception as e:
         logger.error(f'Error occurred for snippet {snippet.id}.\n{e}')
+        fallback_rates[i] += 1
         return snippet
       if not variant:
         logger.warning(f'Failed to transform {snippet.id}.')
+        fallback_rates[i] += 1
         return snippet
       return snippet._replace(code=str(variant))
 
@@ -122,9 +127,16 @@ class EGSI(BaseTransformer):
     corpus = [None] * len(sequences)
     for i, sequence in tqdm(enumerate(sequences), desc='Spanning', total=len(sequences), leave=False):
       with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        results = list(tqdm(executor.map(worker, snippets, [sequence] * len(snippets), test_batches), desc=f'Spanning sequence {i + 1}', total=len(snippets), leave=False))
+        results = list(tqdm(executor.map(worker, [i] * len(snippets), snippets, [sequence] * len(snippets), test_batches), desc=f'Spanning sequence {i + 1}', total=len(snippets), leave=False))
       corpus[i] = results
     logger.info(f'Spanned {len(corpus)} variant benchmarks.')
+    series = pd.Series(fallback_rates / len(snippets), name='fallback_rate')
+
+    with open('settings.yml') as f:
+       result_dir = Path(yaml.safe_load(f)['metrics']['result_dir'])
+    os.makedirs(result_dir, exist_ok=True)
+    series.to_csv(result_dir / 'fallback_rates.csv', index=False)
+
     return corpus
 
   def transform(
