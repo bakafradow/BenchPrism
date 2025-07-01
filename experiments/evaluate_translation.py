@@ -82,9 +82,12 @@ def evaluate_translation(
   os.makedirs(result_dir, exist_ok=True)
   df = pd.DataFrame({'translated': res_translated,
                      'translated_variants': res_translated_varied,
-                     'fallback_rate': pd.read_csv(result_dir / 'fallback_rates.csv')['fallback_rate']})
-  os.remove(result_dir / 'fallback_rates.csv')
-  df.to_csv(result_dir / f'{args.dataset}_correctness_{datetime.now().strftime("%Y%m%d%H%M%S")}.csv', index=False)
+                     })
+  fallback_rate_path = result_dir / 'fallback_rates.csv'
+  if os.path.exists(fallback_rate_path):
+    df['fallback_rate'] = pd.read_csv(fallback_rate_path)['fallback_rate']
+    os.remove(fallback_rate_path)
+  df.to_csv(result_dir / f'correctness_{args.dataset}_{args.src_lang}_to_{args.dst_lang}_with_{args.model}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', index=False)
 
 
 def main():

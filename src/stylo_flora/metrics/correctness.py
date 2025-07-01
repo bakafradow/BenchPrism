@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from collections.abc import Sequence
@@ -69,7 +70,9 @@ def test_java(snippet: Snippet, tests: TestBatch) -> bool:
     logger.verbose(e.stderr)
     return False
   args = ['java', '-classpath', f'{classdir}', classname]
-  return _run_with_io(args, tests, snippet.id)
+  result = _run_with_io(args, tests, snippet.id)
+  shutil.rmtree(classdir, ignore_errors=True)
+  return result
 
 
 def test_cpp(snippet: Snippet, tests: TestBatch) -> bool:
@@ -89,7 +92,9 @@ def test_cpp(snippet: Snippet, tests: TestBatch) -> bool:
     logger.verbose(e.stderr)
     return False
   args = [executable]
-  return _run_with_io(args, tests, snippet.id)
+  result = _run_with_io(args, tests, snippet.id)
+  os.remove(executable)
+  return result
 
 
 def test_python(snippet: Snippet, tests: TestBatch) -> bool:
