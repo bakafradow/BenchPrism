@@ -41,12 +41,11 @@ class EGSI(BaseTransformer):
       snippets: Sequence[Snippet],
       lang: str,
       style_file: str,
-      prob: float
   ) -> Sequence[Snippet | None]:
     variants = [None] * len(snippets)
     for i, snippet in tqdm(enumerate(snippets), desc='Transforming', total=len(snippets), leave=False):
       try:
-        variant = self.cls.apply(lang, snippet.code, style_file, prob)
+        variant = self.cls.apply(lang, snippet.code, style_file)
       except Exception as e:
         logger.error(f'Error occurred for snippet {snippet.id}.\n{e}')
         variant = None
@@ -82,13 +81,12 @@ class EGSI(BaseTransformer):
       sequence: Sequence[int],
       test_batch: TestBatch,
       lang: str,
-      prob: float,
       retry: int = -1,
   ) -> str:
     sequence_list = jp.java.util.List.of(*[jp.java.lang.Integer(num) for num in sequence])
     attempt = 0
     while retry < 0 or attempt < retry:
-      variant = self.cls.span(lang, snippet.code, sequence_list, prob)
+      variant = self.cls.span(lang, snippet.code, sequence_list)
       if not variant:
         logger.warning(f'Failed to span {snippet.id} with sequence {sequence}.')
       else:
@@ -105,14 +103,13 @@ class EGSI(BaseTransformer):
       test_batches: Sequence[TestBatch],
       lang: str,
       seed: int,
-      prob: float,
   ) -> Sequence[Sequence[Snippet | None]]:
     sequences = self._generate_sequences(lang, seed)
     fallback_rates = pd.Series([0] * len(sequences), name='fallback_rate')
 
     def worker(i, snippet, sequence, test_batch):
       try:
-        variant = self._span_until_correct(snippet, sequence, test_batch, lang, prob, retry=config['retry'])
+        variant = self._span_until_correct(snippet, sequence, test_batch, lang, retry=config['retry'])
       except Exception as e:
         logger.error(f'Error occurred for snippet {snippet.id}.\n{e}')
         fallback_rates[i] += 1
@@ -126,6 +123,7 @@ class EGSI(BaseTransformer):
     max_workers = max(1, config['max_workers'])
     corpus = [None] * len(sequences)
     for i, sequence in tqdm(enumerate(sequences), desc='Spanning', total=len(sequences), leave=False):
+      logger.verbose(f'Spanning with sequence {i + 1}: {sequence}')
       with ThreadPoolExecutor(max_workers=max_workers) as executor:
         results = list(tqdm(executor.map(worker, [i] * len(snippets), snippets, [sequence] * len(snippets), test_batches), desc=f'Spanning sequence {i + 1}', total=len(snippets), leave=False))
       corpus[i] = results
@@ -146,7 +144,6 @@ class EGSI(BaseTransformer):
       lang: str,
       *,
       seed: int = 42,
-      prob: float = 1.0,
   ) -> Sequence[Sequence[Snippet | None]]:
     """
     Applies transformations to the source code and generates variant sequence.
@@ -158,6 +155,6 @@ class EGSI(BaseTransformer):
     style_file = os.getenv('STYLE_FILE')
     if not style_file:
       logger.info('Spanning styles...')
-      return self._span(snippets, test_batches, lang, seed, prob)
+      return self._span(snippets, test_batches, lang, seed)
     logger.info(f'Applying styles from {style_file}...')
-    return [self._apply(snippets, lang, style_file, prob)]
+    return [self._apply(snippets, lang, style_file)]

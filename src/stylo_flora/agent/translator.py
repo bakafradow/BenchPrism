@@ -48,9 +48,9 @@ def translate(translator: BaseAgent, snippets: Sequence[Snippet], src_lang: str,
     matched = re.search(r'```(?:\w+)?\n(.+)```', response, re.DOTALL)
     if not matched:
       logger.warning(f'Translation of {snippet.id} not found.')
-      logger.verbose(response)
+      logger.debug(response)
       return None
-    logger.verbose(f'Snippet {i}:\n{matched.group(1)}')
+    logger.debug(f'Snippet {i}:\n{matched.group(1)}')
     return snippet._replace(code=matched.group(1))
 
   max_workers = max(1, config['max_workers'])

@@ -35,8 +35,6 @@ def parse_args() -> argparse.Namespace:
                       help='Limit the number of snippets to test. -1 for all.')
   parser.add_argument('--seed', type=int, default=42,
                       help='Set the random seed for reproducibility.')
-  parser.add_argument('--prob', type=float, default=1.0,
-                      help='Set the probability of applying transformation for each spot.')
   parser.add_argument('-v', '--verbose', action='store_true', default=False,
                       help='If set, enables verbose level logging.')
   parser.add_argument('--debug', action='store_true', default=False,
@@ -119,7 +117,6 @@ def main():
       test_batches=test_batches,
       lang=args.src_lang,
       seed=args.seed,
-      prob=args.prob,
   )
 
   evaluate_translation(

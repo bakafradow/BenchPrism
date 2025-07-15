@@ -6,6 +6,7 @@ data/*
 logs/
 targets/
 results/
+*.log
 
 # Python
 .mypy_cache/

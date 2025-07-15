@@ -1,17 +1,17 @@
 transformer:
   class: org.example.experiment.Mutator
-  retry: 3
+  retry: 1
   max_workers: 8
 
 agent:
   ######### settings for remote API #########
   timeout: 120
   retry: 3
-  retry_interval: 5
-  max_workers: 5
+  retry_interval: 10
+  max_workers: 4
 
   ######## settings for local models ########
-  max_new_tokens: 1024
+  max_new_tokens: 2048
 
 logger:
   max_bytes: 5242880 # 5MB

@@ -32,5 +32,5 @@ in `${ROOT}/data/`.
 Refer to scripts in `experiments`.
 Example usage:
 ```bash
-python3 experiments/evaluate_translation.py -d HumanEvalX -m gemini-2.0-flash --src-lang java --dst-lang python -n 100 --seed 42 --prob 0.5
+python3 experiments/evaluate_translation.py -d HumanEvalX -m gemini-2.0-flash --src-lang java --dst-lang python -n 100 --seed 42
 ```
