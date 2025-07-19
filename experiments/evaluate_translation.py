@@ -85,7 +85,7 @@ def evaluate_translation(
   if os.path.exists(fallback_rate_path):
     df['fallback_rate'] = pd.read_csv(fallback_rate_path)['fallback_rate']
     os.remove(fallback_rate_path)
-  df.to_csv(result_dir / f'correctness_{args.dataset}_{args.src_lang}_to_{args.dst_lang}_with_{args.model}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', index=False)
+  df.to_csv(result_dir / f'correctness_{args.dataset}_{args.src_lang}_to_{args.dst_lang}_with_{args.model.replace("/", "-")}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', index=False)
 
 
 def main():

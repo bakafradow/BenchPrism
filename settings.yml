@@ -1,7 +1,7 @@
 transformer:
-  class: org.example.experiment.Mutator
+  class: org.example.Mutator
   retry: 1
-  max_workers: 8
+  max_workers: 1
 
 agent:
   ######### settings for remote API #########
