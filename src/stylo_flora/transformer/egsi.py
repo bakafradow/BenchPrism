@@ -33,6 +33,11 @@ class EGSI(BaseTransformer):
     if not self.cls:
       raise ValueError('Failed to load the transformer class.')
 
+    # for debugging on EGSI
+    with open('settings.yml') as f:
+       self.dump_dir = Path(yaml.safe_load(f)['metrics']['result_dir']) / 'egsi_dump'
+    os.makedirs(self.dump_dir, exist_ok=True)
+
   def __del__(self):
     jp.shutdownJVM()
 
@@ -50,13 +55,12 @@ class EGSI(BaseTransformer):
         logger.error(f'Error occurred for snippet {snippet.id}.\n{e}')
         variant = None
       if not variant:
-        logger.warning(f'Failed to transform to {snippet.id}.')
+        logger.warning(f'Failed to transform snippet {i} ({snippet.id}).')
         variants[i] = snippet
       else:
         variants[i] = snippet._replace(code=str(variant))
     return variants
 
-  # TODO: change the method to a builder that generates the whole style file
   def _generate_sequences(
       self,
       lang: str,
@@ -87,14 +91,11 @@ class EGSI(BaseTransformer):
     attempt = 0
     while retry < 0 or attempt < retry:
       variant = self.cls.span(lang, snippet.code, sequence_list)
-      if not variant:
-        logger.warning(f'Failed to span {snippet.id} with sequence {sequence}.')
-      else:
+      if variant:
         correctness = calculate_correctness([snippet._replace(code=str(variant))], [test_batch], lang)
         if math.isclose(correctness, 1.0):
           return variant
       attempt += 1
-      logger.verbose(f'{snippet.id} wrongly transformed, {attempt} attempt(s).')
     return ''
 
   def _span(
@@ -107,33 +108,34 @@ class EGSI(BaseTransformer):
     sequences = self._generate_sequences(lang, seed)
     fallback_rates = pd.Series([0] * len(sequences), name='fallback_rate')
 
-    def worker(i, snippet, sequence, test_batch):
+    def worker(seq_idx, snippet_idx, snippet, sequence, test_batch):
       try:
         variant = self._span_until_correct(snippet, sequence, test_batch, lang, retry=config['retry'])
       except Exception as e:
-        logger.error(f'Error occurred for snippet {snippet.id}.\n{e}')
-        fallback_rates[i] += 1
-        return snippet
+        logger.error(f'Error occurred while spanning:\n{e}')
+        variant = None
       if not variant:
-        logger.warning(f'Failed to transform {snippet.id}.')
-        fallback_rates[i] += 1
+        logger.warning(f'Failed to transform snippet {snippet_idx} ({snippet.id}) with sequence {seq_idx} ({sequence}).')
+        with open(self.dump_dir / f'snippet_{snippet_idx}.txt', 'w', encoding='utf-8') as f:
+          f.write(f'// Seq={sequence}\n\n{snippet.code}')
+        fallback_rates[seq_idx] += 1
         return snippet
+      logger.debug(f'Successfully transformed snippet {snippet_idx} ({snippet.id}).')
       return snippet._replace(code=str(variant))
 
     max_workers = max(1, config['max_workers'])
     corpus = [None] * len(sequences)
     for i, sequence in tqdm(enumerate(sequences), desc='Spanning', total=len(sequences), leave=False):
-      logger.verbose(f'Spanning with sequence {i + 1}: {sequence}')
+      logger.debug(f'Spanning with sequence {i + 1}: {sequence}.')
       with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        results = list(tqdm(executor.map(worker, [i] * len(snippets), snippets, [sequence] * len(snippets), test_batches), desc=f'Spanning sequence {i + 1}', total=len(snippets), leave=False))
+        results = list(tqdm(executor.map(worker, [i] * len(snippets), range(len(snippets)),
+                                         snippets, [sequence] * len(snippets), test_batches),
+                            desc=f'Spanning sequence {i + 1}', total=len(snippets), leave=False))
       corpus[i] = results
     logger.info(f'Spanned {len(corpus)} variant benchmarks.')
-    series = pd.Series(fallback_rates / len(snippets), name='fallback_rate')
 
-    with open('settings.yml') as f:
-       result_dir = Path(yaml.safe_load(f)['metrics']['result_dir'])
-    os.makedirs(result_dir, exist_ok=True)
-    series.to_csv(result_dir / 'fallback_rates.csv', index=False)
+    series = pd.Series(fallback_rates / len(snippets), name='fallback_rate')
+    series.to_csv(self.dump_dir / 'fallback_rates.csv', index=False)
 
     return corpus
 

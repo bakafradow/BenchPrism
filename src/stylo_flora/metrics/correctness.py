@@ -33,16 +33,24 @@ def _run_with_io(args: Sequence[str], tests: TestBatch, id_: str) -> bool:
       logger.warning('Keyboard interrupt.')
       raise
     except subprocess.TimeoutExpired:
-      logger.verbose(f'Time out on {id_} with input {input_.strip()}.')
+      logger.verbose(f'Time out on {id_}.\n'
+                     f'Input:\n{input_.strip()}')
       return False
     except Exception as e:
-      logger.verbose(f'Error on {id_} with input {input_.strip()}: {e}')
+      logger.verbose(f'Error on {id_}.\n'
+                     f'Input:\n{input_.strip()}\n'
+                     f'Exception:\n{e}')
       return False
     if returned.returncode != 0:
-      logger.verbose(f'{id_} returned {returned.returncode} on input {input_.strip()}\nStandard Error:\n{returned.stderr}')
+      logger.verbose(f'{returned.returncode} was returned on {id_}.\n'
+                     f'Input:\n{input_.strip()}\n'
+                     f'Standard Error:\n{returned.stderr}')
       return False
     if returned.stdout.strip() not in (output.strip() for output in outputs):
-      logger.verbose(f'{id_} failed on input {input_.strip()}\nExpected:\n{outputs[0]}\nActual:\n{returned.stdout}')
+      logger.verbose(f'Wrong answer on {id_}.\n'
+                     f'Input:\n{input_.strip()}\n'
+                     f'Expected:\n{outputs[0]}\n'
+                     f'Actual:\n{returned.stdout}')
       return False
   return True
 
@@ -67,7 +75,7 @@ def test_java(snippet: Snippet, tests: TestBatch) -> bool:
         raise CompilationError(snippet.id, f'Failed to compile {f.name}.', returned.stderr)
   except CompilationError as e:
     logger.warning(e)
-    logger.verbose(e.stderr)
+    logger.verbose(f'Standard Error:\n{e.stderr}')
     return False
   args = ['java', '-classpath', f'{classdir}', classname]
   result = _run_with_io(args, tests, snippet.id)
@@ -89,7 +97,7 @@ def test_cpp(snippet: Snippet, tests: TestBatch) -> bool:
         raise CompilationError(snippet.id, f'Failed to compile {f.name}.', returned.stderr)
   except CompilationError as e:
     logger.warning(e)
-    logger.verbose(e.stderr)
+    logger.verbose(f'Standard Error:\n{e.stderr}')
     return False
   args = [executable]
   result = _run_with_io(args, tests, snippet.id)
