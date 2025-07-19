@@ -116,7 +116,7 @@ class EGSI(BaseTransformer):
         variant = None
       if not variant:
         logger.warning(f'Failed to transform snippet {snippet_idx} ({snippet.id}) with sequence {seq_idx} ({sequence}).')
-        with open(self.dump_dir / f'snippet_{snippet_idx}.txt', 'w', encoding='utf-8') as f:
+        with open(self.dump_dir / f'snippet{snippet_idx}_seq{seq_idx}.txt', 'w', encoding='utf-8') as f:
           f.write(f'// Seq={sequence}\n\n{snippet.code}')
         fallback_rates[seq_idx] += 1
         return snippet
