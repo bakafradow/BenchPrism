@@ -67,7 +67,7 @@ class HumanEvalX(BaseBenchmark):
   @check_lang_support
   def _load(self, lang: str, column: str) -> Sequence[str]:
     ds = load_dataset('THUDM/humaneval-x', lang, trust_remote_code=True)
-    return tuple(row[column] for row in ds['test'])
+    return [row[column] for row in ds['test']]
 
   def load_source(self, lang: str) -> Sequence[Snippet]:
     task_ids = self._load(lang, 'task_id')
@@ -75,10 +75,10 @@ class HumanEvalX(BaseBenchmark):
     bodies = self._load(lang, 'canonical_solution')
     entries = self._load(lang, 'test')
     sources = (f'{declaration}\n{body}\n{entry}' for declaration, body, entry in zip(declarations, bodies, entries))
-    return tuple(Snippet(id=task_id, code=source) for task_id, source in zip(task_ids, sources))
+    return [Snippet(id=task_id, code=source) for task_id, source in zip(task_ids, sources)]
 
   def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
-    return tuple((('', ('',)),) for _ in ids)  # HumanEvalX evaluates correctness with assertions
+    return [(('', ('',)),) for _ in ids]  # HumanEvalX evaluates correctness with assertions
 
 
 @dataclass
@@ -110,16 +110,16 @@ class XCodeEval(BaseBenchmark):
   def load_source(self, lang: str) -> Sequence[Snippet]:
     src_uids = self._load(lang, 'src_uid')
     sources = self._load(lang, 'source_code')
-    return tuple(Snippet(id=src_uid, code=source) for src_uid, source in zip(src_uids, sources))
+    return [Snippet(id=src_uid, code=source) for src_uid, source in zip(src_uids, sources)]
 
   def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
     with open('data/xCodeEval/unittest_db.json', 'r') as f:
       unittests = json.load(f)
     test_batches = (unittests[uid] for uid in ids)
-    return tuple(tuple((pair['input'].replace('\r\n', '\n'),
-                        tuple(line.replace('\r\n', '\n') for line in pair['output']))
-                 for pair in batch)
-                 for batch in test_batches)
+    return [[(pair['input'].replace('\r\n', '\n'),
+              [line.replace('\r\n', '\n') for line in pair['output']])
+            for pair in batch]
+            for batch in test_batches]
 
 
 @dataclass
@@ -145,7 +145,7 @@ class XLCoST(BaseBenchmark):
 
   def load_source(self, lang: str) -> Sequence[Snippet]:
     sources = self._load(lang, 'code')
-    return tuple(Snippet(str(i), code) for i, code in enumerate(sources))
+    return [Snippet(str(i), code) for i, code in enumerate(sources)]
 
   def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
     raise NotImplementedError('XLCoST does not provide test cases.')
@@ -161,7 +161,7 @@ class CodeXGLUE(BaseBenchmark):
   def load_source(self, lang: str) -> Sequence[Snippet]:
     ds = load_dataset('google/code_x_glue_cc_code_to_code_trans', trust_remote_code=True)
     sources = ds['train'][lang]
-    return tuple(Snippet(str(i), code) for i, code in enumerate(sources))
+    return [Snippet(str(i), code) for i, code in enumerate(sources)]
 
   def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
     raise NotImplementedError('CodeXGLUE does not provide test cases.')
@@ -178,7 +178,7 @@ class GTransEval(BaseBenchmark):
     ds = load_dataset(f'xin1997/g-transeval-{lang}_all_only_input', trust_remote_code=True)
     ids = ds['train']['id']
     sources = ds['train']['content']
-    return tuple(Snippet(id=id_, code=source) for id_, source in zip(ids, sources))
+    return [Snippet(id=id_, code=source) for id_, source in zip(ids, sources)]
 
   def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
     raise NotImplementedError('G-TransEval does not provide test cases.')
@@ -211,9 +211,8 @@ class CodeNet(BaseBenchmark):
   def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
     with jsonlines.open('data/Project_CodeNet/Project_CodeNet/tests.jsonl', 'r') as reader:
       tests_dict = {obj['id']: obj['test'] for obj in reader}
-    return tuple(tuple((pair[0], (pair[1],))
-                       for pair in tests_dict[id_])
-                 for id_ in ids)
+    return [[(pair[0], [pair[1]]) for pair in tests_dict[id_]]
+            for id_ in ids]
 
 
 def benchmark_factory(dataset: str) -> BaseBenchmark:

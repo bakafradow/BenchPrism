@@ -33,6 +33,10 @@ def parse_args() -> argparse.Namespace:
                       help='Specify the destination language.')
   parser.add_argument('-n', '--num-snippets', type=int, default=-1,
                       help='Limit the number of snippets to test. -1 for all.')
+  parser.add_argument('--num-tests', type=int, default=-1,
+                      help='Limit the number of test cases for each snippet. -1 for all.')
+  parser.add_argument('-r', '--random', action='store_true', default=False,
+                      help='Select snippets randomly with the seed instead of sequentially.')
   parser.add_argument('--seed', type=int, default=42,
                       help='Set the random seed for reproducibility.')
   parser.add_argument('-v', '--verbose', action='store_true', default=False,
@@ -111,9 +115,18 @@ def main():
 
   snippets = benchmark.load_source(args.src_lang)
   if args.num_snippets >= 0:
-    snippets = snippets[:args.num_snippets]
+    if not args.random:
+      snippets = snippets[:args.num_snippets]
+    else:
+      indices = pd.Series(range(len(snippets))).sample(n=args.num_snippets, random_state=args.seed).tolist()
+      logger.verbose(f'Selected snippet indices: {indices}')
+      snippets = [snippets[i] for i in indices]
   ids = (snippet.id for snippet in snippets)
   test_batches = benchmark.load_tests(ids)
+  if args.num_tests >= 0:
+    for i in range(len(test_batches)):
+      if len(test_batches[i]) > args.num_tests:
+        test_batches[i] = pd.Series(test_batches[i]).sample(n=args.num_tests, random_state=args.seed).tolist()
   corpus = transformer.transform(
       snippets=snippets,
       test_batches=test_batches,
