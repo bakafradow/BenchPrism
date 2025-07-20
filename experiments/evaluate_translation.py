@@ -54,17 +54,19 @@ def evaluate_translation(
   translated_corpus = [translate(translator, variants, args.src_lang, args.dst_lang)
                        for variants in tqdm(corpus, desc='Translating corpus',
                                             total=len(corpus), leave=False)]
+  num_seq = len(corpus[0])
 
   logger.info('Testing originals.')
   res_original = calculate_correctness(snippets, test_batches, args.src_lang)
   logger.info('Testing variants.')
-  res_varied = [calculate_correctness(variants, test_batches, args.src_lang)
-                for variants in tqdm(corpus, desc='Evaluating', total=len(corpus), leave=False)]
+  res_varied = [calculate_correctness([variants[i] for variants in corpus], test_batches, args.src_lang)
+                for i in tqdm(range(num_seq), desc='Evaluating', total=num_seq, leave=False)]
   logger.info('Testing transformed originals.')
   res_translated = calculate_correctness(translated_snippets, test_batches, args.dst_lang)
   logger.info('Testing transformed variants.')
-  res_translated_varied = [calculate_correctness(variants, test_batches, args.dst_lang)
-                           for variants in tqdm(translated_corpus, desc='Evaluating', total=len(corpus), leave=False)]
+  res_translated_varied = [calculate_correctness([variants[i] for variants in translated_corpus],
+                                                 test_batches, args.dst_lang)
+                           for i in tqdm(range(num_seq), desc='Evaluating', total=num_seq, leave=False)]
   logger.info(f'\n'
               f'Correctness of {args.model} on {args.dataset}:\n'
               f'========  Correctness  ========\n'

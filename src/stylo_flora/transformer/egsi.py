@@ -105,32 +105,33 @@ class EGSI(BaseTransformer):
       lang: str,
       seed: int,
   ) -> Sequence[Sequence[Snippet | None]]:
-    sequences = self._generate_sequences(lang, seed)
-    fallback_rates = pd.Series([0] * len(sequences), name='fallback_rate')
+    seqs = self._generate_sequences(lang, seed)
+    fallback_rates = pd.Series([0] * len(seqs), name='fallback_rate')
 
-    def worker(seq_idx, snippet_idx, snippet, sequence, test_batch):
+    def worker(snippet_idx, seq_idx, snippet, seq, test_batch):
       try:
-        variant = self._span_until_correct(snippet, sequence, test_batch, lang, retry=config['retry'])
+        variant = self._span_until_correct(snippet, seq, test_batch, lang, retry=config['retry'])
       except Exception as e:
         logger.error(f'Error occurred while spanning:\n{e}')
         variant = None
       if not variant:
-        logger.warning(f'Failed to transform snippet {snippet_idx} ({snippet.id}) with sequence {seq_idx} ({sequence}).')
+        logger.warning(f'Failed to transform snippet {snippet_idx} ({snippet.id}) with sequence {seq_idx} ({seq}).')
         with open(self.dump_dir / f'snippet{snippet_idx}_seq{seq_idx}.txt', 'w', encoding='utf-8') as f:
-          f.write(f'// Seq={sequence}\n\n{snippet.code}')
+          f.write(f'// Seq={seq}\n\n{snippet.code}')
         fallback_rates[seq_idx] += 1
         return snippet
       logger.debug(f'Successfully transformed snippet {snippet_idx} ({snippet.id}).')
       return snippet._replace(code=str(variant))
 
     max_workers = max(1, config['max_workers'])
-    corpus = [None] * len(sequences)
-    for i, sequence in tqdm(enumerate(sequences), desc='Spanning', total=len(sequences), leave=False):
-      logger.debug(f'Spanning with sequence {i + 1}: {sequence}.')
+    num_seq = len(seqs)
+    corpus = [None] * len(snippets)
+    for i, snippet in tqdm(enumerate(snippets), desc='Spanning', total=len(snippets), leave=False):
       with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        results = list(tqdm(executor.map(worker, [i] * len(snippets), range(len(snippets)),
-                                         snippets, [sequence] * len(snippets), test_batches),
-                            desc=f'Spanning sequence {i + 1}', total=len(snippets), leave=False))
+        results = list(tqdm(executor.map(worker, [i] * num_seq, range(num_seq),
+                                         [snippet] * num_seq, seqs,
+                                         [test_batches[i] for _ in range(num_seq)]),
+                            desc=f'Spanning snippet {i}', total=num_seq, leave=False))
       corpus[i] = results
     logger.info(f'Spanned {len(corpus)} variant benchmarks.')
 

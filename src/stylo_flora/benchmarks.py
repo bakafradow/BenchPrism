@@ -75,7 +75,7 @@ class HumanEvalX(BaseBenchmark):
     bodies = self._load(lang, 'canonical_solution')
     entries = self._load(lang, 'test')
     sources = (f'{declaration}\n{body}\n{entry}' for declaration, body, entry in zip(declarations, bodies, entries))
-    return tuple(map(lambda pair: Snippet(*pair), zip(task_ids, sources)))
+    return tuple(Snippet(id=task_id, code=source) for task_id, source in zip(task_ids, sources))
 
   def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
     return tuple((('', ('',)),) for _ in ids)  # HumanEvalX evaluates correctness with assertions
@@ -110,7 +110,7 @@ class XCodeEval(BaseBenchmark):
   def load_source(self, lang: str) -> Sequence[Snippet]:
     src_uids = self._load(lang, 'src_uid')
     sources = self._load(lang, 'source_code')
-    return tuple(map(lambda pair: Snippet(*pair), zip(src_uids, sources)))
+    return tuple(Snippet(id=src_uid, code=source) for src_uid, source in zip(src_uids, sources))
 
   def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
     with open('data/xCodeEval/unittest_db.json', 'r') as f:
@@ -178,7 +178,7 @@ class GTransEval(BaseBenchmark):
     ds = load_dataset(f'xin1997/g-transeval-{lang}_all_only_input', trust_remote_code=True)
     ids = ds['train']['id']
     sources = ds['train']['content']
-    return tuple(map(lambda pair: Snippet(*pair), zip(ids, sources)))
+    return tuple(Snippet(id=id_, code=source) for id_, source in zip(ids, sources))
 
   def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
     raise NotImplementedError('G-TransEval does not provide test cases.')
