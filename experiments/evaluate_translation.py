@@ -1,7 +1,10 @@
 import argparse
+import math
 import os
+import random
 from collections.abc import Sequence
 from datetime import datetime
+from itertools import islice
 from pathlib import Path
 
 import pandas as pd
@@ -58,6 +61,7 @@ def evaluate_translation(
   translated_corpus = [translate(translator, variants, args.src_lang, args.dst_lang)
                        for variants in tqdm(corpus, desc='Translating corpus',
                                             total=len(corpus), leave=False)]
+  # TODO: serialize the translated corpus to avoid re-translation
   num_seq = len(corpus[0])
 
   logger.info('Testing originals.')
@@ -116,19 +120,32 @@ def main():
   snippets = benchmark.load_source(args.src_lang)
   if args.num_snippets >= 0:
     if not args.random:
-      snippets = snippets[:args.num_snippets]
+      picked_snippets = snippets[:args.num_snippets]
+      logger.verbose(f'Picking first {args.num_snippets} snippets sequentially.')
     else:
-      indices = pd.Series(range(len(snippets))).sample(n=args.num_snippets, random_state=args.seed).tolist()
-      logger.verbose(f'Selected snippet indices: {indices}')
-      snippets = [snippets[i] for i in indices]
-  ids = (snippet.id for snippet in snippets)
+      indices = list(range(len(snippets)))
+      random.seed(args.seed)
+      random.shuffle(indices)
+
+      def is_valid(snippet: Snippet) -> bool:
+        test_batch = benchmark.load_tests([snippet.id])[0]
+        if args.num_tests >= 0 and len(test_batch) > args.num_tests:
+          test_batch = pd.Series(test_batch).sample(n=args.num_tests, random_state=args.seed).tolist()
+        return math.isclose(calculate_correctness([snippet], [test_batch], lang=args.src_lang), 1.0)
+      candidates = (i for i in indices if is_valid(snippets[i]))
+      picked_indices = list(tqdm(islice(candidates, args.num_snippets),
+                                 desc='Picking snippets', total=args.num_snippets))
+      picked_snippets = [snippets[i] for i in picked_indices]
+      logger.verbose(f'Picked {len(picked_indices)} snippet indices: {picked_indices}')
+  ids = (snippet.id for snippet in picked_snippets)
   test_batches = benchmark.load_tests(ids)
   if args.num_tests >= 0:
     for i in range(len(test_batches)):
       if len(test_batches[i]) > args.num_tests:
         test_batches[i] = pd.Series(test_batches[i]).sample(n=args.num_tests, random_state=args.seed).tolist()
+
   corpus = transformer.transform(
-      snippets=snippets,
+      snippets=picked_snippets,
       test_batches=test_batches,
       lang=args.src_lang,
       seed=args.seed,
@@ -136,7 +153,7 @@ def main():
 
   evaluate_translation(
     translator=translator,
-    snippets=snippets,
+    snippets=picked_snippets,
     corpus=corpus,
     test_batches=test_batches,
     args=args,

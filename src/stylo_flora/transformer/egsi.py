@@ -87,15 +87,17 @@ class EGSI(BaseTransformer):
       lang: str,
       retry: int = -1,
   ) -> str:
-    sequence_list = jp.java.util.List.of(*[jp.java.lang.Integer(num) for num in sequence])
+    seq_list = jp.java.util.List.of(*[jp.java.lang.Integer(num) for num in sequence])
     attempt = 0
     while retry < 0 or attempt < retry:
-      variant = self.cls.span(lang, snippet.code, sequence_list)
+      variant = self.cls.span(lang, snippet.code, seq_list)
       if variant:
         correctness = calculate_correctness([snippet._replace(code=str(variant))], [test_batch], lang)
         if math.isclose(correctness, 1.0):
+          seq_list = None
           return variant
       attempt += 1
+    seq_list = None
     return ''
 
   def _span(
@@ -111,6 +113,7 @@ class EGSI(BaseTransformer):
     def worker(snippet_idx, seq_idx, snippet, seq, test_batch):
       try:
         variant = self._span_until_correct(snippet, seq, test_batch, lang, retry=config['retry'])
+        jp.java.lang.System.gc()
       except Exception as e:
         logger.error(f'Error occurred while spanning:\n{e}')
         variant = None
