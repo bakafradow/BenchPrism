@@ -10,11 +10,11 @@ from datasets import load_dataset
 from . import Snippet, TestBatch
 
 
-def check_lang_support(func: Callable):
-  def wrapper(self, lang, *args, **kwargs):
+def check_lang_support(func: Callable) -> Callable:
+  def wrapper(self, task, lang, *args, **kwargs):
     if lang not in self.supported_langs:
-      raise TypeError(f'{lang} is not supported in current benchmark. Supported languages: {self.supported_langs}')
-    return func(self, lang, *args, **kwargs)
+      raise TypeError(f'{kwargs["lang"]} is not supported in current benchmark. Supported languages: {self.supported_langs}')
+    return func(self, task, lang, *args, **kwargs)
   return wrapper
 
 
@@ -38,7 +38,17 @@ class BaseBenchmark(ABC):
     self._supported_langs = langs
 
   @abstractmethod
-  def load_source(self, lang: str) -> Sequence[Snippet]:
+  def load_for_apr(self, lang: str) -> Sequence[Snippet]:
+    """
+    Loads the source code snippets for automatic program repair.
+
+    :param lang: the language of the code snippets
+    :return: a sequence of source code snippets
+    """
+    pass
+
+  @abstractmethod
+  def load_for_translation(self, lang: str) -> Sequence[Snippet]:
     """
     Loads the source code snippets for evaluation.
 
@@ -56,29 +66,6 @@ class BaseBenchmark(ABC):
     :return: a sequence of test cases
     """
     pass
-
-
-@dataclass
-class HumanEvalX(BaseBenchmark):
-  _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
-      'python', 'cpp', 'go', 'java', 'js',
-  ]))
-
-  @check_lang_support
-  def _load(self, lang: str, column: str) -> Sequence[str]:
-    ds = load_dataset('THUDM/humaneval-x', lang, trust_remote_code=True)
-    return [row[column] for row in ds['test']]
-
-  def load_source(self, lang: str) -> Sequence[Snippet]:
-    task_ids = self._load(lang, 'task_id')
-    declarations = self._load(lang, 'declaration')
-    bodies = self._load(lang, 'canonical_solution')
-    entries = self._load(lang, 'test')
-    sources = (f'{declaration}\n{body}\n{entry}' for declaration, body, entry in zip(declarations, bodies, entries))
-    return [Snippet(id=task_id, code=source) for task_id, source in zip(task_ids, sources)]
-
-  def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
-    return [(('', ('',)),) for _ in ids]  # HumanEvalX evaluates correctness with assertions
 
 
 @dataclass
@@ -101,15 +88,32 @@ class XCodeEval(BaseBenchmark):
   })
 
   @check_lang_support
-  def _load(self, lang, column) -> Sequence[str]:
-    ds = load_dataset('json', data_dir='data/xCodeEval/code_translation')  # there's an issue when loading from HF
+  def _load(self, task, lang, column) -> Sequence[str]:
+    # TODO: filter out problematic snippets?
     lang_name = self._lang_to_name[lang]
+    ds = load_dataset('json', data_dir=f'data/xCodeEval/{task}/test')  # there's an issue in loading from HF when the version of datasets != 2.16.1
     ds = ds.filter(lambda row: row['lang_cluster'] == lang_name)
-    return ds['test'][column]
+    return ds['train'][column]
 
-  def load_source(self, lang: str) -> Sequence[Snippet]:
-    src_uids = self._load(lang, 'src_uid')
-    sources = self._load(lang, 'source_code')
+  def load_for_apr(self, lang):
+    TASK_NAME = 'apr'
+    src_uids = self._load(TASK_NAME, lang, 'src_uid')
+    sources = self._load(TASK_NAME, lang, 'bug_source_code')
+    with jsonlines.open('data/xCodeEval/problem_descriptions.jsonl', 'r') as reader:
+      args_dict = {obj['src_uid']: {
+        'desc': obj['description'],
+        'input_spec': obj['input_spec'],
+        'output_spec': obj['output_spec'],
+        'sample_inputs': obj['sample_inputs'],
+        'sample_outputs': obj['sample_outputs'],
+      } for obj in reader}
+    return [Snippet(id=src_uid, code=source, args={**args_dict[src_uid]})
+            for src_uid, source in zip(src_uids, sources)]
+
+  def load_for_translation(self, lang: str) -> Sequence[Snippet]:
+    TASK_NAME = 'code_translation'
+    src_uids = self._load(TASK_NAME, lang, 'src_uid')
+    sources = self._load(TASK_NAME, lang, 'source_code')
     return [Snippet(id=src_uid, code=source) for src_uid, source in zip(src_uids, sources)]
 
   def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
@@ -120,6 +124,29 @@ class XCodeEval(BaseBenchmark):
               [line.replace('\r\n', '\n') for line in pair['output']])
             for pair in batch]
             for batch in test_batches]
+
+
+@dataclass
+class HumanEvalX(BaseBenchmark):
+  _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
+      'python', 'cpp', 'go', 'java', 'js',
+  ]))
+
+  @check_lang_support
+  def _load(self, lang: str, column: str) -> Sequence[str]:
+    ds = load_dataset('THUDM/humaneval-x', lang, trust_remote_code=True)
+    return [row[column] for row in ds['test']]
+
+  def load_for_translation(self, lang: str) -> Sequence[Snippet]:
+    task_ids = self._load(lang, 'task_id')
+    declarations = self._load(lang, 'declaration')
+    bodies = self._load(lang, 'canonical_solution')
+    entries = self._load(lang, 'test')
+    sources = (f'{declaration}\n{body}\n{entry}' for declaration, body, entry in zip(declarations, bodies, entries))
+    return [Snippet(id=task_id, code=source) for task_id, source in zip(task_ids, sources)]
+
+  def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
+    return [(('', ('',)),) for _ in ids]  # HumanEvalX evaluates correctness with assertions
 
 
 @dataclass
@@ -143,7 +170,7 @@ class XLCoST(BaseBenchmark):
     ds = load_dataset('codeparrot/xlcost-text-to-code', f'{lang_name}-program-level')
     return ds['train'][column]
 
-  def load_source(self, lang: str) -> Sequence[Snippet]:
+  def load_for_translation(self, lang: str) -> Sequence[Snippet]:
     sources = self._load(lang, 'code')
     return [Snippet(str(i), code) for i, code in enumerate(sources)]
 
@@ -158,7 +185,7 @@ class CodeXGLUE(BaseBenchmark):
   ]))
 
   @check_lang_support
-  def load_source(self, lang: str) -> Sequence[Snippet]:
+  def load_for_translation(self, lang: str) -> Sequence[Snippet]:
     ds = load_dataset('google/code_x_glue_cc_code_to_code_trans', trust_remote_code=True)
     sources = ds['train'][lang]
     return [Snippet(str(i), code) for i, code in enumerate(sources)]
@@ -174,7 +201,7 @@ class GTransEval(BaseBenchmark):
   ]))
 
   @check_lang_support
-  def load_source(self, lang: str) -> Sequence[Snippet]:
+  def load_for_translation(self, lang: str) -> Sequence[Snippet]:
     ds = load_dataset(f'xin1997/g-transeval-{lang}_all_only_input', trust_remote_code=True)
     ids = ds['train']['id']
     sources = ds['train']['content']
@@ -196,7 +223,7 @@ class CodeNet(BaseBenchmark):
   })
 
   @check_lang_support
-  def load_source(self, lang) -> Sequence[Snippet]:
+  def load_for_translation(self, lang) -> Sequence[Snippet]:
     data_dir = Path('data/Project_CodeNet/Project_CodeNet/data')
     lang_name = self._lang_to_name[lang]
     sources: list[Snippet] = []

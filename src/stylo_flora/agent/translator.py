@@ -1,17 +1,10 @@
 import re
 from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor
-
-import yaml
-from tqdm import tqdm
 
 from .. import Snippet
 from ..logger import logger
 from .base import BaseAgent, Prompt
-
-with open('settings.yml') as f:
-  config = yaml.safe_load(f)['agent']
-
+from .utils import work
 
 SYSTEM_PROMPT = """
 <task>
@@ -29,7 +22,7 @@ USER_PROMPT = """
 """
 
 
-def translate(translator: BaseAgent, snippets: Sequence[Snippet], src_lang: str, dst_lang: str) -> Sequence[Snippet]:
+def translate(agent: BaseAgent, snippets: Sequence[Snippet], src_lang: str, dst_lang: str) -> Sequence[Snippet]:
   """
   Translates snippets in code set with code translation model.
   :param translator: the translation model
@@ -44,7 +37,7 @@ def translate(translator: BaseAgent, snippets: Sequence[Snippet], src_lang: str,
   def worker(i: int, snippet: Snippet) -> Snippet | None:
     prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
                     user=USER_PROMPT.format(src_lang=src_lang, dst_lang=dst_lang, code=snippet.code))
-    response = translator.generate(prompt)
+    response = agent.generate(prompt)
     matched = re.search(r'```(?:\w+)?\n(.+)```', response, re.DOTALL)
     if not matched:
       logger.warning(f'Translation of {snippet.id} not found.')
@@ -53,7 +46,4 @@ def translate(translator: BaseAgent, snippets: Sequence[Snippet], src_lang: str,
     logger.debug(f'Snippet {i}:\n{matched.group(1)}')
     return snippet._replace(code=matched.group(1))
 
-  max_workers = max(1, config['max_workers'])
-  with ThreadPoolExecutor(max_workers=max_workers) as executor:
-    return tuple(tqdm(executor.map(worker, range(len(snippets)), snippets),
-                      desc='Translating snippets', total=len(snippets), leave=False))
+  return work(worker=worker, snippets=snippets)

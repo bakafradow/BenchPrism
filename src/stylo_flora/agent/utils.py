@@ -1,8 +1,18 @@
+import re
 import subprocess
+from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 
 import torch
+import yaml
+from tqdm import tqdm
 
+from .. import Snippet
 from ..logger import logger
+from .base import BaseAgent, Prompt
+
+with open('settings.yml') as f:
+  config = yaml.safe_load(f)['agent']
 
 
 def get_freest_gpu() -> str:
@@ -24,3 +34,10 @@ def get_freest_gpu() -> str:
   gpu = max(range(gpu_count), key=lambda i: free_memories[i])
   logger.info(f'Using GPU {gpu} with {free_memories[gpu]} MB free memory.')
   return f'cuda:{gpu}'
+
+
+def work(worker: Callable[[int, Snippet], Snippet | None], snippets: Sequence[Snippet]) -> Sequence[Snippet]:
+  max_workers = max(1, config['max_workers'])
+  with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    return tuple(tqdm(executor.map(worker, range(len(snippets)), snippets),
+                      desc='Generating', total=len(snippets), leave=False))

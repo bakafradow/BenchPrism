@@ -79,12 +79,13 @@ class EGSI(BaseTransformer):
     sequences = [[int(num) for num in line.split()] for line in returned.stdout.splitlines()[1:]]
     return sequences
 
-  def _span_until_correct(
+  def _span_until(
       self,
       snippet: Snippet,
       sequence: Sequence[int],
       test_batch: TestBatch,
       lang: str,
+      ensure_correct: bool,
       retry: int = -1,
   ) -> str:
     seq_list = jp.java.util.List.of(*[jp.java.lang.Integer(num) for num in sequence])
@@ -92,6 +93,8 @@ class EGSI(BaseTransformer):
     while retry < 0 or attempt < retry:
       variant = self.cls.span(lang, snippet.code, seq_list)
       if variant:
+        if not ensure_correct:
+          return variant
         correctness = calculate_correctness([snippet._replace(code=str(variant))], [test_batch], lang)
         if math.isclose(correctness, 1.0):
           seq_list = None
@@ -106,13 +109,14 @@ class EGSI(BaseTransformer):
       test_batches: Sequence[TestBatch],
       lang: str,
       seed: int,
+      ensure_correct: bool,
   ) -> Sequence[Sequence[Snippet | None]]:
     seqs = self._generate_sequences(lang, seed)
     fallback_rates = pd.Series([0] * len(seqs), name='fallback_rate')
 
     def worker(snippet_idx, seq_idx, snippet, seq, test_batch):
       try:
-        variant = self._span_until_correct(snippet, seq, test_batch, lang, retry=config['retry'])
+        variant = self._span_until(snippet, seq, test_batch, lang, ensure_correct, retry=config['retry'])
         jp.java.lang.System.gc()
       except Exception as e:
         logger.error(f'Error occurred while spanning:\n{e}')
@@ -150,6 +154,7 @@ class EGSI(BaseTransformer):
       lang: str,
       *,
       seed: int = 42,
+      ensure_correct: bool = True,
   ) -> Sequence[Sequence[Snippet | None]]:
     """
     Applies transformations to the source code and generates variant sequence.
@@ -161,6 +166,6 @@ class EGSI(BaseTransformer):
     style_file = os.getenv('STYLE_FILE')
     if not style_file:
       logger.info('Spanning styles...')
-      return self._span(snippets, test_batches, lang, seed)
+      return self._span(snippets, test_batches, lang, seed, ensure_correct)
     logger.info(f'Applying styles from {style_file}...')
     return [self._apply(snippets, lang, style_file)]

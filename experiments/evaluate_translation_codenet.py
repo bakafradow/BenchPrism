@@ -53,7 +53,7 @@ def _load_snippets(generator: str, transformer: str) -> Sequence[Snippet]:
       authors = sorted((obj['src']['problem_id'], obj['src']['author_name']) for obj in reader)
     id_to_authors = {id_: set(map(itemgetter(1), pairs)) for id_, pairs in groupby(authors, key=itemgetter(0))}
     with jsonlines.open('data/CodeNet/dataset/codenet/human_codenet_solution.jsonl') as reader:
-      solutions = sorted((obj['id'], obj['code'], obj['author_name']) for obj in reader
+      solutions = sorted((obj['id'], obj['code'], {'author_name': obj['author_name']}) for obj in reader
                          if obj['id'] in id_to_authors and obj['author_name'] in id_to_authors[obj['id']])
     samples = [sample(list(triplets), 1)[0] for _, triplets in groupby(solutions, key=itemgetter(0))]
     return [Snippet(*triplet) for triplet in samples]
@@ -69,7 +69,7 @@ def _load_variants(generator: str, transformer: str, snippets: Sequence[Snippet]
       objects = [obj for obj in reader if obj['src']['author_name'] == generator]
   variants = [None] * len(snippets)
   for i, snippet in enumerate(snippets):
-    target = next((obj for obj in objects if obj['src']['problem_id'] == snippet.id and (generator != 'human' or obj['src']['author_name'] == snippet.ref)), None)
+    target = next((obj for obj in objects if obj['src']['problem_id'] == snippet.id and (generator != 'human' or obj['src']['author_name'] == snippet.args['author_name'])), None)
     if target:
       variants[i] = Snippet(snippet.id, target['result']['file_name'])
   return variants

@@ -1,7 +1,8 @@
 import os
 import time
 from abc import ABC, abstractmethod
-from typing import Callable, NamedTuple
+from collections.abc import Callable
+from typing import NamedTuple
 
 import torch
 import yaml
