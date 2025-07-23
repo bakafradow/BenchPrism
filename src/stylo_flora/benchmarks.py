@@ -38,6 +38,16 @@ class BaseBenchmark(ABC):
     self._supported_langs = langs
 
   @abstractmethod
+  def load_for_translation(self, lang: str) -> Sequence[Snippet]:
+    """
+    Loads the source code snippets for evaluation.
+
+    :param lang: the language of the code snippets
+    :return: a sequence of source code snippets
+    """
+    pass
+
+  @abstractmethod
   def load_for_apr(self, lang: str) -> Sequence[Snippet]:
     """
     Loads the source code snippets for automatic program repair.
@@ -48,12 +58,12 @@ class BaseBenchmark(ABC):
     pass
 
   @abstractmethod
-  def load_for_translation(self, lang: str) -> Sequence[Snippet]:
+  def load_for_tagging(self, lang: str) -> Sequence[Snippet]:
     """
-    Loads the source code snippets for evaluation.
+    Loads the source code snippets for tag classification.
 
     :param lang: the language of the code snippets
-    :return: a sequence of source code snippets
+    :return: a sequence of source code snippets with tags
     """
     pass
 
@@ -95,6 +105,12 @@ class XCodeEval(BaseBenchmark):
     ds = ds.filter(lambda row: row['lang_cluster'] == lang_name)
     return ds['train'][column]
 
+  def load_for_translation(self, lang: str) -> Sequence[Snippet]:
+    TASK_NAME = 'code_translation'
+    src_uids = self._load(TASK_NAME, lang, 'src_uid')
+    sources = self._load(TASK_NAME, lang, 'source_code')
+    return [Snippet(id=src_uid, code=source) for src_uid, source in zip(src_uids, sources)]
+
   def load_for_apr(self, lang):
     TASK_NAME = 'apr'
     src_uids = self._load(TASK_NAME, lang, 'src_uid')
@@ -109,12 +125,14 @@ class XCodeEval(BaseBenchmark):
       } for obj in reader}
     return [Snippet(id=src_uid, code=source, args={**args_dict[src_uid]})
             for src_uid, source in zip(src_uids, sources)]
-
-  def load_for_translation(self, lang: str) -> Sequence[Snippet]:
-    TASK_NAME = 'code_translation'
+  
+  def load_for_tagging(self, lang: str) -> Sequence[Snippet]:
+    TASK_NAME = 'tag_classification'
     src_uids = self._load(TASK_NAME, lang, 'src_uid')
     sources = self._load(TASK_NAME, lang, 'source_code')
-    return [Snippet(id=src_uid, code=source) for src_uid, source in zip(src_uids, sources)]
+    tags_list = self._load(TASK_NAME, lang, 'tags')
+    return [Snippet(id=src_uid, code=source, args={'tags': tags})
+            for src_uid, source, tags in zip(src_uids, sources, tags_list)]
 
   def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
     with open('data/xCodeEval/unittest_db.json', 'r') as f:

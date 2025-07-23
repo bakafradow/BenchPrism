@@ -110,7 +110,7 @@ def test_python(snippet: Snippet, tests: TestBatch) -> bool:
   return _run_with_io(args, tests, snippet.id)
 
 
-def calculate_correctness(snippets: Sequence[Snippet], test_batches: Sequence[TestBatch], lang: str) -> float:
+def calc_correctness(snippets: Sequence[Snippet], test_batches: Sequence[TestBatch], lang: str) -> float:
   """
   Checks the correctness of the translated code with the tests.
   :param dataset: the dataset name

@@ -11,7 +11,7 @@ SYSTEM_PROMPT = """
 Repair buggy code to make it work correctly.
 </task>
 <constraint>
-Your output MUST only contain the translated code WITHOUT any explanations, enclosed by triple back quotes.
+Your output MUST only contain the repaired code WITHOUT any explanations, enclosed by triple back quotes.
 </constraint>
 """
 USER_PROMPT = """

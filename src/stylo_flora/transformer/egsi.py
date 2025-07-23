@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 from .. import Snippet, TestBatch
 from ..logger import logger
-from ..metrics.correctness import calculate_correctness
+from ..metrics.correctness import calc_correctness
 from .base import BaseTransformer
 
 with open('settings.yml', 'r') as f:
@@ -95,7 +95,7 @@ class EGSI(BaseTransformer):
       if variant:
         if not ensure_correct:
           return variant
-        correctness = calculate_correctness([snippet._replace(code=str(variant))], [test_batch], lang)
+        correctness = calc_correctness([snippet._replace(code=str(variant))], [test_batch], lang)
         if math.isclose(correctness, 1.0):
           seq_list = None
           return variant
