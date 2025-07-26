@@ -1,3 +1,4 @@
+import atexit
 import math
 import os
 import shutil
@@ -38,8 +39,12 @@ class EGSI(BaseTransformer):
        self.dump_dir = Path(yaml.safe_load(f)['metrics']['result_dir']) / 'egsi_dump'
     os.makedirs(self.dump_dir, exist_ok=True)
 
-  def __del__(self):
-    jp.shutdownJVM()
+    atexit.register(self._shutdown_jvm)
+  
+  def _shutdown_jvm(self):
+    if jp.isJVMStarted():
+      jp.shutdownJVM()
+      logger.info('JVM shutdown successfully.')
 
   def _apply(
       self,
