@@ -17,16 +17,17 @@ Your output MUST only contain the exact list of categories separated by commas, 
 </constraint>
 """
 USER_PROMPT = """
-<code>```{lang}\n{code}```</code>
+<code>```{lang}
+{code}
+```</code>
 """
 
 
-def classify(agent: BaseAgent, snippets: Sequence[Snippet], lang: str) -> Sequence[Sequence[str]]:
-  logger.info(f'Classifying snippets in {lang}...')
-
+def tag(agent: BaseAgent, snippets: Sequence[Snippet], lang: str, with_desc: bool) -> Sequence[Sequence[str]]:
   def worker(i: int, snippet: Snippet) -> Sequence[str] | None:
+    desc = f'\n<problem_description>{snippet.args["desc"]}</problem_description>\n' if with_desc else ''
     prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
-                    user=USER_PROMPT.format(lang=lang, code=snippet.code))
+                    user=USER_PROMPT.format(lang=lang, code=snippet.code) + desc)
     response = agent.generate(prompt)
     tags = [tag.strip() for tag in response.strip().split(',')]
     logger.debug(f'Tags for snippet {i}: {tags}')

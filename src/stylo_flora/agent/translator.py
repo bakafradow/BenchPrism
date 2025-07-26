@@ -18,7 +18,9 @@ Assertion statements, if exist, should also be considered.
 USER_PROMPT = """
 <source_language>{src_lang}</source_language>
 <target_language>{dst_lang}</target_language>
-<source_code>```{src_lang}\n{code}```</source_code>
+<source_code>```{src_lang}
+{code}
+```</source_code>
 """
 
 
@@ -32,8 +34,6 @@ def translate(agent: BaseAgent, snippets: Sequence[Snippet], src_lang: str, dst_
   :param dst_lang: destination language
   :return: a sequence of translated code
   """
-  logger.info(f'Translating from {src_lang} to {dst_lang}...')
-
   def worker(i: int, snippet: Snippet) -> Snippet | None:
     prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
                     user=USER_PROMPT.format(src_lang=src_lang, dst_lang=dst_lang, code=snippet.code))

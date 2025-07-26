@@ -37,7 +37,6 @@ class BaseBenchmark(ABC):
   def supported_langs(self, langs: frozenset[str]):
     self._supported_langs = langs
 
-  @abstractmethod
   def load_for_translation(self, lang: str) -> Sequence[Snippet]:
     """
     Loads the source code snippets for evaluation.
@@ -45,9 +44,8 @@ class BaseBenchmark(ABC):
     :param lang: the language of the code snippets
     :return: a sequence of source code snippets
     """
-    pass
+    raise NotImplementedError('Translation unsupported for current benchmark.')
 
-  @abstractmethod
   def load_for_apr(self, lang: str) -> Sequence[Snippet]:
     """
     Loads the source code snippets for automatic program repair.
@@ -55,9 +53,8 @@ class BaseBenchmark(ABC):
     :param lang: the language of the code snippets
     :return: a sequence of source code snippets
     """
-    pass
+    raise NotImplementedError('APR unsupported for current benchmark.')
 
-  @abstractmethod
   def load_for_tagging(self, lang: str) -> Sequence[Snippet]:
     """
     Loads the source code snippets for tag classification.
@@ -65,9 +62,8 @@ class BaseBenchmark(ABC):
     :param lang: the language of the code snippets
     :return: a sequence of source code snippets with tags
     """
-    pass
+    raise NotImplementedError('Tag classification unsupported for current benchmark.')
 
-  @abstractmethod
   def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
     """
     Loads the test cases for the source code snippets.
@@ -75,7 +71,7 @@ class BaseBenchmark(ABC):
     :param ids: the ids of the source code snippets
     :return: a sequence of test cases
     """
-    pass
+    raise NotImplementedError('Test cases unsupported for current benchmark.')
 
 
 @dataclass
@@ -99,7 +95,6 @@ class XCodeEval(BaseBenchmark):
 
   @check_lang_support
   def _load(self, task, lang, column) -> Sequence[str]:
-    # TODO: filter out problematic snippets?
     lang_name = self._lang_to_name[lang]
     ds = load_dataset('json', data_dir=f'data/xCodeEval/{task}/test')  # there's an issue in loading from HF when the version of datasets != 2.16.1
     ds = ds.filter(lambda row: row['lang_cluster'] == lang_name)
@@ -131,7 +126,11 @@ class XCodeEval(BaseBenchmark):
     src_uids = self._load(TASK_NAME, lang, 'src_uid')
     sources = self._load(TASK_NAME, lang, 'source_code')
     tags_list = self._load(TASK_NAME, lang, 'tags')
-    return [Snippet(id=src_uid, code=source, args={'tags': tags})
+    with jsonlines.open('data/xCodeEval/problem_descriptions.jsonl', 'r') as reader:
+      args_dict = {obj['src_uid']: {
+        'desc': obj['description'],
+      } for obj in reader}
+    return [Snippet(id=src_uid, code=source, args={'tags': tags, 'desc': args_dict[src_uid]['desc']})
             for src_uid, source, tags in zip(src_uids, sources, tags_list)]
 
   def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:

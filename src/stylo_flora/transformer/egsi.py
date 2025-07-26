@@ -165,7 +165,5 @@ class EGSI(BaseTransformer):
     """
     style_file = os.getenv('STYLE_FILE')
     if not style_file:
-      logger.info('Spanning styles...')
       return self._span(snippets, test_batches, lang, seed, ensure_correct)
-    logger.info(f'Applying styles from {style_file}...')
     return [self._apply(snippets, lang, style_file)]

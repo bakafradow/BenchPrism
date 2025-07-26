@@ -19,16 +19,20 @@ USER_PROMPT = """
 <problem_description>{desc}</problem_description>
 <input_specification>{input_spec}</input_specification>
 <output_specification>{output_spec}</output_specification>
-<sample_inputs>```\n{sample_inputs}```</sample_inputs>
-<sample_outputs>```\n{sample_outputs}```</sample_outputs>
-<buggy_code>```{lang}\n{code}```</buggy_code>
+<sample_inputs>```
+{sample_inputs}
+```</sample_inputs>
+<sample_outputs>```
+{sample_outputs}
+```</sample_outputs>
+<buggy_code>```{lang}
+{code}
+```</buggy_code>
 <error_message>{msg}</error_message>
 """
 
 
 def repair(agent: BaseAgent, snippets: Sequence[Snippet], lang: str) -> Sequence[Snippet]:
-  logger.info(f'Repairing snippets in {lang}...')
-
   def worker(i: int, snippet: Snippet) -> Snippet | None:
     prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
                     user=USER_PROMPT.format(
