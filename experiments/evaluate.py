@@ -69,19 +69,20 @@ def pick_snippets(snippets: Sequence[Snippet], args: argparse.Namespace, *, ensu
   # TODO: how to ensure correct transformation on problematic snippets?
   if args.num_snippets < 0:
     return snippets
-  if not args.random:
-    logger.verbose(f'Picking first {args.num_snippets} snippets sequentially.')
-    return snippets[:args.num_snippets]
-
-  indices = list(range(len(snippets)))
-  random.seed(args.seed)
-  random.shuffle(indices)
 
   # TODO: cache mechanism for correctness check
   def is_valid(snippet: Snippet) -> bool:
     if not ensure_correct:
       return True
     return math.isclose(calc_correctness([snippet], lang=args.src_lang), 1.0)
+
+  if not args.random:
+    logger.verbose(f'Picking first {args.num_snippets} snippets sequentially.')
+    return [snippet for snippet in snippets[:args.num_snippets] if is_valid(snippet)]
+
+  indices = list(range(len(snippets)))
+  random.seed(args.seed)
+  random.shuffle(indices)
 
   candidates = (i for i in indices if is_valid(snippets[i]))
   picked_indices = list(tqdm(islice(candidates, args.num_snippets),
