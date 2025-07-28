@@ -1,6 +1,6 @@
 import json
-from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterable, Sequence
+from abc import ABC
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -37,11 +37,12 @@ class BaseBenchmark(ABC):
   def supported_langs(self, langs: frozenset[str]):
     self._supported_langs = langs
 
-  def load_for_translation(self, lang: str) -> Sequence[Snippet]:
+  def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
     """
     Loads the source code snippets for evaluation.
 
-    :param lang: the language of the code snippets
+    :param src_lang: the source language of the code snippets to translate
+    :param dst_lang: the target language of the code snippets to translate
     :return: a sequence of source code snippets
     """
     raise NotImplementedError('Translation unsupported for current benchmark.')
@@ -63,15 +64,6 @@ class BaseBenchmark(ABC):
     :return: a sequence of source code snippets with tags
     """
     raise NotImplementedError('Tag classification unsupported for current benchmark.')
-
-  def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
-    """
-    Loads the test cases for the source code snippets.
-
-    :param ids: the ids of the source code snippets
-    :return: a sequence of test cases
-    """
-    raise NotImplementedError('Test cases unsupported for current benchmark.')
 
 
 @dataclass
@@ -100,11 +92,22 @@ class XCodeEval(BaseBenchmark):
     ds = ds.filter(lambda row: row['lang_cluster'] == lang_name)
     return ds['train'][column]
 
-  def load_for_translation(self, lang: str) -> Sequence[Snippet]:
+  def _load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
+    with open('data/xCodeEval/unittest_db.json', 'r') as f:
+      unittests = json.load(f)
+    return [[(pair['input'].replace('\r\n', '\n'),
+              [output.replace('\r\n', '\n') for output in pair['output']])
+             for pair in batch]
+            for batch in (unittests[uid] for uid in ids)]
+
+  def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
     TASK_NAME = 'code_translation'
-    src_uids = self._load(TASK_NAME, lang, 'src_uid')
-    sources = self._load(TASK_NAME, lang, 'source_code')
-    return [Snippet(id=src_uid, code=source) for src_uid, source in zip(src_uids, sources)]
+    src_uids = self._load(TASK_NAME, src_lang, 'src_uid')
+    sources = self._load(TASK_NAME, src_lang, 'source_code')
+    testcases = self._load_tests(src_uids)
+    return [Snippet(id=src_uid, code=source, args={
+        'testcases': testcases[i],
+    }) for i, (src_uid, source) in enumerate(zip(src_uids, sources))]
 
   def load_for_apr(self, lang):
     TASK_NAME = 'apr'
@@ -118,9 +121,10 @@ class XCodeEval(BaseBenchmark):
         'sample_inputs': obj['sample_inputs'],
         'sample_outputs': obj['sample_outputs'],
       } for obj in reader}
-    return [Snippet(id=src_uid, code=source, args={**args_dict[src_uid]})
-            for src_uid, source in zip(src_uids, sources)]
-  
+    testcases = self._load_tests(src_uids)
+    return [Snippet(id=src_uid, code=source, args={**args_dict[src_uid], 'testcases': testcases[i]})
+            for i, (src_uid, source) in enumerate(zip(src_uids, sources))]
+
   def load_for_tagging(self, lang: str) -> Sequence[Snippet]:
     TASK_NAME = 'tag_classification'
     src_uids = self._load(TASK_NAME, lang, 'src_uid')
@@ -154,16 +158,15 @@ class HumanEvalX(BaseBenchmark):
     ds = load_dataset('THUDM/humaneval-x', lang, trust_remote_code=True)
     return [row[column] for row in ds['test']]
 
-  def load_for_translation(self, lang: str) -> Sequence[Snippet]:
-    task_ids = self._load(lang, 'task_id')
-    declarations = self._load(lang, 'declaration')
-    bodies = self._load(lang, 'canonical_solution')
-    entries = self._load(lang, 'test')
+  def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
+    task_ids = self._load(src_lang, 'task_id')
+    declarations = self._load(src_lang, 'declaration')
+    bodies = self._load(src_lang, 'canonical_solution')
+    entries = self._load(src_lang, 'test')
     sources = (f'{declaration}\n{body}\n{entry}' for declaration, body, entry in zip(declarations, bodies, entries))
-    return [Snippet(id=task_id, code=source) for task_id, source in zip(task_ids, sources)]
-
-  def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
-    return [(('', ('',)),) for _ in ids]  # HumanEvalX evaluates correctness with assertions
+    return [Snippet(id=task_id, code=source, args={
+        'testcases': (('', ('',)),)  # HumanEvalX tests by assertion
+    }) for task_id, source in zip(task_ids, sources)]
 
 
 @dataclass
@@ -187,12 +190,9 @@ class XLCoST(BaseBenchmark):
     ds = load_dataset('codeparrot/xlcost-text-to-code', f'{lang_name}-program-level')
     return ds['train'][column]
 
-  def load_for_translation(self, lang: str) -> Sequence[Snippet]:
-    sources = self._load(lang, 'code')
+  def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
+    sources = self._load(src_lang, 'code')
     return [Snippet(str(i), code) for i, code in enumerate(sources)]
-
-  def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
-    raise NotImplementedError('XLCoST does not provide test cases.')
 
 
 @dataclass
@@ -202,13 +202,10 @@ class CodeXGLUE(BaseBenchmark):
   ]))
 
   @check_lang_support
-  def load_for_translation(self, lang: str) -> Sequence[Snippet]:
+  def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
     ds = load_dataset('google/code_x_glue_cc_code_to_code_trans', trust_remote_code=True)
-    sources = ds['train'][lang]
+    sources = ds['train'][src_lang]
     return [Snippet(str(i), code) for i, code in enumerate(sources)]
-
-  def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
-    raise NotImplementedError('CodeXGLUE does not provide test cases.')
 
 
 @dataclass
@@ -218,14 +215,11 @@ class GTransEval(BaseBenchmark):
   ]))
 
   @check_lang_support
-  def load_for_translation(self, lang: str) -> Sequence[Snippet]:
-    ds = load_dataset(f'xin1997/g-transeval-{lang}_all_only_input', trust_remote_code=True)
+  def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
+    ds = load_dataset(f'xin1997/g-transeval-{src_lang}_all_only_input', trust_remote_code=True)
     ids = ds['train']['id']
     sources = ds['train']['content']
     return [Snippet(id=id_, code=source) for id_, source in zip(ids, sources)]
-
-  def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
-    raise NotImplementedError('G-TransEval does not provide test cases.')
 
 
 @dataclass
@@ -239,30 +233,31 @@ class CodeNet(BaseBenchmark):
       'python': 'Python',
   })
 
+  def _load_tests(self) -> Mapping[str, TestBatch]:
+    with jsonlines.open('data/Project_CodeNet/Project_CodeNet/tests.jsonl', 'r') as reader:
+      return {obj['id']: obj['test'] for obj in reader}
+
   @check_lang_support
-  def load_for_translation(self, lang) -> Sequence[Snippet]:
+  def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
     data_dir = Path('data/Project_CodeNet/Project_CodeNet/data')
-    lang_name = self._lang_to_name[lang]
-    sources: list[Snippet] = []
+    lang_name = self._lang_to_name[src_lang]
+    test_dict = self._load_tests()
+    snippets: list[Snippet] = []
     for subdir in data_dir.iterdir():
       if not subdir.is_dir():
         continue
       lang_dir = subdir / lang_name
-      sources.extend((Snippet(id=f'{subdir.name}_{file.stem}', code=file.read_text())
-                      for file in lang_dir.iterdir() if file.is_file()))
-    return sources
-
-  def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
-    with jsonlines.open('data/Project_CodeNet/Project_CodeNet/tests.jsonl', 'r') as reader:
-      tests_dict = {obj['id']: obj['test'] for obj in reader}
-    return [[(pair[0], [pair[1]]) for pair in tests_dict[id_]]
-            for id_ in ids]
+      snippets.extend((Snippet(id=f'{subdir.name}_{file.stem}', code=file.read_text(), args={
+          'testcases': test_dict[subdir.name],
+      }) for file in lang_dir.iterdir() if file.is_file()))
+    return snippets
 
 
 def benchmark_factory(dataset: str) -> BaseBenchmark:
   name_to_class = {
-      'HumanEvalX': HumanEvalX,
       'xCodeEval': XCodeEval,
+      'CodeScope': CodeScope,
+      'HumanEvalX': HumanEvalX,
       'XLCoST': XLCoST,
       'CodeXGLUE': CodeXGLUE,
       'G-TransEval': GTransEval,

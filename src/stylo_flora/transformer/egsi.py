@@ -13,7 +13,7 @@ import pandas as pd
 import yaml
 from tqdm import tqdm
 
-from .. import Snippet, TestBatch
+from .. import Snippet
 from ..logger import logger
 from ..metrics.correctness import calc_correctness
 from .base import BaseTransformer
@@ -88,7 +88,6 @@ class EGSI(BaseTransformer):
       self,
       snippet: Snippet,
       sequence: Sequence[int],
-      test_batch: TestBatch,
       lang: str,
       ensure_correct: bool,
       retry: int = -1,
@@ -100,7 +99,7 @@ class EGSI(BaseTransformer):
       if variant:
         if not ensure_correct:
           return variant
-        correctness = calc_correctness([snippet._replace(code=str(variant))], [test_batch], lang)
+        correctness = calc_correctness([snippet._replace(code=str(variant))], lang)
         if math.isclose(correctness, 1.0):
           seq_list = None
           return variant
@@ -111,7 +110,6 @@ class EGSI(BaseTransformer):
   def _span(
       self,
       snippets: Sequence[Snippet],
-      test_batches: Sequence[TestBatch],
       lang: str,
       seed: int,
       ensure_correct: bool,
@@ -119,9 +117,9 @@ class EGSI(BaseTransformer):
     seqs = self._generate_sequences(lang, seed)
     fallback_rates = pd.Series([0] * len(seqs), name='fallback_rate')
 
-    def worker(snippet_idx, seq_idx, snippet, seq, test_batch):
+    def worker(snippet_idx, seq_idx, snippet, seq):
       try:
-        variant = self._span_until(snippet, seq, test_batch, lang, ensure_correct, retry=config['retry'])
+        variant = self._span_until(snippet, seq, lang, ensure_correct, retry=config['retry'])
         jp.java.lang.System.gc()
       except Exception as e:
         logger.error(f'Error occurred while spanning:\n{e}')
@@ -141,8 +139,7 @@ class EGSI(BaseTransformer):
     for i, snippet in tqdm(enumerate(snippets), desc='Spanning', total=len(snippets), leave=False):
       with ThreadPoolExecutor(max_workers=max_workers) as executor:
         results = list(tqdm(executor.map(worker, [i] * num_seq, range(num_seq),
-                                         [snippet] * num_seq, seqs,
-                                         [test_batches[i] for _ in range(num_seq)]),
+                                         [snippet] * num_seq, seqs),
                             desc=f'Spanning snippet {i}', total=num_seq, leave=False))
       corpus[i] = results
     logger.info(f'Spanned {len(corpus)} variant benchmarks.')
@@ -155,7 +152,6 @@ class EGSI(BaseTransformer):
   def transform(
       self,
       snippets: Sequence[Snippet],
-      test_batches: Sequence[TestBatch],
       lang: str,
       *,
       seed: int = 42,
@@ -166,9 +162,9 @@ class EGSI(BaseTransformer):
     :param snippets: the snippets to be transformed
     :param lang: the language of the snippets
     :param seed: the random seed for reproducibility
-    :return: the variant sequence
+    :return: a series of transformed snippets, each of which is corresponding to a variant sequence
     """
     style_file = os.getenv('STYLE_FILE')
     if not style_file:
-      return self._span(snippets, test_batches, lang, seed, ensure_correct)
+      return self._span(snippets, lang, seed, ensure_correct)
     return [self._apply(snippets, lang, style_file)]

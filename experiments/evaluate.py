@@ -23,7 +23,7 @@ from tqdm import tqdm
 
 load_dotenv()
 
-from stylo_flora import Snippet, TestBatch
+from stylo_flora import Snippet
 from stylo_flora.agent.base import BaseAgent, agent_factory
 from stylo_flora.agent.tag_classifier import tag
 from stylo_flora.agent.repairer import repair
@@ -65,7 +65,7 @@ def parse_args() -> argparse.Namespace:
   return args
 
 
-def pick_snippets(snippets: Sequence[Snippet], benchmark: BaseBenchmark, args: argparse.Namespace, *, ensure_correct: bool = True) -> Sequence[Snippet]:
+def pick_snippets(snippets: Sequence[Snippet], args: argparse.Namespace, *, ensure_correct: bool = True) -> Sequence[Snippet]:
   # TODO: how to ensure correct transformation on problematic snippets?
   if args.num_snippets < 0:
     return snippets
@@ -81,10 +81,7 @@ def pick_snippets(snippets: Sequence[Snippet], benchmark: BaseBenchmark, args: a
   def is_valid(snippet: Snippet) -> bool:
     if not ensure_correct:
       return True
-    test_batch = benchmark.load_tests([snippet.id])[0]
-    if args.num_tests >= 0 and len(test_batch) > args.num_tests:
-      test_batch = pd.Series(test_batch).sample(n=args.num_tests, random_state=args.seed).tolist()
-    return math.isclose(calc_correctness([snippet], [test_batch], lang=args.src_lang), 1.0)
+    return math.isclose(calc_correctness([snippet], lang=args.src_lang), 1.0)
 
   candidates = (i for i in indices if is_valid(snippets[i]))
   picked_indices = list(tqdm(islice(candidates, args.num_snippets),
@@ -95,18 +92,13 @@ def pick_snippets(snippets: Sequence[Snippet], benchmark: BaseBenchmark, args: a
   return picked_snippets
 
 
-def pick_test_batches(benchmark: BaseBenchmark, snippets: Sequence[Snippet], args: argparse.Namespace) -> Sequence[TestBatch]:
-  ids = (snippet.id for snippet in snippets)
-  test_batches = benchmark.load_tests(ids)
-
+def cut_testcases(snippets: Sequence[Snippet], args: argparse.Namespace) -> None:
   if args.num_tests < 0:
-    return test_batches
-  picked_batches = []
-  for batch in tqdm(test_batches, desc='Picking test batches', total=len(test_batches), leave=False):
-    if len(batch) > args.num_tests:
-      batch = pd.Series(batch).sample(n=args.num_tests, random_state=args.seed).tolist()
-    picked_batches.append(batch)
-  return picked_batches
+    return
+  for snippet in snippets:
+    if len(snippet.args['testcases']) > args.num_tests:
+      snippet.args['testcases'] = pd.Series(snippet.args['testcases']) \
+        .sample(n=args.num_tests, random_state=args.seed).tolist()
 
 
 def save_results(filename: str, df: pd.DataFrame) -> None:
@@ -121,7 +113,7 @@ def save_results(filename: str, df: pd.DataFrame) -> None:
   df.to_csv(result_dir / filename, index=False)
 
 
-def evaluate_translation(
+def evaluate_code_translation(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
@@ -131,13 +123,12 @@ def evaluate_translation(
     raise ValueError('Destination language must be specified for code translation task.')
   logger.info(f'Code translation task from {args.src_lang} to {args.dst_lang}.')
 
-  snippets = benchmark.load_for_translation(args.src_lang)
-  snippets = pick_snippets(snippets, benchmark, args)
-  test_batches = pick_test_batches(benchmark, snippets, args)
+  snippets = benchmark.load_for_translation(args.src_lang, args.dst_lang)
+  snippets = pick_snippets(snippets, args)
+  cut_testcases(snippets, args)
 
   corpus = transformer.transform(
       snippets=snippets,
-      test_batches=test_batches,
       lang=args.src_lang,
       seed=args.seed,
   )
@@ -152,10 +143,9 @@ def evaluate_translation(
   num_seq = len(corpus[0])
 
   logger.info('Evaluating correctness of code translation on the originals.')
-  pass_res_orig = calc_correctness(res_orig, test_batches, args.dst_lang)
+  pass_res_orig = calc_correctness(res_orig, args.dst_lang)
   logger.info('Evaluating correctness of code translation on the variants.')
-  pass_res_spanned = [calc_correctness([variants[i] for variants in res_spanned],
-                                                 test_batches, args.dst_lang)
+  pass_res_spanned = [calc_correctness([variants[i] for variants in res_spanned], args.dst_lang)
                       for i in tqdm(range(num_seq), desc='Evaluating', total=num_seq, leave=False)]
   logger.info(f'Correctness of {args.model} on {args.dataset}:\n'
               f'==  Correctness  ==\n'
@@ -175,12 +165,11 @@ def evaluate_apr(
   logger.info(f'APR task in {args.src_lang}.')
 
   snippets = benchmark.load_for_apr(args.src_lang)
-  snippets = pick_snippets(snippets, benchmark, args, ensure_correct=False)
-  test_batches = pick_test_batches(benchmark, snippets, args)
+  snippets = pick_snippets(snippets, args, ensure_correct=False)
+  cut_testcases(snippets, args)
 
   corpus = transformer.transform(
       snippets=snippets,
-      test_batches=test_batches,
       lang=args.src_lang,
       seed=args.seed,
       ensure_correct=False,
@@ -195,10 +184,9 @@ def evaluate_apr(
   num_seq = len(corpus[0])
 
   logger.info('Evaluating correctness of APR on the originals.')
-  pass_res_orig = calc_correctness(res_snippets, test_batches, args.src_lang)
+  pass_res_orig = calc_correctness(res_snippets, args.src_lang)
   logger.info('Evaluating correctness of APR on the variants.')
-  pass_res_spanned = [calc_correctness([variants[i] for variants in res_corpus],
-                                            test_batches, args.src_lang)
+  pass_res_spanned = [calc_correctness([variants[i] for variants in res_corpus], args.src_lang)
                       for i in tqdm(range(num_seq), desc='Evaluating', total=num_seq, leave=False)]
   logger.info(f'Correctness of {args.model} on {args.dataset}:\n'
               f'==  Correctness  ==\n'
@@ -221,11 +209,10 @@ def _evaluate_tagging(
   logger.info(f'Tag classification task in {args.src_lang}.')
 
   snippets = benchmark.load_for_tagging(args.src_lang)
-  snippets = pick_snippets(snippets, benchmark, args, ensure_correct=False)
-  test_batches = pick_test_batches(benchmark, snippets, args)
+  snippets = pick_snippets(snippets, args, ensure_correct=False)
+  cut_testcases(snippets, args)
 
   corpus = transformer.transform(snippets=snippets,
-      test_batches=test_batches,
       lang=args.src_lang,
       seed=args.seed,
       ensure_correct=False,
@@ -252,7 +239,7 @@ def _evaluate_tagging(
               f'======================')
 
   df = pd.DataFrame({'res_orig': f1_res_orig, 'res_spanned': f1_res_spanned})
-  save_results(f'correctness_{args.dataset}_{args.task}_{args.src_lang}_with_{args.model.replace("/", "-")}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', df)
+  save_results(f'f1_score_{args.dataset}_{args.task}_{args.src_lang}_with_{args.model.replace("/", "-")}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', df)
 
 
 def evaluate_code2tag(
@@ -282,6 +269,8 @@ def main():
   logger.info(f'Evaluating {args.model} on {args.dataset} with transformer {transformer.__class__.__name__}...')
 
   evaluator = globals().get(f'evaluate_{args.task}')
+  if not evaluator:
+    raise ValueError(f'Unsupported task {args.task} for evaluation.')
   evaluator(benchmark, transformer, agent, args)
 
 

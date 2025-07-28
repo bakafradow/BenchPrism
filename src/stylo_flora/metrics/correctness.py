@@ -55,7 +55,7 @@ def _run_with_io(args: Sequence[str], tests: TestBatch, id_: str) -> bool:
   return True
 
 
-def test_java(snippet: Snippet, tests: TestBatch) -> bool:
+def test_java(snippet: Snippet) -> bool:
   try:
     matched = re.search(r'public\s+(?:final\s+)?class\s+(\w+)', snippet.code)
     if not matched:
@@ -78,12 +78,12 @@ def test_java(snippet: Snippet, tests: TestBatch) -> bool:
     logger.verbose(f'Standard Error:\n{e.stderr}')
     return False
   args = ['java', '-classpath', f'{classdir}', classname]
-  result = _run_with_io(args, tests, snippet.id)
+  result = _run_with_io(args, snippet.args['testcases'], snippet.id)
   shutil.rmtree(classdir, ignore_errors=True)
   return result
 
 
-def test_cpp(snippet: Snippet, tests: TestBatch) -> bool:
+def test_cpp(snippet: Snippet) -> bool:
   try:
     with tempfile.NamedTemporaryFile(suffix='.cpp') as f:
       f.write(snippet.code.encode())
@@ -100,33 +100,31 @@ def test_cpp(snippet: Snippet, tests: TestBatch) -> bool:
     logger.verbose(f'Standard Error:\n{e.stderr}')
     return False
   args = [executable]
-  result = _run_with_io(args, tests, snippet.id)
+  result = _run_with_io(args, snippet.args['testcases'], snippet.id)
   os.remove(executable)
   return result
 
 
-def test_python(snippet: Snippet, tests: TestBatch) -> bool:
+def test_python(snippet: Snippet) -> bool:
   args = ['python', '-c', snippet.code]
-  return _run_with_io(args, tests, snippet.id)
+  return _run_with_io(args, snippet.args['testcases'], snippet.id)
 
 
-def calc_correctness(snippets: Sequence[Snippet], test_batches: Sequence[TestBatch], lang: str) -> float:
+def calc_correctness(snippets: Sequence[Snippet], lang: str) -> float:
   """
   Checks the correctness of the translated code with the tests.
-  :param dataset: the dataset name
   :param snippets: the translated code snippets
-  :param tests: the tests
   :param lang: the language of the code snippets
   """
-  def worker(snippet: Snippet, tests: TestBatch) -> bool:
+  def worker(snippet: Snippet) -> bool:
     if not snippet:
       return False
     try:
-      return globals()[f'test_{lang}'](snippet, tests)
+      return globals()[f'test_{lang}'](snippet)
     except KeyError:
       raise TypeError(f'Unsupported language {lang} for correctness testing.')
 
   max_workers = max(1, config['max_workers'])
   with ThreadPoolExecutor(max_workers=max_workers) as executor:
-    results = list(tqdm(executor.map(worker, snippets, test_batches), desc='Calculating correctness', total=len(snippets), leave=False))
+    results = list(tqdm(executor.map(worker, snippets), desc='Calculating correctness', total=len(snippets), leave=False))
   return sum(results) / len(snippets)
