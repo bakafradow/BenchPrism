@@ -11,10 +11,10 @@ from . import Snippet, TestBatch
 
 
 def check_lang_support(func: Callable) -> Callable:
-  def wrapper(self, task, lang, *args, **kwargs):
+  def wrapper(self, lang, *args, **kwargs):
     if lang not in self.supported_langs:
-      raise TypeError(f'{kwargs["lang"]} is not supported in current benchmark. Supported languages: {self.supported_langs}')
-    return func(self, task, lang, *args, **kwargs)
+      raise TypeError(f'{lang} is not supported in current benchmark. Supported languages: {self.supported_langs}')
+    return func(self, lang, *args, **kwargs)
   return wrapper
 
 
@@ -86,7 +86,7 @@ class XCodeEval(BaseBenchmark):
   })
 
   @check_lang_support
-  def _load(self, task, lang, column) -> Sequence[str]:
+  def _load(self, lang: str, task: str, column: str) -> Sequence[str]:
     lang_name = self._lang_to_name[lang]
     ds = load_dataset('json', data_dir=f'data/xCodeEval/{task}/test')  # there's an issue in loading from HF when the version of datasets != 2.16.1
     ds = ds.filter(lambda row: row['lang_cluster'] == lang_name)
@@ -102,8 +102,8 @@ class XCodeEval(BaseBenchmark):
 
   def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
     TASK_NAME = 'code_translation'
-    src_uids = self._load(TASK_NAME, src_lang, 'src_uid')
-    sources = self._load(TASK_NAME, src_lang, 'source_code')
+    src_uids = self._load(src_lang, TASK_NAME, 'src_uid')
+    sources = self._load(src_lang, TASK_NAME, 'source_code')
     testcases = self._load_tests(src_uids)
     return [Snippet(id=src_uid, code=source, args={
         'testcases': testcases[i],
@@ -111,8 +111,8 @@ class XCodeEval(BaseBenchmark):
 
   def load_for_apr(self, lang):
     TASK_NAME = 'apr'
-    src_uids = self._load(TASK_NAME, lang, 'src_uid')
-    sources = self._load(TASK_NAME, lang, 'bug_source_code')
+    src_uids = self._load(lang, TASK_NAME, 'src_uid')
+    sources = self._load(lang, TASK_NAME, 'bug_source_code')
     with jsonlines.open('data/xCodeEval/problem_descriptions.jsonl', 'r') as reader:
       args_dict = {obj['src_uid']: {
         'desc': obj['description'],
@@ -127,9 +127,9 @@ class XCodeEval(BaseBenchmark):
 
   def load_for_tagging(self, lang: str) -> Sequence[Snippet]:
     TASK_NAME = 'tag_classification'
-    src_uids = self._load(TASK_NAME, lang, 'src_uid')
-    sources = self._load(TASK_NAME, lang, 'source_code')
-    tags_list = self._load(TASK_NAME, lang, 'tags')
+    src_uids = self._load(lang, TASK_NAME, 'src_uid')
+    sources = self._load(lang, TASK_NAME, 'source_code')
+    tags_list = self._load(lang, TASK_NAME, 'tags')
     with jsonlines.open('data/xCodeEval/problem_descriptions.jsonl', 'r') as reader:
       args_dict = {obj['src_uid']: {
         'desc': obj['description'],
@@ -137,14 +137,57 @@ class XCodeEval(BaseBenchmark):
     return [Snippet(id=src_uid, code=source, args={'tags': tags, 'desc': args_dict[src_uid]['desc']})
             for src_uid, source, tags in zip(src_uids, sources, tags_list)]
 
-  def load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
-    with open('data/xCodeEval/unittest_db.json', 'r') as f:
-      unittests = json.load(f)
-    test_batches = (unittests[uid] for uid in ids)
-    return [[(pair['input'].replace('\r\n', '\n'),
-              [line.replace('\r\n', '\n') for line in pair['output']])
-            for pair in batch]
-            for batch in test_batches]
+
+@dataclass
+class CodeScope(BaseBenchmark):
+  _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
+      'c', 'cpp', 'cs', 'delphi', 'go', 'java', 'js', 'kotlin', 'php', 'perl', 'python', 'ruby', 'rust',
+  ]))
+  _lang_to_name: dict[str, str] = field(default_factory=lambda: {
+      'c': 'C',
+      'cpp': 'C++',
+      'cs': 'C#',
+      'delphi': 'Delphi',
+      'go': 'Go',
+      'java': 'Java',
+      'js': 'JavaScript',
+      'kotlin': 'Kotlin',
+      'php': 'PHP',
+      'perl': 'Perl',
+      'python': 'Python',
+      'ruby': 'Ruby',
+      'rust': 'Rust',
+  })
+
+  @classmethod
+  def _normalize_test(cls, testcases: str) -> Sequence[tuple[str, Sequence[str]]]:
+    if any(not isinstance(testcase['input'], str) and len(testcase['input']) != 1 for testcase in eval(testcases)):
+      raise ValueError('Input of testcases must be a string or a sequence with length 1.')
+    return [(testcase['input'].replace('\r\n', '\n') if isinstance(testcase['input'], str) \
+             else testcase['input'][0].replace('\r\n', '\n'),
+             [output.replace('\r\n', '\n') for output in testcase['output']])
+            for testcase in eval(testcases)]
+
+  @check_lang_support
+  def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
+    ds = load_dataset('json', data_files='data/CodeScope/data/code_translation_data.jsonl')
+    ds = ds.filter(lambda row: row['source_lang_cluster'] == self._lang_to_name[src_lang] and row['target_lang_cluster'] == self._lang_to_name[dst_lang])
+    return [Snippet(id=row['src_uid'], code=row['source_code'], args={
+        'testcases': self._normalize_test(row['testcases']),
+    }) for row in ds['train']]
+
+  @check_lang_support
+  def load_for_apr(self, lang: str) -> Sequence[Snippet]:
+    ds = load_dataset('json', data_files='data/CodeScope/data/code_repair_data.jsonl')
+    ds = ds.filter(lambda row: row['lang_cluster'] == self._lang_to_name[lang])
+    return [Snippet(id=row['src_uid'], code=row['source_code'], args={
+        'desc': row['description'],
+        'input_spec': row['input_specification'],
+        'output_spec': row['output_specification'],
+        'sample_inputs': row['sample_inputs'],
+        'sample_outputs': row['sample_outputs'],
+        'testcases': self._normalize_test(row['testcases']),
+    }) for row in ds['train']]
 
 
 @dataclass
