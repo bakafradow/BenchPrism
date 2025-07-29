@@ -65,6 +65,15 @@ class BaseBenchmark(ABC):
     """
     raise NotImplementedError('Tag classification unsupported for current benchmark.')
 
+  def load_for_summarization(self, lang: str) -> Sequence[Snippet]:
+    """
+    Loads the source code snippets for code summarization.
+
+    :param lang: the language of the code snippets
+    :return: a sequence of source code snippets with human summarization
+    """
+    raise NotImplementedError('Code summarization unsupported for current benchmark.')
+
 
 @dataclass
 class XCodeEval(BaseBenchmark):
@@ -187,6 +196,14 @@ class CodeScope(BaseBenchmark):
         'sample_inputs': row['sample_inputs'],
         'sample_outputs': row['sample_outputs'],
         'testcases': self._normalize_test(row['testcases']),
+    }) for row in ds['train']]
+
+  @check_lang_support
+  def load_for_summarization(self, lang: str) -> Sequence[Snippet]:
+    ds = load_dataset('json', data_files='data/CodeScope/data/code_summarization_data.jsonl')
+    ds = ds.filter(lambda row: row['lang_cluster'] == self._lang_to_name[lang])
+    return [Snippet(id=row['id'], code=row['source_code'], args={
+        'human_summarization': row['human_summarization'],
     }) for row in ds['train']]
 
 

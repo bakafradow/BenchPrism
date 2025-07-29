@@ -16,6 +16,7 @@ from datetime import datetime
 from itertools import islice
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import yaml
 from dotenv import load_dotenv
@@ -24,14 +25,25 @@ from tqdm import tqdm
 load_dotenv()
 
 from stylo_flora import Snippet
-from stylo_flora.agent.base import BaseAgent, agent_factory
-from stylo_flora.agent.tag_classifier import tag
-from stylo_flora.agent.repairer import repair
-from stylo_flora.agent.translator import translate
+from stylo_flora.agent import (
+    BaseAgent,
+    agent_factory,
+    repair,
+    summarize,
+    tag,
+    translate,
+)
 from stylo_flora.benchmarks import BaseBenchmark, benchmark_factory
 from stylo_flora.logger import init_logger, logger
-from stylo_flora.metrics.correctness import calc_correctness
-from stylo_flora.metrics.f1_score import calc_macro_f1
+from stylo_flora.metrics import (
+    calc_bertscore,
+    calc_bleu,
+    calc_codebleu,
+    calc_correctness,
+    calc_macro_f1,
+    calc_meteor,
+    calc_rouge,
+)
 from stylo_flora.transformer.base import BaseTransformer, transformer_factory
 
 
@@ -43,7 +55,13 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument('-m', '--model', type=str, required=True,
                       help='Specify the model to use.')
   parser.add_argument('-t', '--task', type=str, required=True,
-                      choices=['code_translation', 'apr', 'code2tag', 'des_code2tag'],
+                      choices=[
+                          'code_translation',
+                          'apr',
+                          'code2tag',
+                          'des_code2tag',
+                          'code_summarization',
+                      ],
                       help='Specify the code task to evaluate on.')
   parser.add_argument('--src-lang', type=str, required=True,
                       help='Specify the source language.')
@@ -138,24 +156,23 @@ def evaluate_code_translation(
   res_orig = translate(agent, snippets, args.src_lang, args.dst_lang)
   logger.info('Translating on variants.')
   res_spanned = [translate(agent, variants, args.src_lang, args.dst_lang)
-                       for variants in tqdm(corpus, desc='Translating',
-                                            total=len(corpus), leave=False)]
+                 for variants in tqdm(corpus, desc='Translating', total=len(corpus), leave=False)]
+
   # TODO: serialize the result corpus as JSONL
   num_seq = len(corpus[0])
-
   logger.info('Evaluating correctness of code translation on the originals.')
-  pass_res_orig = calc_correctness(res_orig, args.dst_lang)
+  pass_orig = calc_correctness(res_orig, args.dst_lang)
   logger.info('Evaluating correctness of code translation on the variants.')
-  pass_res_spanned = [calc_correctness([variants[i] for variants in res_spanned], args.dst_lang)
-                      for i in tqdm(range(num_seq), desc='Evaluating', total=num_seq, leave=False)]
+  pass_spanned = [calc_correctness([variants[i] for variants in res_spanned], args.dst_lang)
+                  for i in tqdm(range(num_seq), desc='Evaluating', total=num_seq, leave=False)]
   logger.info(f'Correctness of {args.model} on {args.dataset}:\n'
               f'==  Correctness  ==\n'
-              f'Originals : {pass_res_orig * 100:>6.2f}%\n'
-              f'Variants  : {sum(pass_res_spanned) / len(pass_res_spanned) * 100:>6.2f}%\n'
+              f'Originals : {pass_orig * 100:>6.2f}%\n'
+              f'Variants  : {np.mean(pass_spanned) * 100:>6.2f}%\n'
               f'===================')
 
-  df = pd.DataFrame({'res_orig': pass_res_orig, 'res_spanned': pass_res_spanned})
-  save_results(f'correctness_{args.dataset}_{args.task}_{args.src_lang}_to_{args.dst_lang}_with_{args.model.replace("/", "-")}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', df)
+  df = pd.DataFrame({'pass_orig': pass_orig, 'pass_spanned': pass_spanned})
+  save_results(f'result_{args.dataset}_{args.task}_{args.src_lang}_to_{args.dst_lang}_with_{args.model.replace("/", "-")}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', df)
 
 def evaluate_apr(
     benchmark: BaseBenchmark,
@@ -180,23 +197,22 @@ def evaluate_apr(
   res_snippets = repair(agent, snippets, args.src_lang)
   logger.info('Repairing on variants.')
   res_corpus = [repair(agent, variants, args.src_lang)
-                for variants in tqdm(corpus, desc='Repairing',
-                                     total=len(corpus), leave=False)]
-  num_seq = len(corpus[0])
+                for variants in tqdm(corpus, desc='Repairing', total=len(corpus), leave=False)]
 
+  num_seq = len(corpus[0])
   logger.info('Evaluating correctness of APR on the originals.')
-  pass_res_orig = calc_correctness(res_snippets, args.src_lang)
+  pass_orig = calc_correctness(res_snippets, args.src_lang)
   logger.info('Evaluating correctness of APR on the variants.')
-  pass_res_spanned = [calc_correctness([variants[i] for variants in res_corpus], args.src_lang)
-                      for i in tqdm(range(num_seq), desc='Evaluating', total=num_seq, leave=False)]
+  pass_spanned = [calc_correctness([variants[i] for variants in res_corpus], args.src_lang)
+                  for i in tqdm(range(num_seq), desc='Evaluating', total=num_seq, leave=False)]
   logger.info(f'Correctness of {args.model} on {args.dataset}:\n'
               f'==  Correctness  ==\n'
-              f'Originals : {pass_res_orig * 100:>6.2f}%\n'
-              f'Variants  : {sum(pass_res_spanned) / len(pass_res_spanned) * 100:>6.2f}%\n'
+              f'Originals : {pass_orig * 100:>6.2f}%\n'
+              f'Variants  : {np.mean(pass_spanned) * 100:>6.2f}%\n'
               f'===================')
 
-  df = pd.DataFrame({'res_orig': pass_res_orig, 'res_spanned': pass_res_spanned})
-  save_results(f'correctness_{args.dataset}_{args.task}_{args.src_lang}_with_{args.model.replace("/", "-")}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', df)
+  df = pd.DataFrame({'pass_orig': pass_orig, 'pass_spanned': pass_spanned})
+  save_results(f'result_{args.dataset}_{args.task}_{args.src_lang}_with_{args.model.replace("/", "-")}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', df)
 
 
 def _evaluate_tagging(
@@ -211,9 +227,9 @@ def _evaluate_tagging(
 
   snippets = benchmark.load_for_tagging(args.src_lang)
   snippets = pick_snippets(snippets, args, ensure_correct=False)
-  cut_testcases(snippets, args)
 
-  corpus = transformer.transform(snippets=snippets,
+  corpus = transformer.transform(
+      snippets=snippets,
       lang=args.src_lang,
       seed=args.seed,
       ensure_correct=False,
@@ -223,24 +239,23 @@ def _evaluate_tagging(
   tags_orig = tag(agent, snippets, args.src_lang, with_desc)
   logger.info('Tagging on variants.')
   tags_spanned = [tag(agent, variants, args.src_lang, with_desc)
-                for variants in tqdm(corpus, desc='Tagging',
-                                     total=len(corpus), leave=False)]
+                  for variants in tqdm(corpus, desc='Tagging', total=len(corpus), leave=False)]
   gloden_tags = [snippet.args['tags'] for snippet in snippets]
-  num_seq = len(corpus[0])
 
+  num_seq = len(corpus[0])
   logger.info('Calculating F1 score of tag classification on the originals.')
-  f1_res_orig = calc_macro_f1(tags_orig, gloden_tags)
+  f1_orig = calc_macro_f1(tags_orig, gloden_tags)
   logger.info('Calculating F1 score of tag classification on the variants.')
-  f1_res_spanned = [calc_macro_f1([variants[i] for variants in tags_spanned], gloden_tags)
-                      for i in tqdm(range(num_seq), desc='Evaluating', total=num_seq, leave=False)]
+  f1_spanned = [calc_macro_f1([variants[i] for variants in tags_spanned], gloden_tags)
+                for i in tqdm(range(num_seq), desc='Evaluating', total=num_seq, leave=False)]
   logger.info(f'F1 Score of {args.model} on {args.dataset}:\n'
               f'==  Macro F1 Score  ==\n'
-              f'Originals :    {f1_res_orig * 100:>6.2f}%\n'
-              f'Variants  :    {sum(f1_res_spanned) / len(f1_res_spanned) * 100:>6.2f}%\n'
+              f'Originals :    {f1_orig * 100:>6.2f}\n'
+              f'Variants  :    {np.mean(f1_spanned) * 100:>6.2f}\n'
               f'======================')
 
-  df = pd.DataFrame({'res_orig': f1_res_orig, 'res_spanned': f1_res_spanned})
-  save_results(f'f1_score_{args.dataset}_{args.task}_{args.src_lang}_with_{args.model.replace("/", "-")}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', df)
+  df = pd.DataFrame({'f1_orig': f1_orig, 'f1_spanned': f1_spanned})
+  save_results(f'result_{args.dataset}_{args.task}_{args.src_lang}_with_{args.model.replace("/", "-")}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', df)
 
 
 def evaluate_code2tag(
@@ -259,6 +274,72 @@ def evaluate_des_code2tag(
     args: argparse.Namespace,
 ) -> None:
   _evaluate_tagging(benchmark, transformer, agent, args, with_desc=True)
+
+
+def evaluate_code_summarization(
+    benchmark: BaseBenchmark,
+    transformer: BaseTransformer,
+    agent: BaseAgent,
+    args: argparse.Namespace,
+) -> None:
+  logger.info(f'Code summarization task in {args.src_lang}.')
+
+  snippets = benchmark.load_for_summarization(args.src_lang)
+  snippets = pick_snippets(snippets, args, ensure_correct=False)
+
+  corpus = transformer.transform(
+      snippets=snippets,
+      lang=args.src_lang,
+      seed=args.seed,
+      ensure_correct=False,
+  )
+
+  logger.info('Summarizing on originals.')
+  res_orig = summarize(agent, snippets, args.src_lang)
+  logger.info('Summarizing on variants.')
+  res_spanned = [summarize(agent, variants, args.src_lang)
+                 for variants in tqdm(corpus, desc='Summarizing', total=len(corpus), leave=False)]
+  human_summaries = [snippet.args['human_summarization'] for snippet in snippets]
+
+  num_seq = len(corpus[0])
+  logger.info('Calculating metrics of code summarization on the originals.')
+  bleu_orig = calc_bleu(res_orig, human_summaries)
+  meteor_orig = calc_meteor(res_orig, human_summaries)
+  rouge_orig = calc_rouge(res_orig, human_summaries)['rougeL']
+  bertscore_orig = np.mean(calc_bertscore(res_orig, human_summaries)['f1'])
+  overall_orig = np.mean([bleu_orig, meteor_orig, rouge_orig, bertscore_orig])
+  logger.info('Calculating metrics of code summarization on the variants.')
+  bleu_spanned = [calc_bleu([variants[i] for variants in res_spanned], human_summaries)
+                  for i in tqdm(range(num_seq), desc='Evaluating', total=num_seq, leave=False)]
+  meteor_spanned = [calc_meteor([variants[i] for variants in res_spanned], human_summaries)
+                    for i in tqdm(range(num_seq), desc='Evaluating', total=num_seq, leave=False)]
+  rouge_spanned = [calc_rouge([variants[i] for variants in res_spanned], human_summaries)['rougeL']
+                    for i in tqdm(range(num_seq), desc='Evaluating', total=num_seq, leave=False)]
+  bertscore_spanned = [np.mean(calc_bertscore([variants[i] for variants in res_spanned], human_summaries)['f1'])
+                       for i in tqdm(range(num_seq), desc='Evaluating', total=num_seq, leave=False)]
+  overall_spanned = np.mean([bleu_spanned, meteor_spanned, rouge_spanned, bertscore_spanned], axis=0)
+  logger.info(f"""
+Metrics of {args.model} on {args.dataset}:
+=================  Metrics   =================
+               BLEU  METEOR   ROUGE   BERTS    Avg.
+Originals : {bleu_orig * 100:>6.2f}% {meteor_orig * 100:>6.2f}% {rouge_orig * 100:>6.2f}% {bertscore_orig * 100:>6.2f}% {overall_orig * 100:>6.2f}%
+Variants  : {np.mean(bleu_spanned) * 100:>6.2f}% {np.mean(meteor_spanned) * 100:>6.2f}% {np.mean(rouge_spanned) * 100:>6.2f}% {np.mean(bertscore_spanned) * 100:>6.2f}% {np.mean(overall_spanned) * 100:>6.2f}%
+==============================================
+""")
+
+  df = pd.DataFrame({
+      'bleu_orig': bleu_orig,
+      'bleu_spanned': bleu_spanned,
+      'meteor_orig': meteor_orig,
+      'meteor_spanned': meteor_spanned,
+      'rouge_orig': rouge_orig,
+      'rouge_spanned': rouge_spanned,
+      'bertscore_orig': bertscore_orig,
+      'bertscore_spanned': bertscore_spanned,
+      'overall_orig': overall_orig,
+      'overall_spanned': overall_spanned,
+  })
+  save_results(f'result_{args.dataset}_{args.task}_{args.src_lang}_with_{args.model.replace("/", "-")}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', df)
 
 
 def main():
