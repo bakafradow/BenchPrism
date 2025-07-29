@@ -2,14 +2,19 @@
 name = "stylo-flora"
 requires-python = ">=3.10"
 dependencies = [
+  "absl-py",
   "bs4",
+  "bert_score",
   "codebleu",
   "datasets",
   "dotenv",
+  "evaluate",
   "jpype1",
   "jsonlines",
   "lxml",
+  "nltk",
   "openai",
+  "rouge_score",
   "seaborn",
   "transformers",
   "tree-sitter-cpp<0.23",

@@ -1,21 +1,49 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
-import codebleu
+import codebleu as cb
+import evaluate
+import numpy as np
+from nltk.translate.meteor_score import meteor_score
 
 from .. import Snippet
 
+bleu = evaluate.load('bleu')
+rouge = evaluate.load('rouge')
+bertscore = evaluate.load('bertscore')
 
-def calc_codebleu(src: Sequence[Snippet], dst: Sequence[Snippet], lang: str) -> dict:
-  """
-  Calculate the average CodeBLEU score for the variants code.
-  :param src: the source code snippets
-  :param dst: the translated code snippets
-  :param lang: the language of the code snippets
-  :return: the average CodeBLEU score for each pair of snippets
-  """
-  if len(src) != len(dst):
-    raise ValueError('The size of 2 snippet sequences should equal.')
-  if lang not in ['java', 'cpp', 'python']:
-    raise TypeError(f'Unsupported language: {lang}.')
-  return codebleu.calc_codebleu([snippet.code for snippet in src], [snippet.code for snippet in dst],
-                                lang, weights=(.25, .25, .25, .25), tokenizer=None)
+
+def ensure_equal_lengths(func: Callable) -> Callable:
+  def wrapper(prd: Sequence[Snippet], ref: Sequence[Snippet], *args, **kwargs):
+    if len(prd) != len(ref):
+      raise ValueError(f'Predictions and References must have the same length, got {len(prd)} and {len(ref)}.')
+    return func(prd, ref, *args, **kwargs)
+  return wrapper
+
+
+@ensure_equal_lengths
+def calc_codebleu(prd: Sequence[Snippet], ref: Sequence[Snippet], lang: str) -> dict[str, float]:
+  return cb.calc_codebleu(references=[snippet.code for snippet in ref],
+                          predictions=[snippet.code for snippet in prd],
+                          lang=lang, weights=(.25, .25, .25, .25), tokenizer=None)
+
+
+@ensure_equal_lengths
+def calc_bleu(prd: Sequence[str], ref: Sequence[str]) -> float:
+  return bleu.compute(predictions=prd, references=[[sentence] for sentence in ref])['bleu']
+
+
+@ensure_equal_lengths
+def calc_rouge(prd: Sequence[str], ref: Sequence[str]) -> dict:
+  return rouge.compute(predictions=prd, references=[[sentence] for sentence in ref])
+
+
+@ensure_equal_lengths
+def calc_meteor(prd: Sequence[str], ref: Sequence[str]) -> float:
+  scores = [meteor_score(references=[sentence_ref.split()], hypothesis=sentence_prd.split())
+            for sentence_prd, sentence_ref in zip(prd, ref)]
+  return np.mean(scores)
+
+
+@ensure_equal_lengths
+def calc_bertscore(prd: Sequence[str], ref: Sequence[str]) -> dict:
+  return bertscore.compute(predictions=prd, references=ref, lang='en')
