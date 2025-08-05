@@ -74,6 +74,24 @@ class BaseBenchmark(ABC):
     """
     raise NotImplementedError('Code summarization unsupported for current benchmark.')
 
+  def load_for_reasoning(self, lang: str) -> Sequence[Snippet]:
+    """
+    Loads the source code snippets for code reasoning.
+
+    :param lang: the language of the code snippets
+    :return: a sequence of source code snippets with input reasoning and output reasoning statements.
+    """
+    raise NotImplementedError('Code reasoning unsupported for current benchmark.')
+
+  def load_for_mcq(self, lang: str) -> Sequence[Snippet]:
+    """
+    Loads the source code snippets for multiple-choice questions.
+
+    :param lang: the language of the code snippets
+    :return: a sequence of source code snippets with multiple-choice questions and corresponding answers.
+    """
+    raise NotImplementedError('MCQ unsupported for current benchmark.')
+
 
 @dataclass
 class XCodeEval(BaseBenchmark):
@@ -208,6 +226,107 @@ class CodeScope(BaseBenchmark):
 
 
 @dataclass
+class ClassEvalT(BaseBenchmark):
+  _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
+      'cpp', 'java', 'python',
+  ]))
+  _lang_to_name: dict[str, str] = field(default_factory=lambda: {
+      'cpp': 'cpp',
+      'java': 'java',
+      'python': 'py',
+  })
+
+  @check_lang_support
+  def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
+    src_dir = Path(f'data/ClassEval-T/ClassEval_T/{self._lang_to_name[src_lang]}/solution')
+    test_dir = Path(f'data/ClassEval-T/ClassEval_T/{self._lang_to_name[dst_lang]}/test')
+    if not src_dir.exists() or not test_dir.exists():
+      raise FileNotFoundError(f'Directory {src_dir} or {test_dir} does not exist.')
+
+    def get_tester(name: str) -> str:
+      match dst_lang:
+        case 'cpp':
+          filename = f'test_{name}.cpp'
+        case 'java':
+          filename = f'{name}Test.java'
+        case 'python':
+          filename = f'{name}.py'
+        case _:
+          raise TypeError(f'Unsupported target language: {dst_lang}')
+      tester_path = test_dir / filename
+      if not tester_path.exists():
+        raise FileNotFoundError(f'Test file {tester_path} does not exist.')
+      return tester_path.read_text()
+
+    snippets = [Snippet(id=file.stem, code=file.read_text(), args={
+        'tester': get_tester(file.stem),
+    }) for file in src_dir.iterdir() if file.is_file() and file.suffix == f'.{self._lang_to_name[src_lang]}']
+    return snippets
+
+
+@dataclass
+class CodeMMLU(BaseBenchmark):
+  _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
+      'java', 'python',
+  ]))
+  _lang_to_name: dict[str, str] = field(default_factory=lambda: {
+      'java': 'java',
+      'python': 'python',
+  })
+
+  @check_lang_support
+  def load_for_mcq(self, lang):
+    ds = load_dataset('Fsoft-AIC/CodeMMLU', 'execution_prediction', trust_remote_code=True)
+    match lang:
+      case 'java':
+        ds = ds.filter(lambda row: 'public class' in row['question'])
+      case 'python':
+        ds = ds.filter(lambda row: 'public class' not in row['question'])
+      case _:
+        raise TypeError(f'Unsupported language: {lang}')
+    return [Snippet(id=row['task_id'], code=row['question'], args={
+        'choices': row['choices'],
+        'answer': row['answer'],
+    }) for row in ds['test']]
+
+
+@dataclass
+class CruxEvalX(BaseBenchmark):
+  _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
+      'cs', 'cpp', 'd', 'go', 'java', 'js', 'julia', 'lua', 'php', 'perl', 'python', 'r', 'racket', 'ruby', 'rust', 'scala', 'shell', 'swift', 'ts',
+  ]))
+  _lang_to_name: dict[str, str] = field(default_factory=lambda: {
+      'cs': 'CS',
+      'cpp': 'Cpp',
+      'd': 'D',
+      'go': 'Go',
+      'java': 'Java',
+      'js': 'JavaScript',
+      'julia': 'Julia',
+      'lua': 'Lua',
+      'php': 'PHP',
+      'perl': 'Perl',
+      'python': 'Python',
+      'r': 'R',
+      'racket': 'Racket',
+      'ruby': 'Ruby',
+      'rust': 'Rust',
+      'scala': 'Scala',
+      'shell': 'Shell',
+      'swift': 'Swift',
+      'ts': 'TypeScript'
+  })
+
+  @check_lang_support
+  def load_for_reasoning(self, lang: str) -> Sequence[Snippet]:
+    ds = load_dataset('xhwl/cruxeval-x', trust_remote_code=True)
+    return [Snippet(id=row['id'], code=row['code'], args={
+        'input_reasoning': row['input_reasoning'],
+        'output_reasoning': row['output_reasoning'],
+    }) for row in ds[self._lang_to_name[lang]]]
+
+
+@dataclass
 class HumanEvalX(BaseBenchmark):
   _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
       'python', 'cpp', 'go', 'java', 'js',
@@ -315,14 +434,18 @@ class CodeNet(BaseBenchmark):
 
 def benchmark_factory(dataset: str) -> BaseBenchmark:
   name_to_class = {
-      'xCodeEval': XCodeEval,
-      'CodeScope': CodeScope,
-      'HumanEvalX': HumanEvalX,
-      'XLCoST': XLCoST,
-      'CodeXGLUE': CodeXGLUE,
-      'G-TransEval': GTransEval,
-      'CodeNet': CodeNet,
+      'xcodeeval': XCodeEval,
+      'codescope': CodeScope,
+      'classeval-t': ClassEvalT,
+      'cruxeval-x': CruxEvalX,
+      'codemmlu': CodeMMLU,
+      'humaneval-X': HumanEvalX,
+      'xlcost': XLCoST,
+      'codexglue': CodeXGLUE,
+      'g-transeval': GTransEval,
+      'codenet': CodeNet,
   }
+  dataset = dataset.lower()
   if dataset not in name_to_class:
     raise ValueError(f'{dataset} is not a valid dataset. Supported datasets: {list(name_to_class.keys())}')
   return name_to_class[dataset]()
