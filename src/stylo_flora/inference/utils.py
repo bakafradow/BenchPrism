@@ -1,4 +1,3 @@
-import re
 import subprocess
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -9,7 +8,6 @@ from tqdm import tqdm
 
 from .. import Snippet
 from ..logger import logger
-from .base import BaseAgent, Prompt
 
 with open('settings.yml') as f:
   config = yaml.safe_load(f)['agent']

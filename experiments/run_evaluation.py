@@ -11,7 +11,7 @@ import argparse
 import math
 import os
 import random
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from itertools import islice
 from pathlib import Path
@@ -25,9 +25,11 @@ from tqdm import tqdm
 load_dotenv()
 
 from stylo_flora import Snippet
-from stylo_flora.agent import (
+from stylo_flora.inference import (
     BaseAgent,
     agent_factory,
+    reason_input,
+    reason_output,
     repair,
     summarize,
     tag,
@@ -61,6 +63,8 @@ def parse_args() -> argparse.Namespace:
                           'code2tag',
                           'des_code2tag',
                           'code_summarization',
+                          'input_reasoning',
+                          'output_reasoning',
                       ],
                       help='Specify the code task to evaluate on.')
   parser.add_argument('--src-lang', type=str, required=True,
@@ -120,7 +124,7 @@ def cut_testcases(snippets: Sequence[Snippet], args: argparse.Namespace) -> None
         .sample(n=args.num_tests, random_state=args.seed).tolist()
 
 
-def save_results(filename: str, df: pd.DataFrame) -> None:
+def save_results(name: str, df: pd.DataFrame) -> None:
   with open('settings.yml') as f:
     config = yaml.safe_load(f)['metrics']
   result_dir = Path(config['result_dir'])
@@ -129,7 +133,7 @@ def save_results(filename: str, df: pd.DataFrame) -> None:
   if os.path.exists(fallback_rate_path):
     df['fallback_rate'] = pd.read_csv(fallback_rate_path)['fallback_rate']
     os.remove(fallback_rate_path)
-  df.to_csv(result_dir / filename, index=False)
+  df.to_csv(result_dir / f'{name}_{datetime.now().strftime("%Y%m%d_%H%M%S")}', index=False)
 
 
 def evaluate_code_translation(
@@ -172,7 +176,7 @@ def evaluate_code_translation(
               f'===================')
 
   df = pd.DataFrame({'pass_orig': pass_orig, 'pass_spanned': pass_spanned})
-  save_results(f'result_{args.dataset}_{args.task}_{args.src_lang}_to_{args.dst_lang}_with_{args.model.replace("/", "-")}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', df)
+  save_results(f'result_{args.dataset}_{args.task}_{args.src_lang}_to_{args.dst_lang}_with_{args.model.replace("/", "-")}.csv', df)
 
 def evaluate_apr(
     benchmark: BaseBenchmark,
@@ -212,7 +216,7 @@ def evaluate_apr(
               f'===================')
 
   df = pd.DataFrame({'pass_orig': pass_orig, 'pass_spanned': pass_spanned})
-  save_results(f'result_{args.dataset}_{args.task}_{args.src_lang}_with_{args.model.replace("/", "-")}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', df)
+  save_results(f'result_{args.dataset}_{args.task}_{args.src_lang}_with_{args.model.replace("/", "-")}.csv', df)
 
 
 def _evaluate_tagging(
@@ -255,7 +259,7 @@ def _evaluate_tagging(
               f'======================')
 
   df = pd.DataFrame({'f1_orig': f1_orig, 'f1_spanned': f1_spanned})
-  save_results(f'result_{args.dataset}_{args.task}_{args.src_lang}_with_{args.model.replace("/", "-")}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', df)
+  save_results(f'result_{args.dataset}_{args.task}_{args.src_lang}_with_{args.model.replace("/", "-")}.csv', df)
 
 
 def evaluate_code2tag(
@@ -339,7 +343,66 @@ Variants  : {np.mean(bleu_spanned) * 100:>6.2f}% {np.mean(meteor_spanned) * 100:
       'overall_orig': overall_orig,
       'overall_spanned': overall_spanned,
   })
-  save_results(f'result_{args.dataset}_{args.task}_{args.src_lang}_with_{args.model.replace("/", "-")}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', df)
+  save_results(f'result_{args.dataset}_{args.task}_{args.src_lang}_with_{args.model.replace("/", "-")}.csv', df)
+
+
+def _evaluate_reasoning(
+    benchmark: BaseBenchmark,
+    transformer: BaseTransformer,
+    agent: BaseAgent,
+    args: argparse.Namespace,
+    reason_func: Callable[[BaseAgent, Sequence[Snippet], str], Sequence[Sequence[Snippet]]],
+) -> None:
+  logger.info(f'Code reasoning task in {args.src_lang}.')
+
+  snippets = benchmark.load_for_reasoning(args.src_lang)
+  snippets = pick_snippets(snippets, args, ensure_correct=False)
+
+  corpus = transformer.transform(
+      snippets=snippets,
+      lang=args.src_lang,
+      seed=args.seed,
+      ensure_correct=False,
+  )
+
+  logger.info('Reasoning on originals.')
+  res_orig = reason_func(agent, snippets, args.src_lang)
+  logger.info('Reasoning on variants.')
+  res_spanned = [reason_func(agent, variants, args.src_lang)
+                 for variants in tqdm(corpus, desc='Reasoning', total=len(corpus), leave=False)]
+
+  num_seq = len(corpus[0])
+  logger.info('Calculating metrics of code reasoning on the originals.')
+  correctness_orig = calc_correctness(res_orig, args.src_lang)
+  logger.info('Calculating metrics of code reasoning on the variants.')
+  correctness_spanned = [calc_correctness([variants[i] for variants in res_spanned], args.src_lang)
+                         for i in tqdm(range(num_seq), desc='Evaluating', total=num_seq, leave=False)]
+  logger.info(f'Correctness of {args.model} on {args.dataset}:\n'
+              f'==  Correctness  ==\n'
+              f'Originals : {correctness_orig * 100:>6.2f}%\n'
+              f'Variants  : {np.mean(correctness_spanned) * 100:>6.2f}%\n'
+              f'===================')
+
+  df = pd.DataFrame({'correctness_orig': correctness_orig, 'correctness_spanned': correctness_spanned})
+  save_results(f'result_{args.dataset}_{args.task}_{args.src_lang}_with_{args.model.replace("/", "-")}.csv', df)
+
+
+def evaluate_input_reasoning(
+    benchmark: BaseBenchmark,
+    transformer: BaseTransformer,
+    agent: BaseAgent,
+    args: argparse.Namespace,
+) -> None:
+  _evaluate_reasoning(benchmark, transformer, agent, args, reason_input)
+
+
+def evaluate_output_reasoning(
+    benchmark: BaseBenchmark,
+    transformer: BaseTransformer,
+    agent: BaseAgent,
+    args: argparse.Namespace,
+) -> None:
+  _evaluate_reasoning(benchmark, transformer, agent, args, reason_output)
 
 
 def main():

@@ -1,4 +1,5 @@
 import json
+import re
 from abc import ABC
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -76,12 +77,12 @@ class BaseBenchmark(ABC):
 
   def load_for_reasoning(self, lang: str) -> Sequence[Snippet]:
     """
-    Loads the source code snippets for code reasoning.
+    Loads the source code snippets for input reasoning.
 
     :param lang: the language of the code snippets
-    :return: a sequence of source code snippets with input reasoning and output reasoning statements.
+    :return: a sequence of source code snippets with masked assertion statements.
     """
-    raise NotImplementedError('Code reasoning unsupported for current benchmark.')
+    raise NotImplementedError('Input reasoning unsupported for current benchmark.')
 
   def load_for_mcq(self, lang: str) -> Sequence[Snippet]:
     """
@@ -293,36 +294,26 @@ class CodeMMLU(BaseBenchmark):
 @dataclass
 class CruxEvalX(BaseBenchmark):
   _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
-      'cs', 'cpp', 'd', 'go', 'java', 'js', 'julia', 'lua', 'php', 'perl', 'python', 'r', 'racket', 'ruby', 'rust', 'scala', 'shell', 'swift', 'ts',
+      'java',
   ]))
   _lang_to_name: dict[str, str] = field(default_factory=lambda: {
-      'cs': 'CS',
-      'cpp': 'Cpp',
-      'd': 'D',
-      'go': 'Go',
       'java': 'Java',
-      'js': 'JavaScript',
-      'julia': 'Julia',
-      'lua': 'Lua',
-      'php': 'PHP',
-      'perl': 'Perl',
-      'python': 'Python',
-      'r': 'R',
-      'racket': 'Racket',
-      'ruby': 'Ruby',
-      'rust': 'Rust',
-      'scala': 'Scala',
-      'shell': 'Shell',
-      'swift': 'Swift',
-      'ts': 'TypeScript'
   })
+
+  def _remove_main(self, lang: str, code: str) -> str:
+    match lang:
+      case 'java':
+        return re.sub(r'\s+public\s+static\s+void\s+main.*$', '\n}', code, flags=re.DOTALL)
+      case _:
+        raise TypeError(f'Unsupported language: {lang}')
 
   @check_lang_support
   def load_for_reasoning(self, lang: str) -> Sequence[Snippet]:
     ds = load_dataset('xhwl/cruxeval-x', trust_remote_code=True)
-    return [Snippet(id=row['id'], code=row['code'], args={
+    return [Snippet(id=row['id'], code=self._remove_main(lang, row['code']), args={
         'input_reasoning': row['input_reasoning'],
         'output_reasoning': row['output_reasoning'],
+        'testcases': (('', ('',)),)  # tests by assertion
     }) for row in ds[self._lang_to_name[lang]]]
 
 
@@ -344,7 +335,7 @@ class HumanEvalX(BaseBenchmark):
     entries = self._load(src_lang, 'test')
     sources = (f'{declaration}\n{body}\n{entry}' for declaration, body, entry in zip(declarations, bodies, entries))
     return [Snippet(id=task_id, code=source, args={
-        'testcases': (('', ('',)),)  # HumanEvalX tests by assertion
+        'testcases': (('', ('',)),)  # tests by assertion
     }) for task_id, source in zip(task_ids, sources)]
 
 

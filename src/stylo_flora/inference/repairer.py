@@ -3,7 +3,7 @@ from collections.abc import Sequence
 
 from .. import Snippet
 from ..logger import logger
-from .base import BaseAgent, Prompt
+from .agents import BaseAgent, Prompt
 from .utils import work
 
 SYSTEM_PROMPT = """

@@ -59,7 +59,7 @@ def test_java(snippet: Snippet) -> bool:
   try:
     matched = re.search(r'public\s+(?:final\s+)?class\s+(\w+)', snippet.code)
     if not matched:
-      matched = re.search(r'(?:final\s+)?class\s+(Main|Solution)', snippet.code)
+      matched = re.search(r'(?:final\s+)?class\s+(\w+)', snippet.code)
     if not matched:
       raise CompilationError(snippet.id, 'Failed to extract class name from Java code.', f'Generated code:\n{snippet.code}')
     classname = matched.group(1)
@@ -78,6 +78,7 @@ def test_java(snippet: Snippet) -> bool:
     logger.verbose(f'Standard Error:\n{e.stderr}')
     return False
   args = ['java', '-classpath', f'{classdir}', classname]
+  # TODO: run snippet.args['tester'] if available
   result = _run_with_io(args, snippet.args['testcases'], snippet.id)
   shutil.rmtree(classdir, ignore_errors=True)
   return result
@@ -110,6 +111,7 @@ def test_python(snippet: Snippet) -> bool:
   return _run_with_io(args, snippet.args['testcases'], snippet.id)
 
 
+# TODO: execute in Docker
 def calc_correctness(snippets: Sequence[Snippet], lang: str) -> float:
   """
   Checks the correctness of the translated code with the tests.
