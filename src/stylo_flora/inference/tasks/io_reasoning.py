@@ -5,10 +5,10 @@ Modified from CRUXEval-X repository (https://github.com/CRUXEVAL-X/cruxeval-x).
 import re
 from collections.abc import Sequence
 
-from .. import Snippet
-from ..logger import logger
-from .agents import BaseAgent, Prompt
-from .utils import work
+from ... import Snippet
+from ...logger import logger
+from ..agents import BaseAgent, Prompt
+from ..utils import work
 
 SYSTEM_PROMPT = """
 <task>

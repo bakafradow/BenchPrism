@@ -1,17 +1,17 @@
 import re
 from collections.abc import Sequence
 
-from .. import Snippet
-from ..logger import logger
-from .agents import BaseAgent, Prompt
-from .utils import work
+from ... import Snippet
+from ...logger import logger
+from ..agents import BaseAgent, Prompt
+from ..utils import work
 
 SYSTEM_PROMPT = """
 <task>
 Repair buggy code to make it work correctly.
 </task>
 <constraint>
-Your output MUST only contain the repaired code WITHOUT any explanations, enclosed by triple back quotes.
+Your output MUST only contain the repaired code WITHOUT any explanation, enclosed by triple back quotes.
 </constraint>
 """
 USER_PROMPT = """

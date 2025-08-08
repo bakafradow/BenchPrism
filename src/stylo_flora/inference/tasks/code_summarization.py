@@ -1,17 +1,17 @@
 import reprlib
 from collections.abc import Sequence
 
-from .. import Snippet
-from ..logger import logger
-from .agents import BaseAgent, Prompt
-from .utils import work
+from ... import Snippet
+from ...logger import logger
+from ..agents import BaseAgent, Prompt
+from ..utils import work
 
 SYSTEM_PROMPT = """
 <task>
 Summarize the code snippet briefly.
 </task>
 <constraint>
-Your output MUST only contain the exact summary of the code snippet without any explanations.
+Your output MUST only contain the exact summary of the code snippet without any explanation.
 </constraint>
 """
 USER_PROMPT = """

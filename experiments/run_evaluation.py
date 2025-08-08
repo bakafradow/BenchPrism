@@ -28,6 +28,7 @@ from stylo_flora import Snippet
 from stylo_flora.inference import (
     BaseAgent,
     agent_factory,
+    answer_to_mcq,
     reason_input,
     reason_output,
     repair,
@@ -65,6 +66,7 @@ def parse_args() -> argparse.Namespace:
                           'code_summarization',
                           'input_reasoning',
                           'output_reasoning',
+                          'mcq_answering',
                       ],
                       help='Specify the code task to evaluate on.')
   parser.add_argument('--src-lang', type=str, required=True,
@@ -346,7 +348,7 @@ Variants  : {np.mean(bleu_spanned) * 100:>6.2f}% {np.mean(meteor_spanned) * 100:
   save_results(f'result_{args.dataset}_{args.task}_{args.src_lang}_with_{args.model.replace("/", "-")}.csv', df)
 
 
-def _evaluate_reasoning(
+def _evaluate_io_reasoning(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
@@ -355,7 +357,7 @@ def _evaluate_reasoning(
 ) -> None:
   logger.info(f'Code reasoning task in {args.src_lang}.')
 
-  snippets = benchmark.load_for_reasoning(args.src_lang)
+  snippets = benchmark.load_for_io_reasoning(args.src_lang)
   snippets = pick_snippets(snippets, args, ensure_correct=False)
 
   corpus = transformer.transform(
@@ -393,7 +395,7 @@ def evaluate_input_reasoning(
     agent: BaseAgent,
     args: argparse.Namespace,
 ) -> None:
-  _evaluate_reasoning(benchmark, transformer, agent, args, reason_input)
+  _evaluate_io_reasoning(benchmark, transformer, agent, args, reason_input)
 
 
 def evaluate_output_reasoning(
@@ -402,7 +404,46 @@ def evaluate_output_reasoning(
     agent: BaseAgent,
     args: argparse.Namespace,
 ) -> None:
-  _evaluate_reasoning(benchmark, transformer, agent, args, reason_output)
+  _evaluate_io_reasoning(benchmark, transformer, agent, args, reason_output)
+
+
+def evaluate_mcq_answering(
+    benchmark: BaseBenchmark,
+    transformer: BaseTransformer,
+    agent: BaseAgent,
+    args: argparse.Namespace,
+) -> None:
+  logger.info(f'MCQ answering task in {args.src_lang}.')
+
+  snippets = benchmark.load_for_mcq_answering(args.src_lang)
+  snippets = pick_snippets(snippets, args, ensure_correct=False)
+
+  corpus = transformer.transform(
+      snippets=snippets,
+      lang=args.src_lang,
+      seed=args.seed,
+      ensure_correct=False,
+  )
+
+  logger.info('Answering on originals.')
+  res_orig = answer_to_mcq(agent, snippets, args.src_lang)
+  logger.info('Answering on variants.')
+  res_spanned = [answer_to_mcq(agent, variants, args.src_lang)
+                 for variants in tqdm(corpus, desc='Answering', total=len(corpus), leave=False)]
+  answers = np.array([snippet.args['answer'] for snippet in snippets])
+
+  num_seq = len(corpus[0])
+  correctness_orig = np.mean(np.array(res_orig) == answers)
+  correctness_spanned = [np.mean(np.array([variants[i] for variants in res_spanned]) == answers)
+                         for i in tqdm(range(num_seq), desc='Evaluating', total=num_seq, leave=False)]
+  logger.info(f'Correctness of {args.model} on {args.dataset}:\n'
+              f'==  Correctness  ==\n'
+              f'Originals : {correctness_orig * 100:>6.2f}%\n'
+              f'Variants  : {np.mean(correctness_spanned) * 100:>6.2f}%\n'
+              f'===================')
+
+  df = pd.DataFrame({'correctness_orig': correctness_orig, 'correctness_spanned': correctness_spanned})
+  save_results(f'result_{args.dataset}_{args.task}_{args.src_lang}_with_{args.model.replace("/", "-")}.csv', df)
 
 
 def main():

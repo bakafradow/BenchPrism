@@ -1,17 +1,17 @@
 import re
 from collections.abc import Sequence
 
-from .. import Snippet
-from ..logger import logger
-from .agents import BaseAgent, Prompt
-from .utils import work
+from ... import Snippet
+from ...logger import logger
+from ..agents import BaseAgent, Prompt
+from ..utils import work
 
 SYSTEM_PROMPT = """
 <task>
 Translate code from one language to another without changing its behavior.
 </task>
 <constraint>
-Your output MUST only contain the translated code WITHOUT any explanations, enclosed by triple back quotes.
+Your output MUST only contain the translated code WITHOUT any explanation, enclosed by triple back quotes.
 Assertion statements, if exist, should also be considered.
 </constraint>
 """

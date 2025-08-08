@@ -1,9 +1,9 @@
 from collections.abc import Sequence
 
-from .. import Snippet
-from ..logger import logger
-from .agents import BaseAgent, Prompt
-from .utils import work
+from ... import Snippet
+from ...logger import logger
+from ..agents import BaseAgent, Prompt
+from ..utils import work
 
 SYSTEM_PROMPT = """
 <task>
@@ -13,7 +13,7 @@ Classify code into one or more categories from the following candidates.
 2-sat,binary search,bitmasks,brute force,combinatorics,constructive algorithms,data structures,dfs and similar,divide and conquer,dp,dsu,expression parsing,fft,flows,games,geometry,graph matchings,graphs,greedy,implementation,interactive,math,matrices,meet-in-the-middle,number theory,probabilities,shortest paths,sortings,strings,trees,two pointers
 </candidates>
 <constraint>
-Your output MUST only contain the exact list of categories separated by commas, not enclosed by any quotes or brackets, without any explanations.
+Your output MUST only contain the exact list of categories separated by commas, not enclosed by any quotes or brackets, without any explanation.
 </constraint>
 """
 USER_PROMPT = """

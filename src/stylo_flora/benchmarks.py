@@ -75,7 +75,7 @@ class BaseBenchmark(ABC):
     """
     raise NotImplementedError('Code summarization unsupported for current benchmark.')
 
-  def load_for_reasoning(self, lang: str) -> Sequence[Snippet]:
+  def load_for_io_reasoning(self, lang: str) -> Sequence[Snippet]:
     """
     Loads the source code snippets for input reasoning.
 
@@ -84,14 +84,14 @@ class BaseBenchmark(ABC):
     """
     raise NotImplementedError('Input reasoning unsupported for current benchmark.')
 
-  def load_for_mcq(self, lang: str) -> Sequence[Snippet]:
+  def load_for_mcq_answering(self, lang: str) -> Sequence[Snippet]:
     """
-    Loads the source code snippets for multiple-choice questions.
+    Loads the source code snippets for Multiple-Choice Question (MCQ) answering.
 
     :param lang: the language of the code snippets
     :return: a sequence of source code snippets with multiple-choice questions and corresponding answers.
     """
-    raise NotImplementedError('MCQ unsupported for current benchmark.')
+    raise NotImplementedError('MCQ answering unsupported for current benchmark.')
 
 
 @dataclass
@@ -276,7 +276,7 @@ class CodeMMLU(BaseBenchmark):
   })
 
   @check_lang_support
-  def load_for_mcq(self, lang):
+  def load_for_mcq_answering(self, lang):
     ds = load_dataset('Fsoft-AIC/CodeMMLU', 'execution_prediction', trust_remote_code=True)
     match lang:
       case 'java':
@@ -308,7 +308,7 @@ class CruxEvalX(BaseBenchmark):
         raise TypeError(f'Unsupported language: {lang}')
 
   @check_lang_support
-  def load_for_reasoning(self, lang: str) -> Sequence[Snippet]:
+  def load_for_io_reasoning(self, lang: str) -> Sequence[Snippet]:
     ds = load_dataset('xhwl/cruxeval-x', trust_remote_code=True)
     return [Snippet(id=row['id'], code=self._remove_main(lang, row['code']), args={
         'input_reasoning': row['input_reasoning'],
