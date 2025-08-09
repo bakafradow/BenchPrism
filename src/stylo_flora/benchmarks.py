@@ -239,13 +239,19 @@ class ClassEvalT(BaseBenchmark):
 
   @check_lang_support
   def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
-    src_dir = Path(f'data/ClassEval-T/ClassEval_T/{self._lang_to_name[src_lang]}/solution')
-    test_dir = Path(f'data/ClassEval-T/ClassEval_T/{self._lang_to_name[dst_lang]}/test')
-    if not src_dir.exists() or not test_dir.exists():
-      raise FileNotFoundError(f'Directory {src_dir} or {test_dir} does not exist.')
+    data_dir = Path('data/ClassEval-T/ClassEval_T')
 
-    def get_tester(name: str) -> str:
-      match dst_lang:
+    def get_test_code(name: str, lang: str) -> str:
+      match src_lang:
+        case 'cpp':
+          name = name.replace('test_', '')
+        case 'java':
+          name = name.replace('Test', '')
+        case 'python':
+          ...
+        case _:
+          raise TypeError(f'Unsupported target language: {src_lang}')
+      match lang:
         case 'cpp':
           filename = f'test_{name}.cpp'
         case 'java':
@@ -253,14 +259,18 @@ class ClassEvalT(BaseBenchmark):
         case 'python':
           filename = f'{name}.py'
         case _:
-          raise TypeError(f'Unsupported target language: {dst_lang}')
-      tester_path = test_dir / filename
-      if not tester_path.exists():
-        raise FileNotFoundError(f'Test file {tester_path} does not exist.')
-      return tester_path.read_text()
+          raise TypeError(f'Unsupported language: {lang}')
+      test_code_path = data_dir / self._lang_to_name[lang] / 'test' / filename
+      if not test_code_path.exists():
+        raise FileNotFoundError(f'Test file {test_code_path} does not exist.')
+      return test_code_path.read_text()
 
+    src_dir = data_dir / self._lang_to_name[src_lang] / 'solution'
+    if not src_dir.exists():
+      raise FileNotFoundError(f'Directory {src_dir} does not exist.')
     snippets = [Snippet(id=file.stem, code=file.read_text(), args={
-        'tester': get_tester(file.stem),
+        f'test_code_{src_lang}': get_test_code(file.stem, src_lang),
+        f'test_code_{dst_lang}': get_test_code(file.stem, dst_lang),
     }) for file in src_dir.iterdir() if file.is_file() and file.suffix == f'.{self._lang_to_name[src_lang]}']
     return snippets
 
