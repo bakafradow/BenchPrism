@@ -29,7 +29,6 @@ def reduce_seq(snippet: str, seq: list[int]) -> None:
       return
     class_name = matched.group(1)
     with tempfile.TemporaryDirectory() as temp_dir:
-      # try to compile the mutant, if it compiles, revert the change of seq[idx]
       temp_file = Path(temp_dir) / f'{class_name}.java'
       with open(temp_file, 'w', encoding='utf-8') as f:
         f.write(mutant_str)
@@ -69,8 +68,8 @@ def main():
 
     if all(selection == -1 for selection in seq):
       print(f'All selections in {file} are -1. Skipping.')
-    else:
-      new_snippet = re.sub(r'// Seq=\[[^\]]*\]', f'// Seq={seq}', snippet, count=1)
+      continue
+    new_snippet = re.sub(r'// Seq=\[[^\]]*\]', f'// Seq={seq}', snippet, count=1)
     with open(reduce_dir / file.name, 'w', encoding='utf-8') as f:
       f.write(new_snippet)
       print(f'Wrote reduced snippet with {len(new_snippet.splitlines())} lines to {reduce_dir / file.name}')
