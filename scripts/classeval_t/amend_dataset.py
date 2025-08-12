@@ -5,6 +5,7 @@ Specifically, this script executes the following operations:
 - mv ClassEval_T/java/solutuon ClassEval_T/java/solution
 - mv ClassEval_T/py/test/DatabaseOperation.py ClassEval_T/py/test/DatabaseProcessor.py
 - sed -i 's/meigimport/import/g' ClassEval_T/py/test/AccessGatewayFilter.py
+- sed -i 's/ClassroomTest/ClassroomManagementTest/g' ClassEval_T/java/test/ClassroomTest.java
 """
 
 from pathlib import Path
@@ -18,17 +19,43 @@ def main():
     exit(1)
   dataset_dir = Path(sys.argv[1])
   print(f'Amending ClassEval-T at {dataset_dir}...')
-  shutil.move(dataset_dir / 'cpp' / 'test' / 'test_CalendarUti.cpp',
-              dataset_dir / 'cpp' / 'test' / 'test_CalendarUtil.cpp')
-  shutil.move(dataset_dir / 'java' / 'solutuon',
-              dataset_dir / 'java' / 'solution')
-  shutil.move(dataset_dir / 'py' / 'test' / 'DatabaseOperation.py',
-              dataset_dir / 'py' / 'test' / 'DatabaseProcessor.py')
-  with open(dataset_dir / 'py' / 'test' / 'AccessGatewayFilter.py', 'r', encoding='utf-8') as f:
-    content = f.read()
-  content = content.replace('meigimport', 'import')
-  with open(dataset_dir / 'py' / 'test' / 'AccessGatewayFilter.py', 'w', encoding='utf-8') as f:
-    f.write(content)
+
+  try:
+    shutil.move(dataset_dir / 'cpp' / 'test' / 'test_CalendarUti.cpp',
+                dataset_dir / 'cpp' / 'test' / 'test_CalendarUtil.cpp')
+  except FileNotFoundError:
+    pass
+
+  try:
+    shutil.move(dataset_dir / 'java' / 'solutuon',
+                dataset_dir / 'java' / 'solution')
+  except FileNotFoundError:
+    pass
+
+  try:
+    shutil.move(dataset_dir / 'py' / 'test' / 'DatabaseOperation.py',
+                dataset_dir / 'py' / 'test' / 'DatabaseProcessor.py')
+  except FileNotFoundError:
+    pass
+
+  try:
+    with open(dataset_dir / 'py' / 'test' / 'AccessGatewayFilter.py', 'r', encoding='utf-8') as f:
+      content = f.read()
+    content = content.replace('meigimport', 'import')
+    with open(dataset_dir / 'py' / 'test' / 'AccessGatewayFilter.py', 'w', encoding='utf-8') as f:
+      f.write(content)
+  except FileNotFoundError:
+    pass
+
+  try:
+    with open(dataset_dir / 'java' / 'test' / 'ClassroomTest.java', 'r', encoding='utf-8') as f:
+      content = f.read()
+    content = content.replace('ClassroomTest', 'ClassroomManagementTest')
+    with open(dataset_dir / 'java' / 'test' / 'ClassroomTest.java', 'w', encoding='utf-8') as f:
+      f.write(content)
+  except FileNotFoundError:
+    pass
+
   print('Done.')
 
 
