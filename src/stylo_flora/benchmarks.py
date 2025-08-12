@@ -4,11 +4,12 @@ from abc import ABC
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import jsonlines
 from datasets import load_dataset
 
-from . import Snippet, TestBatch
+from . import APITestCase, Snippet, IOTestCase
 
 
 def check_lang_support(func: Callable) -> Callable:
@@ -48,14 +49,14 @@ class BaseBenchmark(ABC):
     """
     raise NotImplementedError('Translation unsupported for current benchmark.')
 
-  def load_for_apr(self, lang: str) -> Sequence[Snippet]:
+  def load_for_repair(self, lang: str) -> Sequence[Snippet]:
     """
     Loads the source code snippets for automatic program repair.
 
     :param lang: the language of the code snippets
     :return: a sequence of source code snippets
     """
-    raise NotImplementedError('APR unsupported for current benchmark.')
+    raise NotImplementedError('Repair unsupported for current benchmark.')
 
   def load_for_tagging(self, lang: str) -> Sequence[Snippet]:
     """
@@ -74,6 +75,15 @@ class BaseBenchmark(ABC):
     :return: a sequence of source code snippets with human summarization
     """
     raise NotImplementedError('Code summarization unsupported for current benchmark.')
+
+  def load_for_test_generation(self, lang: str) -> Sequence[Snippet]:
+    """
+    Loads the source code snippets for test generation.
+
+    :param lang: the language of the code snippets
+    :return: a sequence of source code snippets with test cases
+    """
+    raise NotImplementedError('Test generation unsupported for current benchmark.')
 
   def load_for_io_reasoning(self, lang: str) -> Sequence[Snippet]:
     """
@@ -120,11 +130,11 @@ class XCodeEval(BaseBenchmark):
     ds = ds.filter(lambda row: row['lang_cluster'] == lang_name)
     return ds['train'][column]
 
-  def _load_tests(self, ids: Iterable[str]) -> Sequence[TestBatch]:
+  def _load_tests(self, ids: Iterable[str]) -> Sequence[Sequence[IOTestCase]]:
     with open('data/xCodeEval/unittest_db.json', 'r') as f:
       unittests = json.load(f)
-    return [[(pair['input'].replace('\r\n', '\n'),
-              [output.replace('\r\n', '\n') for output in pair['output']])
+    return [[IOTestCase(input=pair['input'].replace('\r\n', '\n'),
+                        outputs=[output.replace('\r\n', '\n') for output in pair['output']])
              for pair in batch]
             for batch in (unittests[uid] for uid in ids)]
 
@@ -134,10 +144,10 @@ class XCodeEval(BaseBenchmark):
     sources = self._load(src_lang, TASK_NAME, 'source_code')
     testcases = self._load_tests(src_uids)
     return [Snippet(id=src_uid, code=source, args={
-        'testcases': testcases[i],
+        'io_testcases': testcases[i],
     }) for i, (src_uid, source) in enumerate(zip(src_uids, sources))]
 
-  def load_for_apr(self, lang):
+  def load_for_repair(self, lang):
     TASK_NAME = 'apr'
     src_uids = self._load(lang, TASK_NAME, 'src_uid')
     sources = self._load(lang, TASK_NAME, 'bug_source_code')
@@ -150,7 +160,7 @@ class XCodeEval(BaseBenchmark):
         'sample_outputs': obj['sample_outputs'],
       } for obj in reader}
     testcases = self._load_tests(src_uids)
-    return [Snippet(id=src_uid, code=source, args={**args_dict[src_uid], 'testcases': testcases[i]})
+    return [Snippet(id=src_uid, code=source, args={**args_dict[src_uid], 'io_testcases': testcases[i]})
             for i, (src_uid, source) in enumerate(zip(src_uids, sources))]
 
   def load_for_tagging(self, lang: str) -> Sequence[Snippet]:
@@ -188,12 +198,12 @@ class CodeScope(BaseBenchmark):
   })
 
   @classmethod
-  def _normalize_test(cls, testcases: str) -> Sequence[tuple[str, Sequence[str]]]:
+  def _normalize_test(cls, testcases: str) -> Sequence[IOTestCase]:
     if any(not isinstance(testcase['input'], str) and len(testcase['input']) != 1 for testcase in eval(testcases)):
       raise ValueError('Input of testcases must be a string or a sequence with length 1.')
-    return [(testcase['input'].replace('\r\n', '\n') if isinstance(testcase['input'], str) \
-             else testcase['input'][0].replace('\r\n', '\n'),
-             [output.replace('\r\n', '\n') for output in testcase['output']])
+    return [IOTestCase(input=testcase['input'].replace('\r\n', '\n') if isinstance(testcase['input'], str) \
+                       else testcase['input'][0].replace('\r\n', '\n'),
+                       outputs=[output.replace('\r\n', '\n') for output in testcase['output']])
             for testcase in eval(testcases)]
 
   @check_lang_support
@@ -201,11 +211,11 @@ class CodeScope(BaseBenchmark):
     ds = load_dataset('json', data_files='data/CodeScope/data/code_translation_data.jsonl')
     ds = ds.filter(lambda row: row['source_lang_cluster'] == self._lang_to_name[src_lang] and row['target_lang_cluster'] == self._lang_to_name[dst_lang])
     return [Snippet(id=row['src_uid'], code=row['source_code'], args={
-        'testcases': self._normalize_test(row['testcases']),
+        'io_testcases': self._normalize_test(row['io_testcases']),
     }) for row in ds['train']]
 
   @check_lang_support
-  def load_for_apr(self, lang: str) -> Sequence[Snippet]:
+  def load_for_repair(self, lang: str) -> Sequence[Snippet]:
     ds = load_dataset('json', data_files='data/CodeScope/data/code_repair_data.jsonl')
     ds = ds.filter(lambda row: row['lang_cluster'] == self._lang_to_name[lang])
     return [Snippet(id=row['src_uid'], code=row['source_code'], args={
@@ -214,7 +224,7 @@ class CodeScope(BaseBenchmark):
         'output_spec': row['output_specification'],
         'sample_inputs': row['sample_inputs'],
         'sample_outputs': row['sample_outputs'],
-        'testcases': self._normalize_test(row['testcases']),
+        'io_testcases': self._normalize_test(row['io_testcases']),
     }) for row in ds['train']]
 
   @check_lang_support
@@ -224,55 +234,6 @@ class CodeScope(BaseBenchmark):
     return [Snippet(id=row['id'], code=row['source_code'], args={
         'human_summarization': row['human_summarization'],
     }) for row in ds['train']]
-
-
-@dataclass
-class ClassEvalT(BaseBenchmark):
-  _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
-      'cpp', 'java', 'python',
-  ]))
-  _lang_to_name: dict[str, str] = field(default_factory=lambda: {
-      'cpp': 'cpp',
-      'java': 'java',
-      'python': 'py',
-  })
-
-  @check_lang_support
-  def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
-    data_dir = Path('data/ClassEval-T/ClassEval_T')
-
-    def get_test_code(name: str, lang: str) -> str:
-      match src_lang:
-        case 'cpp':
-          name = name.replace('test_', '')
-        case 'java':
-          name = name.replace('Test', '')
-        case 'python':
-          ...
-        case _:
-          raise TypeError(f'Unsupported target language: {src_lang}')
-      match lang:
-        case 'cpp':
-          filename = f'test_{name}.cpp'
-        case 'java':
-          filename = f'{name}Test.java'
-        case 'python':
-          filename = f'{name}.py'
-        case _:
-          raise TypeError(f'Unsupported language: {lang}')
-      test_code_path = data_dir / self._lang_to_name[lang] / 'test' / filename
-      if not test_code_path.exists():
-        raise FileNotFoundError(f'Test file {test_code_path} does not exist.')
-      return test_code_path.read_text()
-
-    src_dir = data_dir / self._lang_to_name[src_lang] / 'solution'
-    if not src_dir.exists():
-      raise FileNotFoundError(f'Directory {src_dir} does not exist.')
-    snippets = [Snippet(id=file.stem, code=file.read_text(), args={
-        f'test_code_{src_lang}': get_test_code(file.stem, src_lang),
-        f'test_code_{dst_lang}': get_test_code(file.stem, dst_lang),
-    }) for file in src_dir.iterdir() if file.is_file() and file.suffix == f'.{self._lang_to_name[src_lang]}']
-    return snippets
 
 
 @dataclass
@@ -302,6 +263,29 @@ class CodeMMLU(BaseBenchmark):
 
 
 @dataclass
+class CoderUJB(BaseBenchmark):
+  _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
+      'java',
+  ]))
+
+  def _construct_code(self, row: Mapping[str, Any]) -> str:
+    return f'{row["import_context"]}\n\n{row["class_signature"]} {{\n{row["class_field_context"]}\n\n{row["class_function_signature_context"]}\n\n{row["buggy"]}\n}}'
+
+  @check_lang_support
+  def load_for_repair(self, lang):
+    ds = load_dataset('ZHENGRAN/code_ujb_repair', trust_remote_code=True)
+    # TODO: individual implementation to evaluate
+    return [Snippet(id=row['task_id'], code=self._construct_code(row), args={
+        f'api_testcases_{lang}': [APITestCase(file=source['file'], code=self._construct_code(source),
+                                             method=source['method'])
+                                 for source in row['test_sources']],
+        'oracle': row['source'],
+        'start': row['start'],
+        'end': row['end'],
+    }) for row in ds['train']]
+
+
+@dataclass
 class CruxEvalX(BaseBenchmark):
   _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
       'java',
@@ -323,113 +307,56 @@ class CruxEvalX(BaseBenchmark):
     return [Snippet(id=row['id'], code=self._remove_main(lang, row['code']), args={
         'input_reasoning': row['input_reasoning'],
         'output_reasoning': row['output_reasoning'],
-        'testcases': (('', ('',)),)  # tests by assertion
+        'io_testcases': [IOTestCase(input='', outputs=[''])],  # tests by assertion
     }) for row in ds[self._lang_to_name[lang]]]
 
 
 @dataclass
-class HumanEvalX(BaseBenchmark):
-  _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
-      'python', 'cpp', 'go', 'java', 'js',
-  ]))
-
-  @check_lang_support
-  def _load(self, lang: str, column: str) -> Sequence[str]:
-    ds = load_dataset('THUDM/humaneval-x', lang, trust_remote_code=True)
-    return [row[column] for row in ds['test']]
-
-  def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
-    task_ids = self._load(src_lang, 'task_id')
-    declarations = self._load(src_lang, 'declaration')
-    bodies = self._load(src_lang, 'canonical_solution')
-    entries = self._load(src_lang, 'test')
-    sources = (f'{declaration}\n{body}\n{entry}' for declaration, body, entry in zip(declarations, bodies, entries))
-    return [Snippet(id=task_id, code=source, args={
-        'testcases': (('', ('',)),)  # tests by assertion
-    }) for task_id, source in zip(task_ids, sources)]
-
-
-@dataclass
-class XLCoST(BaseBenchmark):
-  _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
-      'c', 'cs', 'cpp', 'java', 'js', 'php', 'python',
-  ]))
-  _lang_to_name: dict[str, str] = field(default_factory=lambda: {
-      'c': 'C',
-      'cs': 'Csharp',
-      'cpp': 'C++',
-      'java': 'Java',
-      'js': 'Javascript',
-      'php': 'PHP',
-      'python': 'Python',
-  })
-
-  @check_lang_support
-  def _load(self, lang, column):
-    lang_name = self._lang_to_name[lang]
-    ds = load_dataset('codeparrot/xlcost-text-to-code', f'{lang_name}-program-level')
-    return ds['train'][column]
-
-  def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
-    sources = self._load(src_lang, 'code')
-    return [Snippet(str(i), code) for i, code in enumerate(sources)]
-
-
-@dataclass
-class CodeXGLUE(BaseBenchmark):
-  _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
-      'cs', 'java',
-  ]))
-
-  @check_lang_support
-  def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
-    ds = load_dataset('google/code_x_glue_cc_code_to_code_trans', trust_remote_code=True)
-    sources = ds['train'][src_lang]
-    return [Snippet(str(i), code) for i, code in enumerate(sources)]
-
-
-@dataclass
-class GTransEval(BaseBenchmark):
+class ClassEvalT(BaseBenchmark):
   _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
       'cpp', 'java', 'python',
   ]))
-
-  @check_lang_support
-  def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
-    ds = load_dataset(f'xin1997/g-transeval-{src_lang}_all_only_input', trust_remote_code=True)
-    ids = ds['train']['id']
-    sources = ds['train']['content']
-    return [Snippet(id=id_, code=source) for id_, source in zip(ids, sources)]
-
-
-@dataclass
-class CodeNet(BaseBenchmark):
-  _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
-      'java', 'cpp', 'python',
-  ]))
   _lang_to_name: dict[str, str] = field(default_factory=lambda: {
-      'java': 'Java',
-      'cpp': 'C++',
-      'python': 'Python',
+      'cpp': 'cpp',
+      'java': 'java',
+      'python': 'py',
   })
 
-  def _load_tests(self) -> Mapping[str, TestBatch]:
-    with jsonlines.open('data/Project_CodeNet/Project_CodeNet/tests.jsonl', 'r') as reader:
-      return {obj['id']: obj['test'] for obj in reader}
-
   @check_lang_support
   def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
-    data_dir = Path('data/Project_CodeNet/Project_CodeNet/data')
-    lang_name = self._lang_to_name[src_lang]
-    test_dict = self._load_tests()
-    snippets: list[Snippet] = []
-    for subdir in data_dir.iterdir():
-      if not subdir.is_dir():
-        continue
-      lang_dir = subdir / lang_name
-      snippets.extend((Snippet(id=f'{subdir.name}_{file.stem}', code=file.read_text(), args={
-          'testcases': test_dict[subdir.name],
-      }) for file in lang_dir.iterdir() if file.is_file()))
+    data_dir = Path('data/ClassEval-T/ClassEval_T')
+
+    def get_testcase(name: str, lang: str) -> APITestCase:
+      match src_lang:
+        case 'cpp':
+          name = name.replace('test_', '')
+        case 'java':
+          name = name.replace('Test', '')
+        case 'python':
+          ...
+        case _:
+          raise TypeError(f'Unsupported target language: {src_lang}')
+      match lang:
+        case 'cpp':
+          filename = f'test_{name}.cpp'
+        case 'java':
+          filename = f'{name}Test.java'
+        case 'python':
+          filename = f'{name}.py'
+        case _:
+          raise TypeError(f'Unsupported language: {lang}')
+      test_code_path = data_dir / self._lang_to_name[lang] / 'test' / filename
+      if not test_code_path.exists():
+        raise FileNotFoundError(f'Test file {test_code_path} does not exist.')
+      return APITestCase(file=filename, code=test_code_path.read_text())
+
+    src_dir = data_dir / self._lang_to_name[src_lang] / 'solution'
+    if not src_dir.exists():
+      raise FileNotFoundError(f'Directory {src_dir} does not exist.')
+    snippets = [Snippet(id=file.stem, code=file.read_text(), args={
+        f'api_testcases_{src_lang}': get_testcase(file.stem, src_lang),
+        f'api_testcases_{dst_lang}': get_testcase(file.stem, dst_lang),
+    }) for file in src_dir.iterdir() if file.is_file() and file.suffix == f'.{self._lang_to_name[src_lang]}']
     return snippets
 
 
@@ -437,14 +364,10 @@ def benchmark_factory(dataset: str) -> BaseBenchmark:
   name_to_class = {
       'xcodeeval': XCodeEval,
       'codescope': CodeScope,
-      'classeval-t': ClassEvalT,
       'cruxeval-x': CruxEvalX,
+      'coderujb': CoderUJB,
       'codemmlu': CodeMMLU,
-      'humaneval-X': HumanEvalX,
-      'xlcost': XLCoST,
-      'codexglue': CodeXGLUE,
-      'g-transeval': GTransEval,
-      'codenet': CodeNet,
+      'classeval-t': ClassEvalT,
   }
   dataset = dataset.lower()
   if dataset not in name_to_class:

@@ -18,7 +18,5 @@ logger:
   backup_count: 5
 
 metrics:
-  target_dir: targets/ # the path where compiled files are stored
-  result_dir: results/ # the path where evaluation results are stored
   timeout: 60 # unit: seconds
   max_workers: 8

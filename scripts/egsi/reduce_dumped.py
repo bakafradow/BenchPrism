@@ -11,7 +11,6 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-import yaml
 from tqdm import tqdm
 
 from try_spanning import span
@@ -41,19 +40,17 @@ def reduce_seq(snippet: str, seq: list[int]) -> None:
 
 
 def main():
-  if len(sys.argv) < 2:
-    print("Usage: python reduce_dumped.py <dump_dir>")
+  if len(sys.argv) < 3:
+    print("Usage: python reduce_dumped.py <working_dir> <result_dir>")
     exit(1)
-  with open('settings.yml') as f:
-    result_dir = Path(yaml.safe_load(f)['metrics']['result_dir'])
-  dump_dir = result_dir / sys.argv[1]
-  if not dump_dir.exists():
+  working_dir = Path(sys.argv[1])
+  if not working_dir.exists():
     print('Dump directory does not exist.')
     exit(1)
-  reduce_dir = result_dir / f'{sys.argv[1]}_reduced'
-  os.makedirs(reduce_dir, exist_ok=True)
+  result_dir = Path(sys.argv[2])
+  os.makedirs(result_dir, exist_ok=True)
 
-  for file in tqdm(dump_dir.glob('*.txt'), desc='Processing files', leave=False, total=len(list(dump_dir.glob('*.txt')))):
+  for file in tqdm(working_dir.glob('*.txt'), desc='Processing files', leave=False, total=len(list(working_dir.glob('*.txt')))):
     with open(file, 'r', encoding='utf-8') as f:
       snippet = f.read()
       print(f'Read snippet with {len(snippet.splitlines())} lines from {file}')
@@ -70,9 +67,9 @@ def main():
       print(f'All selections in {file} are -1. Skipping.')
       continue
     new_snippet = re.sub(r'// Seq=\[[^\]]*\]', f'// Seq={seq}', snippet, count=1)
-    with open(reduce_dir / file.name, 'w', encoding='utf-8') as f:
+    with open(result_dir / file.name, 'w', encoding='utf-8') as f:
       f.write(new_snippet)
-      print(f'Wrote reduced snippet with {len(new_snippet.splitlines())} lines to {reduce_dir / file.name}')
+      print(f'Wrote reduced snippet with {len(new_snippet.splitlines())} lines to {result_dir / file.name}')
 
 
 if __name__ == '__main__':
