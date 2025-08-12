@@ -23,12 +23,17 @@ USER_PROMPT = """
 """
 
 
-def answer_to_mcq(agent: BaseAgent, snippets: Sequence[Snippet], lang: str) -> Sequence[Sequence[str]]:
-  def worker(i: int, snippet: Snippet) -> Sequence[str] | None:
+def answer_to_mcq(agent: BaseAgent, snippets: Sequence[Snippet], lang: str) -> Sequence[str | None]:
+  def worker(i: int, snippet: Snippet) -> str | None:
+    if not snippet or snippet.args.get('performed'):
+      return None
     prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
                     user=USER_PROMPT.format(lang=lang, code=snippet.code,
                                             choices='\n'.join([f'{letter}. {content}' for letter, content in zip('ABCD', snippet.args['choices'])])))
     response = agent.generate(prompt).strip()
+    if not response:
+      logger.warning(f'Empty answer for snippet {i} ({snippet.id}).')
+      return None
     logger.debug(f'Answer for snippet {i}: {response}')
     return response[0] if response else None
 

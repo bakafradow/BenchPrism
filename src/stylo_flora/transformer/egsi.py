@@ -34,11 +34,6 @@ class EGSI(BaseTransformer):
     if not self.cls:
       raise ValueError('Failed to load the transformer class.')
 
-    # for debugging on EGSI
-    with open('settings.yml') as f:
-       self.dump_dir = Path(yaml.safe_load(f)['metrics']['result_dir']) / 'egsi_dump'
-    os.makedirs(self.dump_dir, exist_ok=True)
-
     atexit.register(self._shutdown_jvm)
   
   def _shutdown_jvm(self):
@@ -115,23 +110,21 @@ class EGSI(BaseTransformer):
       ensure_correct: bool,
   ) -> Sequence[Sequence[Snippet | None]]:
     seqs = self._generate_sequences(lang, seed)
-    fallback_rates = pd.Series([0] * len(seqs), name='fallback_rate')
 
-    def worker(snippet_idx, seq_idx, snippet, seq):
+    def worker(snippet_idx: int, seq_idx: int, snippet: Snippet, seq: Sequence[int]) -> Snippet | None:
+      if snippet.args.get('transformed'):
+        return None
       try:
-        variant = self._span_until(snippet, seq, lang, ensure_correct, retry=config['retry'])
+        variant_code = self._span_until(snippet, seq, lang, ensure_correct, retry=config['retry'])
         jp.java.lang.System.gc()
       except Exception as e:
         logger.error(f'Error occurred while spanning:\n{e}')
-        variant = None
-      if not variant:
+        variant_code = None
+      if not variant_code:
         logger.warning(f'Failed to transform snippet {snippet_idx} ({snippet.id}) with sequence {seq_idx} ({seq}).')
-        with open(self.dump_dir / f'snippet{snippet_idx}_seq{seq_idx}.txt', 'w', encoding='utf-8') as f:
-          f.write(f'// Seq={seq}\n\n{snippet.code}')
-        fallback_rates[seq_idx] += 1
-        return snippet
+        return None
       logger.debug(f'Successfully transformed snippet {snippet_idx} ({snippet.id}).')
-      return snippet._replace(code=str(variant))
+      return snippet._replace(code=str(variant_code))
 
     max_workers = max(1, config['max_workers'])
     num_seq = len(seqs)
@@ -143,9 +136,6 @@ class EGSI(BaseTransformer):
                             desc=f'Spanning snippet {i}', total=num_seq, leave=False))
       corpus[i] = results
     logger.info(f'Spanned {len(corpus)} variant benchmarks.')
-
-    series = pd.Series(fallback_rates / len(snippets), name='fallback_rate')
-    series.to_csv(self.dump_dir / 'fallback_rates.csv', index=False)
 
     return corpus
 

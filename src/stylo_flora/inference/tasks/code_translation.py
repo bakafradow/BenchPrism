@@ -25,7 +25,7 @@ USER_PROMPT = """
 """
 
 
-def translate(agent: BaseAgent, snippets: Sequence[Snippet], src_lang: str, dst_lang: str) -> Sequence[Snippet]:
+def translate(agent: BaseAgent, snippets: Sequence[Snippet | None], src_lang: str, dst_lang: str) -> Sequence[Snippet | None]:
   """
   Translates snippets in code set with code translation model.
   :param translator: the translation model
@@ -35,7 +35,9 @@ def translate(agent: BaseAgent, snippets: Sequence[Snippet], src_lang: str, dst_
   :param dst_lang: destination language
   :return: a sequence of translated code
   """
-  def worker(i: int, snippet: Snippet) -> Snippet | None:
+  def worker(i: int, snippet: Snippet | None) -> Snippet | None:
+    if not snippet or snippet.args.get('performed'):
+      return None
     prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
                     user=USER_PROMPT.format(src_lang=src_lang, dst_lang=dst_lang, code=snippet.code))
     response = agent.generate(prompt)

@@ -37,5 +37,5 @@ def get_freest_gpu() -> str:
 def work(worker: Callable[[int, Snippet], Snippet | None], snippets: Sequence[Snippet]) -> Sequence[Snippet]:
   max_workers = max(1, config['max_workers'])
   with ThreadPoolExecutor(max_workers=max_workers) as executor:
-    return tuple(tqdm(executor.map(worker, range(len(snippets)), snippets),
-                      desc='Generating', total=len(snippets), leave=False))
+    return list(tqdm(executor.map(worker, range(len(snippets)), snippets),
+                 desc='Generating', total=len(snippets), leave=False))

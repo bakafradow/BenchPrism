@@ -25,8 +25,10 @@ USER_PROMPT = """
 """
 
 
-def _reason(agent: BaseAgent, snippets: Sequence[Snippet], lang: str) -> Sequence[Sequence[Snippet]]:
-  def worker(i: int, snippet: Snippet) -> Sequence[str] | None:
+def _reason(agent: BaseAgent, snippets: Sequence[Snippet], lang: str) -> Sequence[Snippet | None]:
+  def worker(i: int, snippet: Snippet) -> Snippet | None:
+    if not snippet or snippet.args.get('performed'):
+      return None
     prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
                     user=USER_PROMPT.format(lang=lang, code=snippet.code))
     response = agent.generate(prompt)
@@ -50,11 +52,11 @@ def _add_main(lang: str, code: str, main_part: str) -> str:
       raise ValueError(f'Unsupported language: {lang}')
 
 
-def reason_input(agent: BaseAgent, snippets: Sequence[Snippet], lang: str) -> Sequence[Sequence[Snippet]]:
+def reason_input(agent: BaseAgent, snippets: Sequence[Snippet], lang: str) -> Sequence[Snippet | None]:
   snippets_without_input = [snippet._replace(code=_add_main(lang, snippet.code, snippet.args['input_reasoning'])) for snippet in snippets]
   return _reason(agent, snippets_without_input, lang)
 
 
-def reason_output(agent: BaseAgent, snippets: Sequence[Snippet], lang: str) -> Sequence[Sequence[Snippet]]:
+def reason_output(agent: BaseAgent, snippets: Sequence[Snippet], lang: str) -> Sequence[Snippet | None]:
   snippets_without_output = [snippet._replace(code=_add_main(lang, snippet.code, snippet.args['output_reasoning'])) for snippet in snippets]
   return _reason(agent, snippets_without_output, lang)
