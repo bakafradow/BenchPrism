@@ -4,12 +4,10 @@ import os
 import shutil
 import subprocess
 from collections.abc import Sequence
-from pathlib import Path
 from tempfile import NamedTemporaryFile
 from concurrent.futures import ThreadPoolExecutor
 
 import jpype as jp
-import pandas as pd
 import yaml
 from tqdm import tqdm
 
@@ -56,9 +54,9 @@ class EGSI(BaseTransformer):
         variant = None
       if not variant:
         logger.warning(f'Failed to transform snippet {i} ({snippet.id}).')
-        variants[i] = snippet
+        variants[i] = None
       else:
-        variants[i] = snippet._replace(code=str(variant))
+        variants[i] = snippet.replace(code=str(variant))
     return variants
 
   def _generate_sequences(
@@ -94,7 +92,7 @@ class EGSI(BaseTransformer):
       if variant:
         if not ensure_correct:
           return variant
-        correctness = calc_correctness([snippet._replace(code=str(variant))], lang)
+        correctness = calc_correctness([snippet.replace(code=str(variant))], lang)
         if math.isclose(correctness, 1.0):
           seq_list = None
           return variant
@@ -124,7 +122,7 @@ class EGSI(BaseTransformer):
         logger.warning(f'Failed to transform snippet {snippet_idx} ({snippet.id}) with sequence {seq_idx} ({seq}).')
         return None
       logger.debug(f'Successfully transformed snippet {snippet_idx} ({snippet.id}).')
-      return snippet._replace(code=str(variant_code))
+      return snippet.replace(code=str(variant_code))
 
     max_workers = max(1, config['max_workers'])
     num_seq = len(seqs)

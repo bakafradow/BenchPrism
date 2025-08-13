@@ -131,7 +131,7 @@ def save_data(path: Path, data: dict[str, Any], snippets: Sequence[Snippet], cor
     data[snippet.id] = {
         'id': snippet.id,
         'variants': [variant.code if variant else None for variant in corpus[i]],
-        'output': res_orig[i].code,
+        'output': get_variant_output(res_orig[i]),
         'variant_outputs': [get_variant_output(res) for res in res_span[i]],
     }
   with jsonlines.open(path, mode='w') as writer:
@@ -167,7 +167,7 @@ def transform(transformer: BaseTransformer, snippets: Sequence[Snippet], data: d
     for j, variant_code in enumerate(data[snippet.id]['variants']):
       if not variant_code:
         continue
-      corpus[i][j] = snippet._replace(code=variant_code)
+      corpus[i][j] = snippet.replace(code=variant_code)
   return corpus
 
 
@@ -191,11 +191,11 @@ def perform(snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
     if snippet.id not in data:
       continue
     if data[snippet.id]['output']:
-      res_orig[i] = snippet._replace(code=data[snippet.id]['output']) \
+      res_orig[i] = snippet.replace(code=data[snippet.id]['output']) \
           if returns_snippets else data[snippet.id]['output']
     for j, variant in enumerate(corpus[i]):
       if data[snippet.id]['variant_outputs'][j]:
-        res_span[i][j] = snippet._replace(code=data[snippet.id]['variant_outputs'][j]) \
+        res_span[i][j] = snippet.replace(code=data[snippet.id]['variant_outputs'][j]) \
             if returns_snippets else data[snippet.id]['variant_outputs'][j]
   return res_orig, res_span
 

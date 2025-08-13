@@ -47,6 +47,6 @@ def translate(agent: BaseAgent, snippets: Sequence[Snippet | None], src_lang: st
       logger.debug(response)
       return None
     logger.debug(f'Snippet {i}:\n{matched.group(1)}')
-    return snippet._replace(code=matched.group(1))
+    return snippet.replace(code=matched.group(1))
 
   return work(worker=worker, snippets=snippets)

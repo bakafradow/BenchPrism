@@ -1,8 +1,11 @@
 from collections.abc import Sequence
+from copy import deepcopy
+from dataclasses import asdict, dataclass, field
 from typing import NamedTuple
 
 
-class Snippet(NamedTuple):
+@dataclass
+class Snippet:
   """
   The unit that forms the workflow.
 
@@ -12,7 +15,18 @@ class Snippet(NamedTuple):
   """
   id: str
   code: str
-  args: dict = {}
+  args: dict = field(default_factory=dict)
+
+  def __deepcopy__(self, memo: dict) -> 'Snippet':
+    new_args = self.args.copy()
+    snippet = Snippet(id=self.id, code=self.code, args=new_args)
+    memo[id(self)] = snippet
+    return snippet
+
+  def replace(self, **kwargs) -> 'Snippet':
+    snippet_dict = asdict(deepcopy(self))
+    snippet_dict.update(kwargs)
+    return Snippet(**snippet_dict)
 
 
 class IOTestCase(NamedTuple):

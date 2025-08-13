@@ -38,7 +38,7 @@ def _reason(agent: BaseAgent, snippets: Sequence[Snippet], lang: str) -> Sequenc
       logger.debug(response)
       return None
     logger.debug(f'Content for snippet {i}: {response}')
-    return snippet._replace(code=snippet.code.replace('????', matched.group(1).strip()))
+    return snippet.replace(code=snippet.code.replace('????', matched.group(1).strip()))
 
   return work(worker=worker, snippets=snippets)
 
@@ -53,10 +53,12 @@ def _add_main(lang: str, code: str, main_part: str) -> str:
 
 
 def reason_input(agent: BaseAgent, snippets: Sequence[Snippet], lang: str) -> Sequence[Snippet | None]:
-  snippets_without_input = [snippet._replace(code=_add_main(lang, snippet.code, snippet.args['input_reasoning'])) for snippet in snippets]
+  snippets_without_input = [snippet.replace(code=_add_main(lang, snippet.code, snippet.args['input_reasoning']))
+                            for snippet in snippets]
   return _reason(agent, snippets_without_input, lang)
 
 
 def reason_output(agent: BaseAgent, snippets: Sequence[Snippet], lang: str) -> Sequence[Snippet | None]:
-  snippets_without_output = [snippet._replace(code=_add_main(lang, snippet.code, snippet.args['output_reasoning'])) for snippet in snippets]
+  snippets_without_output = [snippet.replace(code=_add_main(lang, snippet.code, snippet.args['output_reasoning']))
+                             for snippet in snippets]
   return _reason(agent, snippets_without_output, lang)
