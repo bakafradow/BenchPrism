@@ -6,9 +6,10 @@ transformer:
 agent:
   ######### settings for remote API #########
   timeout: 120
+  sleep: 5
   retry: 3
-  retry_interval: 10
-  max_workers: 4
+  retry_interval: 30
+  max_workers: 2
 
   ######## settings for local models ########
   max_new_tokens: 2048

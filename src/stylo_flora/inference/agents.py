@@ -53,7 +53,6 @@ class OpenAIAgent(BaseAgent):
 
   def generate(self, prompt: Prompt) -> str:
     retry = config['retry']
-    retry_interval = config['retry_interval']
     for attempt in range(retry):
       try:
         completion = self.client.chat.completions.create(
@@ -64,13 +63,14 @@ class OpenAIAgent(BaseAgent):
             ],
             timeout=config['timeout'],
         )
+        time.sleep(config['sleep'])
         return completion.choices[0].message.content
       except KeyboardInterrupt:
         logger.warning('Keyboard interrupt.')
         raise
       except Timeout:
         logger.warning(f'Timeout occurred for snippet {prompt.id}. Retrying {attempt + 1}/{retry}...')
-        time.sleep(retry_interval)
+        time.sleep(config['retry_interval'])
       except Exception as e:
         logger.error(f'Error occurred for snippet {prompt.id}: {e}...')
         break
