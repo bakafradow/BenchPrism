@@ -120,9 +120,16 @@ def load_data(path: Path) -> dict[str, Any]:
   return data
 
 
-def save_data(path: Path, data: dict[str, Any], snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
-              res_orig: Sequence[Any], res_span: Sequence[Sequence[Any]],
-              *, returns_snippets: bool = False) -> None:
+def save_data(
+    path: Path,
+    data: dict[str, Any],
+    snippets: Sequence[Snippet],
+    corpus: Sequence[Sequence[Snippet]],
+    res_orig: Sequence[Any] | None = None,
+    res_span: Sequence[Sequence[Any]] | None = None,
+    *,
+    returns_snippets: bool = False,
+) -> None:
   def get_variant_output(variant) -> str | None:
     if not variant:
       return None
@@ -131,8 +138,8 @@ def save_data(path: Path, data: dict[str, Any], snippets: Sequence[Snippet], cor
     data[snippet.id] = {
         'id': snippet.id,
         'variants': [variant.code if variant else None for variant in corpus[i]],
-        'output': get_variant_output(res_orig[i]),
-        'variant_outputs': [get_variant_output(res) for res in res_span[i]],
+        'output': get_variant_output(res_orig[i]) if res_orig else None,
+        'variant_outputs': [get_variant_output(res) for res in res_span[i]] if res_span else None,
     }
   with jsonlines.open(path, mode='w') as writer:
     for row in sorted(data.values(), key=itemgetter('id')):
@@ -180,6 +187,8 @@ def perform(snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
       continue
     if data[snippet.id]['output']:
       snippet.args['performed'] = True
+    if not data[snippet.id]['variant_outputs']:
+      continue
     for j, variant in enumerate(corpus[i]):
       if data[snippet.id]['variant_outputs'][j]:
         variant.args['performed'] = True
@@ -193,6 +202,8 @@ def perform(snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
     if data[snippet.id]['output']:
       res_orig[i] = snippet.replace(code=data[snippet.id]['output']) \
           if returns_snippets else data[snippet.id]['output']
+    if not data[snippet.id]['variant_outputs']:
+      continue
     for j, variant in enumerate(corpus[i]):
       if data[snippet.id]['variant_outputs'][j]:
         res_span[i][j] = snippet.replace(code=data[snippet.id]['variant_outputs'][j]) \
@@ -215,14 +226,16 @@ def evaluate_code_translation(
   data = load_data(args.data_path)
   corpus = transform(transformer, snippets, data, args)
 
+  save_data(args.data_path, data, snippets, corpus, returns_snippets=args.returns_snippets)
+
   def worker() -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
     res_orig = translate(agent, snippets, args.src_lang, args.dst_lang)
     res_span = [translate(agent, variants, args.src_lang, args.dst_lang)
                 for variants in tqdm(corpus, desc='Translating', total=len(corpus), leave=False)]
     return res_orig, res_span
-  res_orig, res_span = perform(snippets, corpus, data, worker, returns_snippets=True)
+  res_orig, res_span = perform(snippets, corpus, data, worker, returns_snippets=args.returns_snippets)
 
-  save_data(args.data_path, data, snippets, corpus, res_orig, res_span, returns_snippets=True)
+  save_data(args.data_path, data, snippets, corpus, res_orig, res_span, returns_snippets=args.returns_snippets)
 
   logger.info('Evaluating correctness of code translation on the originals.')
   pass_orig = calc_correctness(res_orig, args.dst_lang)
@@ -251,6 +264,8 @@ def evaluate_code_repair(
   data = load_data(args.data_path)
   corpus = transform(transformer, snippets, data, args, ensure_correct=False)
 
+  save_data(args.data_path, data, snippets, corpus, returns_snippets=args.returns_snippets)
+
   def worker() -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
     logger.info('Repairing on originals.')
     res_orig = repair(agent, snippets, args.src_lang)
@@ -258,9 +273,9 @@ def evaluate_code_repair(
     res_span = [repair(agent, variants, args.src_lang)
                 for variants in tqdm(corpus, desc='Repairing', total=len(corpus), leave=False)]
     return res_orig, res_span
-  res_orig, res_span = perform(snippets, corpus, data, worker, returns_snippets=True)
+  res_orig, res_span = perform(snippets, corpus, data, worker, returns_snippets=args.returns_snippets)
 
-  save_data(args.data_path, data, snippets, corpus, res_orig, res_span, returns_snippets=True)
+  save_data(args.data_path, data, snippets, corpus, res_orig, res_span, returns_snippets=args.returns_snippets)
 
   logger.info('Evaluating correctness of repair on the originals.')
   pass_orig = calc_correctness(res_orig, args.src_lang)
@@ -289,6 +304,8 @@ def _evaluate_tagging(
 
   data = load_data(args.data_path)
   corpus = transform(transformer, snippets, data, args, ensure_correct=False)
+
+  save_data(args.data_path, data, snippets, corpus, returns_snippets=args.returns_snippets)
 
   def worker() -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
     logger.info('Tagging on originals.')
@@ -345,6 +362,8 @@ def evaluate_code_summarization(
 
   data = load_data(args.data_path)
   corpus = transform(transformer, snippets, data, args, ensure_correct=False)
+
+  save_data(args.data_path, data, snippets, corpus, returns_snippets=args.returns_snippets)
 
   def worker() -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
     logger.info('Summarizing on originals.')
@@ -408,14 +427,16 @@ def _evaluate_io_reasoning(
   data = load_data(args.data_path)
   corpus = transform(transformer, snippets, data, args, ensure_correct=False)
 
+  save_data(args.data_path, data, snippets, corpus, returns_snippets=args.returns_snippets)
+
   def worker() -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
     res_orig = reason_func(agent, snippets, args.src_lang)
     res_span = [reason_func(agent, variants, args.src_lang)
                 for variants in tqdm(corpus, desc='Reasoning', total=len(corpus), leave=False)]
     return res_orig, res_span
-  res_orig, res_span = perform(snippets, corpus, data, worker, returns_snippets=True)
+  res_orig, res_span = perform(snippets, corpus, data, worker, returns_snippets=args.returns_snippets)
 
-  save_data(args.data_path, data, snippets, corpus, res_orig, res_span, returns_snippets=True)
+  save_data(args.data_path, data, snippets, corpus, res_orig, res_span, returns_snippets=args.returns_snippets)
 
   logger.info('Calculating metrics of code reasoning on the originals.')
   pass_orig = calc_correctness(res_orig, args.src_lang)
@@ -461,6 +482,8 @@ def evaluate_mcq_answering(
   data = load_data(args.data_path)
   corpus = transform(transformer, snippets, data, args, ensure_correct=False)
 
+  save_data(args.data_path, data, snippets, corpus, returns_snippets=args.returns_snippets)
+
   def worker() -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
     logger.info('Answering on originals.')
     res_orig = answer_to_mcq(agent, snippets, args.src_lang)
@@ -498,6 +521,9 @@ def main():
       f'with_{args.model.replace("/", "-")}_seed{args.seed}'
   args.data_path = args.result_dir / f'data_{identifier}.jsonl'
   args.result_path = args.result_dir / f'result_{identifier}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+  args.returns_snippets = args.task in [
+      'code_translation', 'code_repair', 'input_reasoning', 'output_reasoning',
+  ]
 
   logger.info(f'Evaluating {args.model} on {args.task} task in {args.dataset} '
               f'with working directory {args.result_dir}...')
