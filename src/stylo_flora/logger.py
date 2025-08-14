@@ -62,3 +62,5 @@ def init_logger(verbose: bool = False, debug: bool = False) -> None:
   file_handler = RotatingFileHandler(log_path, mode='a', maxBytes=logger_config['max_bytes'], backupCount=logger_config['backup_count'])
   file_handler.setFormatter(logging.Formatter(pattern))
   logger.addHandler(file_handler)
+
+  logger.info(f'Logger initialized with {logging.getLevelName(logger.level)} level.')
