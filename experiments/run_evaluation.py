@@ -138,13 +138,15 @@ def _save_data(
     data[snippet.id] = {
         'id': snippet.id,
         'variants': [variant.code if variant else None for variant in corpus[i]],
-        'output': get_variant_output(res_orig[i]) if res_orig else None,
-        'variant_outputs': [get_variant_output(res) for res in res_span[i]] if res_span else None,
     }
+    if res_orig:
+      data[snippet.id]['output'] = get_variant_output(res_orig[i])
+    if res_span:
+      data[snippet.id]['variant_outputs'] = [get_variant_output(res) for res in res_span[i]]
   with jsonlines.open(path, mode='w') as writer:
     for row in sorted(data.values(), key=itemgetter('id')):
       writer.write(row)
-  logger.info(f'Saved data to {path} with {len(data)} snippets.')
+  logger.info(f'Saved data to {path} with {len(data)} rows.')
 
 
 def _save_result(path: Path, result: dict[str, Any]) -> None:
@@ -184,7 +186,7 @@ def _transform_with(
   return corpus
 
 
-def perform_with(
+def _perform_with(
     worker: Callable,
     snippets: Sequence[Snippet],
     corpus: Sequence[Sequence[Snippet]],
@@ -196,9 +198,9 @@ def perform_with(
   for i, snippet in enumerate(snippets):
     if snippet.id not in data:
       continue
-    if data[snippet.id]['output']:
+    if data[snippet.id].get('output'):
       snippet.args['performed'] = True
-    if not data[snippet.id]['variant_outputs']:
+    if not data[snippet.id].get('variant_outputs'):
       continue
     for j, variant in enumerate(corpus[i]):
       if data[snippet.id]['variant_outputs'][j]:
@@ -210,10 +212,10 @@ def perform_with(
   for i, snippet in enumerate(snippets):
     if snippet.id not in data:
       continue
-    if data[snippet.id]['output']:
+    if data[snippet.id].get('output'):
       res_orig[i] = snippet.replace(code=data[snippet.id]['output']) \
           if returns_snippets else data[snippet.id]['output']
-    if not data[snippet.id]['variant_outputs']:
+    if not data[snippet.id].get('variant_outputs'):
       continue
     for j, variant in enumerate(corpus[i]):
       if data[snippet.id]['variant_outputs'][j]:
@@ -244,20 +246,34 @@ def _evaluate_task_template(
   data = _load_data(args.data_path)
   corpus = _transform_with(transformer, snippets, data, args)
   _save_data(args.data_path, data, snippets, corpus, returns_snippets=args.returns_snippets)
+  num_styles = len(corpus[0]) if corpus else 0
 
   def worker() -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
     res_orig = perform_task_func(agent, snippets, args)
     res_span = [perform_task_func(agent, variants, args)
                 for variants in tqdm(corpus, desc=args.task.capitalize(),
-                                     total=len(corpus), leave=False)]
+                                     total=num_styles, leave=False)]
     return res_orig, res_span
-  res_orig, res_span = perform_with(worker, snippets, corpus, data, returns_snippets=args.returns_snippets)
+  res_orig, res_span = _perform_with(worker, snippets, corpus, data, returns_snippets=args.returns_snippets)
   _save_data(args.data_path, data, snippets, corpus,
             res_orig, res_span, returns_snippets=args.returns_snippets)
 
-  # TODO: substitute `None`s in `res_span` with corresponding result in `res_orig`
-
-  result = evaluate_metrics_func(snippets, corpus, res_orig, res_span, args)
+  fallbacks = [variants.count(None) for variants in zip(*res_span)]
+  padded_corpus = [[variant or snippets[i] for variant in variants]
+                   for i, variants in enumerate(corpus)]
+  result = evaluate_metrics_func(snippets, padded_corpus, res_orig, res_span, args)
+  codebleu = [calc_codebleu([snippet.code for snippet in snippets],
+                            [variant.code for variant in variants], args.src_lang)
+              for variants in tqdm(zip(*padded_corpus), desc='Calculating CodeBLEU',
+                                   total=num_styles, leave=False)]
+  result.update({
+      'num_snippets': len(snippets),
+      'num_styles': num_styles,
+      'fallbacks': fallbacks,
+      'fallback_rate': np.mean(fallbacks) / num_styles,
+      'codebleu': codebleu,
+      'codebleu_avg': np.mean(codebleu),
+  })
   _save_result(args.result_path, result)
 
 
@@ -278,7 +294,7 @@ def evaluate_code_translation(
     pass_orig = calc_correctness(res_orig, args.dst_lang)
     logger.info('Evaluating correctness of code translation on the variants.')
     pass_span = [calc_correctness(variants, args.dst_lang)
-                for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
+                for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
     return {
         'pass_orig': pass_orig,
         'pass_span': pass_span,
@@ -309,7 +325,7 @@ def evaluate_code_repair(
     pass_orig = calc_correctness(res_orig, args.src_lang)
     logger.info('Evaluating correctness of repair on the variants.')
     pass_span = [calc_correctness(variants, args.src_lang)
-                 for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
+                 for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
     return {
         'pass_orig': pass_orig,
         'pass_span': pass_span,
@@ -343,7 +359,7 @@ def _evaluate_tag_classification(
     f1_orig = calc_macro_f1(res_orig, gloden_tags)
     logger.info('Calculating F1 score of tag classification on the variants.')
     f1_span = [calc_macro_f1(variants, gloden_tags)
-               for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
+               for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
     return {
         'f1_orig': f1_orig,
         'f1_span': f1_span,
@@ -397,13 +413,13 @@ def evaluate_code_summarization(
     overall_orig = np.mean([bleu_orig, meteor_orig, rouge_orig, bertscore_orig])
     logger.info('Calculating metrics of code summarization on the variants.')
     bleu_span = [calc_bleu(variants, human_summaries)
-                 for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
+                 for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
     meteor_span = [calc_meteor(variants, human_summaries)
-                   for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
+                   for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
     rouge_span = [calc_rouge(variants, human_summaries)['rougeL']
-                  for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
+                  for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
     bertscore_span = [np.mean(calc_bertscore(variants, human_summaries)['f1'])
-                      for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
+                      for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
     overall_span = np.mean([bleu_span, meteor_span, rouge_span, bertscore_span], axis=0)
     return {
         'bleu_orig': bleu_orig,
@@ -448,7 +464,7 @@ def _evaluate_io_reasoning(
     pass_orig = calc_correctness(res_orig, args.src_lang)
     logger.info('Calculating metrics of code reasoning on the variants.')
     pass_span = [calc_correctness(variants, args.src_lang)
-                 for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
+                 for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
     return {
         'pass_orig': pass_orig,
         'pass_span': pass_span,

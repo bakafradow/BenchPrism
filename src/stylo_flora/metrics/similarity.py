@@ -5,15 +5,13 @@ import evaluate
 import numpy as np
 from nltk.translate.meteor_score import meteor_score
 
-from .. import Snippet
-
 bleu = evaluate.load('bleu')
 rouge = evaluate.load('rouge')
 bertscore = evaluate.load('bertscore')
 
 
 def ensure_equal_lengths(func: Callable) -> Callable:
-  def wrapper(prd: Sequence[Snippet], ref: Sequence[Snippet], *args, **kwargs):
+  def wrapper(prd: Sequence[str], ref: Sequence[str], *args, **kwargs):
     if len(prd) != len(ref):
       raise ValueError(f'Predictions and References must have the same length, got {len(prd)} and {len(ref)}.')
     return func(prd, ref, *args, **kwargs)
@@ -21,10 +19,10 @@ def ensure_equal_lengths(func: Callable) -> Callable:
 
 
 @ensure_equal_lengths
-def calc_codebleu(prd: Sequence[Snippet], ref: Sequence[Snippet], lang: str) -> dict[str, float]:
-  return cb.calc_codebleu(references=[snippet.code for snippet in ref],
-                          predictions=[snippet.code for snippet in prd],
-                          lang=lang, weights=(.25, .25, .25, .25), tokenizer=None)
+def calc_codebleu(prd: Sequence[str], ref: Sequence[str], lang: str) -> dict[str, float]:
+  lang_to_name = {l: l for l in cb.AVAILABLE_LANGS} | {'cs': 'c_sharp', 'js': 'javascript'}
+  return cb.calc_codebleu(references=ref, predictions=prd,
+                          lang=lang_to_name[lang], weights=(.25, .25, .25, .25), tokenizer=None)
 
 
 @ensure_equal_lengths
