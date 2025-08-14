@@ -36,8 +36,6 @@ def translate(agent: BaseAgent, snippets: Sequence[Snippet | None], src_lang: st
   :return: a sequence of translated code
   """
   def worker(i: int, snippet: Snippet | None) -> Snippet | None:
-    if not snippet or snippet.args.get('performed'):
-      return None
     prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
                     user=USER_PROMPT.format(src_lang=src_lang, dst_lang=dst_lang, code=snippet.code))
     response = agent.generate(prompt)

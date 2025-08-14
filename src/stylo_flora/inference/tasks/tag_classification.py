@@ -23,10 +23,8 @@ USER_PROMPT = """
 """
 
 
-def tag(agent: BaseAgent, snippets: Sequence[Snippet], lang: str, with_desc: bool) -> Sequence[Sequence[str] | None]:
+def tag(agent: BaseAgent, snippets: Sequence[Snippet | None], lang: str, with_desc: bool) -> Sequence[Sequence[str] | None]:
   def worker(i: int, snippet: Snippet) -> Sequence[str] | None:
-    if not snippet or snippet.args.get('performed'):
-      return None
     desc = f'\n<problem_description>{snippet.args["desc"]}</problem_description>\n' if with_desc else ''
     prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
                     user=USER_PROMPT.format(lang=lang, code=snippet.code) + desc)

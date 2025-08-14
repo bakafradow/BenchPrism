@@ -5,6 +5,9 @@ import evaluate
 import numpy as np
 from nltk.translate.meteor_score import meteor_score
 
+from ..logger import logger
+
+logger.info('Initializing metrics from evaluate library...')
 bleu = evaluate.load('bleu')
 rouge = evaluate.load('rouge')
 bertscore = evaluate.load('bertscore')

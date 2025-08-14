@@ -27,8 +27,6 @@ USER_PROMPT = """
 
 def _reason(agent: BaseAgent, snippets: Sequence[Snippet], lang: str) -> Sequence[Snippet | None]:
   def worker(i: int, snippet: Snippet) -> Snippet | None:
-    if not snippet or snippet.args.get('performed'):
-      return None
     prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
                     user=USER_PROMPT.format(lang=lang, code=snippet.code))
     response = agent.generate(prompt)

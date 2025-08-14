@@ -134,6 +134,7 @@ def _save_data(
       return None
     return variant.code if returns_snippets else variant
   for i, snippet in enumerate(snippets):
+    data.setdefault(snippet.id, {})
     data[snippet.id].update({
         'id': snippet.id,
         'variants': [variant.code if variant else None for variant in corpus[i]],
@@ -194,7 +195,7 @@ def _perform_with(
     *,
     returns_snippets: bool = False
 ) -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
-  # skip translated snippets
+  # skip snippets that already have outputs in data
   for i, snippet in enumerate(snippets):
     if snippet.id not in data:
       continue
@@ -208,7 +209,7 @@ def _perform_with(
 
   res_orig, res_span = worker()
 
-  # assign the skipped outputs to the results
+  # assign outputs in data to the responses
   for i, snippet in enumerate(snippets):
     if snippet.id not in data:
       continue
@@ -262,11 +263,13 @@ def _evaluate_task_template(
   _save_data(args.data_path, data, snippets, corpus,
              res_orig, res_span, returns_snippets=args.returns_snippets)
 
-  fallbacks = [variants.count(None) for variants in zip(*res_span)]
+  fallbacks = [variants.count(None) for variants in zip(*corpus)]
   padded_corpus = [[variant or snippets[i] for variant in variants]
                    for i, variants in enumerate(corpus)]
+  padded_responses = [[res or res_orig[i] for res in responses]
+                      for i, responses in enumerate(res_span)]
   logger.info('Calculating metrics for the responses...')
-  result = evaluate_metrics_func(snippets, padded_corpus, res_orig, res_span, args)
+  result = evaluate_metrics_func(snippets, padded_corpus, res_orig, padded_responses, args)
   codebleu = [calc_codebleu([snippet.code for snippet in snippets],
                             [variant.code for variant in variants], args.src_lang)['codebleu']
               for variants in tqdm(zip(*padded_corpus), desc='Calculating CodeBLEU',
