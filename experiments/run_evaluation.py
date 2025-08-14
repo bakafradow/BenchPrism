@@ -7,11 +7,11 @@ Assesses the robustness of code task models by the following steps:
 4. Evaluates the space span by the translated code relative to the original source code.
 """
 
-import argparse
 import json
 import math
 import os
 import random
+from argparse import ArgumentParser, Namespace
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from itertools import islice
@@ -39,8 +39,8 @@ from stylo_flora.benchmarks import BaseBenchmark, benchmark_factory
 from stylo_flora import Snippet
 
 
-def parse_args() -> argparse.Namespace:
-  parser = argparse.ArgumentParser(description='Code task evaluation tool.'
+def parse_args() -> Namespace:
+  parser = ArgumentParser(description='Code task evaluation tool.'
                                                'All the datasets are evaluated by default.')
   parser.add_argument('-d', '--dataset', type=str, required=True,
                       help='Specify one dataset to evaluate.')
@@ -80,7 +80,7 @@ def parse_args() -> argparse.Namespace:
   return args
 
 
-def pick_snippets(snippets: Sequence[Snippet], args: argparse.Namespace, *, ensure_correct: bool = True) -> Sequence[Snippet]:
+def _pick_snippets(snippets: Sequence[Snippet], args: Namespace, *, ensure_correct: bool = True) -> Sequence[Snippet]:
   if args.num_snippets < 0:
     return snippets
 
@@ -101,7 +101,7 @@ def pick_snippets(snippets: Sequence[Snippet], args: argparse.Namespace, *, ensu
   return [snippets[i] for i in picked_indices]
 
 
-def cut_testcases(snippets: Sequence[Snippet], args: argparse.Namespace) -> None:
+def _cut_testcases(snippets: Sequence[Snippet], args: Namespace) -> None:
   if args.num_tests < 0:
     return
   for snippet in snippets:
@@ -110,7 +110,7 @@ def cut_testcases(snippets: Sequence[Snippet], args: argparse.Namespace) -> None
           .sample(n=args.num_tests, random_state=args.seed).tolist()
 
 
-def load_data(path: Path) -> dict[str, Any]:
+def _load_data(path: Path) -> dict[str, Any]:
   if not path.exists():
     return {}
   data = {}
@@ -120,7 +120,7 @@ def load_data(path: Path) -> dict[str, Any]:
   return data
 
 
-def save_data(
+def _save_data(
     path: Path,
     data: dict[str, Any],
     snippets: Sequence[Snippet],
@@ -147,14 +147,20 @@ def save_data(
   logger.info(f'Saved data to {path} with {len(data)} snippets.')
 
 
-def save_result(path: Path, result: dict[str, Any]) -> None:
+def _save_result(path: Path, result: dict[str, Any]) -> None:
   with open(path, mode='w') as f:
     json.dump(result, f, indent=2, ensure_ascii=False)
   logger.info(f'Saved results to {path}.')
 
 
-def transform(transformer: BaseTransformer, snippets: Sequence[Snippet], data: dict[str, Any],
-              args: argparse.Namespace, *, ensure_correct: bool = True) -> Sequence[Sequence[Snippet | None]]:
+def _transform_with(
+    transformer: BaseTransformer,
+    snippets: Sequence[Snippet],
+    data: dict[str, Any],
+    args: Namespace,
+    *,
+    ensure_correct: bool = True
+) -> Sequence[Sequence[Snippet | None]]:
   # skip transformed snippets that already exist in the result file
   for snippet in snippets:
     if snippet.id in data:
@@ -178,9 +184,14 @@ def transform(transformer: BaseTransformer, snippets: Sequence[Snippet], data: d
   return corpus
 
 
-def perform(snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
-            data: dict[str, Any], worker: Callable, *,
-            returns_snippets: bool = False) -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
+def perform_with(
+    worker: Callable,
+    snippets: Sequence[Snippet],
+    corpus: Sequence[Sequence[Snippet]],
+    data: dict[str, Any],
+    *,
+    returns_snippets: bool = False
+) -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
   # skip translated snippets
   for i, snippet in enumerate(snippets):
     if snippet.id not in data:
@@ -211,252 +222,254 @@ def perform(snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
   return res_orig, res_span
 
 
+def _evaluate_task_template(
+    benchmark: BaseBenchmark,
+    transformer: BaseTransformer,
+    agent: BaseAgent,
+    args: Namespace,
+    load_snippets_func: Callable[[BaseBenchmark, Namespace], Sequence[Snippet]],
+    perform_task_func: Callable[[BaseAgent, Sequence[Snippet], str], Sequence[Any]],
+    evaluate_metrics_func: Callable[[Sequence[Snippet], Sequence[Sequence[Snippet]],
+                                     Sequence[Any], Sequence[Sequence[Any]],
+                                     Namespace], dict[str, Any]],
+    *,
+    uses_testcases: bool = False,
+    ensure_correct: bool = True,
+) -> None:
+  snippets = load_snippets_func(benchmark, args)
+  snippets = _pick_snippets(snippets, args, ensure_correct=ensure_correct)
+  if uses_testcases:
+    _cut_testcases(snippets, args)
+
+  data = _load_data(args.data_path)
+  corpus = _transform_with(transformer, snippets, data, args)
+  _save_data(args.data_path, data, snippets, corpus, returns_snippets=args.returns_snippets)
+
+  def worker() -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
+    res_orig = perform_task_func(agent, snippets, args)
+    res_span = [perform_task_func(agent, variants, args)
+                for variants in tqdm(corpus, desc=args.task.capitalize(),
+                                     total=len(corpus), leave=False)]
+    return res_orig, res_span
+  res_orig, res_span = perform_with(worker, snippets, corpus, data, returns_snippets=args.returns_snippets)
+  _save_data(args.data_path, data, snippets, corpus,
+            res_orig, res_span, returns_snippets=args.returns_snippets)
+
+  # TODO: substitute `None`s in `res_span` with corresponding result in `res_orig`
+
+  result = evaluate_metrics_func(snippets, corpus, res_orig, res_span, args)
+  _save_result(args.result_path, result)
+
+
 def evaluate_code_translation(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
-    args: argparse.Namespace,
+    args: Namespace,
 ) -> None:
   if not args.dst_lang:
     raise ValueError('Destination language must be specified for code translation task.')
-  snippets = benchmark.load_for_translation(args.src_lang, args.dst_lang)
-  snippets = pick_snippets(snippets, args)
-  cut_testcases(snippets, args)
 
-  data = load_data(args.data_path)
-  corpus = transform(transformer, snippets, data, args)
+  def evaluate_metrics(
+      snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
+      res_orig: Sequence[Any], res_span: Sequence[Sequence[Any]],
+      args: Namespace) -> dict[str, Any]:
+    logger.info('Evaluating correctness of code translation on the originals.')
+    pass_orig = calc_correctness(res_orig, args.dst_lang)
+    logger.info('Evaluating correctness of code translation on the variants.')
+    pass_span = [calc_correctness(variants, args.dst_lang)
+                for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
+    return {
+        'pass_orig': pass_orig,
+        'pass_span': pass_span,
+        'pass_span_avg': np.mean(pass_span),
+    }
 
-  save_data(args.data_path, data, snippets, corpus, returns_snippets=args.returns_snippets)
-
-  def worker() -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
-    res_orig = translate(agent, snippets, args.src_lang, args.dst_lang)
-    res_span = [translate(agent, variants, args.src_lang, args.dst_lang)
-                for variants in tqdm(corpus, desc='Translating', total=len(corpus), leave=False)]
-    return res_orig, res_span
-  res_orig, res_span = perform(snippets, corpus, data, worker, returns_snippets=args.returns_snippets)
-
-  save_data(args.data_path, data, snippets, corpus, res_orig, res_span, returns_snippets=args.returns_snippets)
-
-  logger.info('Evaluating correctness of code translation on the originals.')
-  pass_orig = calc_correctness(res_orig, args.dst_lang)
-  logger.info('Evaluating correctness of code translation on the variants.')
-  pass_span = [calc_correctness(variants, args.dst_lang)
-               for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
-
-  result = {
-      'pass_orig': pass_orig,
-      'pass_span': pass_span,
-      'pass_span_avg': np.mean(pass_span),
-  }
-  save_result(args.result_path, result)
+  _evaluate_task_template(
+      benchmark, transformer, agent, args,
+      load_snippets_func=lambda b, a: b.load_for_translation(a.src_lang, a.dst_lang),
+      perform_task_func=lambda ag, sn, a: translate(ag, sn, a.src_lang, args.dst_lang),
+      evaluate_metrics_func=evaluate_metrics,
+      uses_testcases=True,
+      ensure_correct=True,
+  )
 
 
 def evaluate_code_repair(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
-    args: argparse.Namespace,
+    args: Namespace,
 ) -> None:
-  snippets = benchmark.load_for_repair(args.src_lang)
-  snippets = pick_snippets(snippets, args, ensure_correct=False)
-  cut_testcases(snippets, args)
+  def evaluate_metrics(
+      snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
+      res_orig: Sequence[Any], res_span: Sequence[Sequence[Any]],
+      args: Namespace) -> dict[str, Any]:
+    logger.info('Evaluating correctness of repair on the originals.')
+    pass_orig = calc_correctness(res_orig, args.src_lang)
+    logger.info('Evaluating correctness of repair on the variants.')
+    pass_span = [calc_correctness(variants, args.src_lang)
+                 for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
+    return {
+        'pass_orig': pass_orig,
+        'pass_span': pass_span,
+        'pass_span_avg': np.mean(pass_span),
+    }
 
-  data = load_data(args.data_path)
-  corpus = transform(transformer, snippets, data, args, ensure_correct=False)
-
-  save_data(args.data_path, data, snippets, corpus, returns_snippets=args.returns_snippets)
-
-  def worker() -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
-    logger.info('Repairing on originals.')
-    res_orig = repair(agent, snippets, args.src_lang)
-    logger.info('Repairing on variants.')
-    res_span = [repair(agent, variants, args.src_lang)
-                for variants in tqdm(corpus, desc='Repairing', total=len(corpus), leave=False)]
-    return res_orig, res_span
-  res_orig, res_span = perform(snippets, corpus, data, worker, returns_snippets=args.returns_snippets)
-
-  save_data(args.data_path, data, snippets, corpus, res_orig, res_span, returns_snippets=args.returns_snippets)
-
-  logger.info('Evaluating correctness of repair on the originals.')
-  pass_orig = calc_correctness(res_orig, args.src_lang)
-  logger.info('Evaluating correctness of repair on the variants.')
-  pass_span = [calc_correctness(variants, args.src_lang)
-               for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
-
-  result = {
-      'pass_orig': pass_orig,
-      'pass_span': pass_span,
-      'pass_span_avg': np.mean(pass_span),
-  }
-  save_result(args.result_path, result)
+  _evaluate_task_template(
+      benchmark, transformer, agent, args,
+      load_snippets_func=lambda b, a: b.load_for_repair(a.src_lang),
+      perform_task_func=lambda ag, sn, a: repair(ag, sn, a.src_lang),
+      evaluate_metrics_func=evaluate_metrics,
+      uses_testcases=True,
+      ensure_correct=False,
+  )
 
 
-def _evaluate_tagging(
+def _evaluate_tag_classification(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
-    args: argparse.Namespace,
+    args: Namespace,
     *,
     with_desc: bool,
 ) -> None:
-  snippets = benchmark.load_for_tagging(args.src_lang)
-  snippets = pick_snippets(snippets, args, ensure_correct=False)
+  def evaluate_metrics(
+      snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
+      res_orig: Sequence[Any], res_span: Sequence[Sequence[Any]],
+      args: Namespace) -> dict[str, Any]:
+    gloden_tags = [snippet.args['tags'] for snippet in snippets]
+    logger.info('Calculating F1 score of tag classification on the originals.')
+    f1_orig = calc_macro_f1(res_orig, gloden_tags)
+    logger.info('Calculating F1 score of tag classification on the variants.')
+    f1_span = [calc_macro_f1(variants, gloden_tags)
+               for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
+    return {
+        'f1_orig': f1_orig,
+        'f1_span': f1_span,
+        'f1_span_avg': np.mean(f1_span),
+    }
 
-  data = load_data(args.data_path)
-  corpus = transform(transformer, snippets, data, args, ensure_correct=False)
-
-  save_data(args.data_path, data, snippets, corpus, returns_snippets=args.returns_snippets)
-
-  def worker() -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
-    logger.info('Tagging on originals.')
-    tags_orig = tag(agent, snippets, args.src_lang, with_desc)
-    logger.info('Tagging on variants.')
-    tags_span = [tag(agent, variants, args.src_lang, with_desc)
-                for variants in tqdm(corpus, desc='Tagging', total=len(corpus), leave=False)]
-    return tags_orig, tags_span
-  tags_orig, tags_span = perform(snippets, corpus, data, worker)
-  gloden_tags = [snippet.args['tags'] for snippet in snippets]
-
-  save_data(args.data_path, data, snippets, corpus, tags_orig, tags_span)
-
-  logger.info('Calculating F1 score of tag classification on the originals.')
-  f1_orig = calc_macro_f1(tags_orig, gloden_tags)
-  logger.info('Calculating F1 score of tag classification on the variants.')
-  f1_span = [calc_macro_f1(variants, gloden_tags)
-             for variants in tqdm(zip(*tags_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
-
-  result = {
-      'f1_orig': f1_orig,
-      'f1_span': f1_span,
-      'f1_span_avg': np.mean(f1_span),
-  }
-  save_result(args.result_path, result)
+  _evaluate_task_template(
+      benchmark, transformer, agent, args,
+      load_snippets_func=lambda b, a: b.load_for_tagging(a.src_lang),
+      perform_task_func=lambda ag, sn, a: tag(ag, sn, a.src_lang, with_desc),
+      evaluate_metrics_func=evaluate_metrics,
+      uses_testcases=False,
+      ensure_correct=False,
+  )
 
 
 def evaluate_code2tag(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
-    args: argparse.Namespace,
+    args: Namespace,
 ) -> None:
-  _evaluate_tagging(benchmark, transformer, agent, args, with_desc=False)
+  _evaluate_tag_classification(benchmark, transformer, agent, args, with_desc=False)
 
 
 def evaluate_des_code2tag(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
-    args: argparse.Namespace,
+    args: Namespace,
 ) -> None:
-  _evaluate_tagging(benchmark, transformer, agent, args, with_desc=True)
+  _evaluate_tag_classification(benchmark, transformer, agent, args, with_desc=True)
 
 
 def evaluate_code_summarization(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
-    args: argparse.Namespace,
+    args: Namespace,
 ) -> None:
-  snippets = benchmark.load_for_summarization(args.src_lang)
-  snippets = pick_snippets(snippets, args, ensure_correct=False)
-
-  data = load_data(args.data_path)
-  corpus = transform(transformer, snippets, data, args, ensure_correct=False)
-
-  save_data(args.data_path, data, snippets, corpus, returns_snippets=args.returns_snippets)
-
-  def worker() -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
-    logger.info('Summarizing on originals.')
-    res_orig = summarize(agent, snippets, args.src_lang)
-    logger.info('Summarizing on variants.')
-    res_span = [summarize(agent, variants, args.src_lang)
-                for variants in tqdm(corpus, desc='Summarizing', total=len(corpus), leave=False)]
-    return res_orig, res_span
-  res_orig, res_span = perform(snippets, corpus, data, worker)
-  human_summaries = [snippet.args['human_summarization'] for snippet in snippets]
-
-  save_data(args.data_path, data, snippets, corpus, res_orig, res_span)
-
-  logger.info('Calculating metrics of code summarization on the originals.')
-  bleu_orig = calc_bleu(res_orig, human_summaries)
-  meteor_orig = calc_meteor(res_orig, human_summaries)
-  rouge_orig = calc_rouge(res_orig, human_summaries)['rougeL']
-  bertscore_orig = np.mean(calc_bertscore(res_orig, human_summaries)['f1'])
-  overall_orig = np.mean([bleu_orig, meteor_orig, rouge_orig, bertscore_orig])
-  logger.info('Calculating metrics of code summarization on the variants.')
-  bleu_span = [calc_bleu(variants, human_summaries)
-               for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
-  meteor_span = [calc_meteor(variants, human_summaries)
+  def evaluate_metrics(
+      snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
+      res_orig: Sequence[Any], res_span: Sequence[Sequence[Any]],
+      args: Namespace) -> dict[str, Any]:
+    human_summaries = [snippet.args['human_summarization'] for snippet in snippets]
+    logger.info('Calculating metrics of code summarization on the originals.')
+    bleu_orig = calc_bleu(res_orig, human_summaries)
+    meteor_orig = calc_meteor(res_orig, human_summaries)
+    rouge_orig = calc_rouge(res_orig, human_summaries)['rougeL']
+    bertscore_orig = np.mean(calc_bertscore(res_orig, human_summaries)['f1'])
+    overall_orig = np.mean([bleu_orig, meteor_orig, rouge_orig, bertscore_orig])
+    logger.info('Calculating metrics of code summarization on the variants.')
+    bleu_span = [calc_bleu(variants, human_summaries)
                  for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
-  rouge_span = [calc_rouge(variants, human_summaries)['rougeL']
-                for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
-  bertscore_span = [np.mean(calc_bertscore(variants, human_summaries)['f1'])
-                    for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
-  overall_span = np.mean([bleu_span, meteor_span, rouge_span, bertscore_span], axis=0)
+    meteor_span = [calc_meteor(variants, human_summaries)
+                   for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
+    rouge_span = [calc_rouge(variants, human_summaries)['rougeL']
+                  for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
+    bertscore_span = [np.mean(calc_bertscore(variants, human_summaries)['f1'])
+                      for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
+    overall_span = np.mean([bleu_span, meteor_span, rouge_span, bertscore_span], axis=0)
+    return {
+        'bleu_orig': bleu_orig,
+        'bleu_span': bleu_span,
+        'bleu_span_avg': np.mean(bleu_span),
+        'meteor_orig': meteor_orig,
+        'meteor_span': meteor_span,
+        'meteor_span_avg': np.mean(meteor_span),
+        'rouge_orig': rouge_orig,
+        'rouge_span': rouge_span,
+        'rouge_span_avg': np.mean(rouge_span),
+        'bertscore_orig': bertscore_orig,
+        'bertscore_span': bertscore_span,
+        'bertscore_span_avg': np.mean(bertscore_span),
+        'overall_orig': overall_orig,
+        'overall_span': overall_span,
+        'overall_span_avg': np.mean(overall_span),
+    }
 
-  result = {
-      'bleu_orig': bleu_orig,
-      'bleu_span': bleu_span,
-      'bleu_span_avg': np.mean(bleu_span),
-      'meteor_orig': meteor_orig,
-      'meteor_span': meteor_span,
-      'meteor_span_avg': np.mean(meteor_span),
-      'rouge_orig': rouge_orig,
-      'rouge_span': rouge_span,
-      'rouge_span_avg': np.mean(rouge_span),
-      'bertscore_orig': bertscore_orig,
-      'bertscore_span': bertscore_span,
-      'bertscore_span_avg': np.mean(bertscore_span),
-      'overall_orig': overall_orig,
-      'overall_span': overall_span,
-      'overall_span_avg': np.mean(overall_span),
-  }
-  save_result(args.result_path, result)
+  _evaluate_task_template(
+      benchmark, transformer, agent, args,
+      load_snippets_func=lambda b, a: b.load_for_summarization(a.src_lang),
+      perform_task_func=lambda ag, sn, a: summarize(ag, sn, a.src_lang),
+      evaluate_metrics_func=evaluate_metrics,
+      uses_testcases=False,
+      ensure_correct=False,
+  )
 
 
 def _evaluate_io_reasoning(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
-    args: argparse.Namespace,
-    reason_func: Callable[[BaseAgent, Sequence[Snippet], str], Sequence[Sequence[Snippet]]],
+    args: Namespace,
+    reason_func: Callable[[BaseAgent, Sequence[Snippet], str], Sequence[Sequence[Any]]],
 ) -> None:
-  snippets = benchmark.load_for_io_reasoning(args.src_lang)
-  snippets = pick_snippets(snippets, args, ensure_correct=False)
+  def evaluate_metrics(
+      snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
+      res_orig: Sequence[Any], res_span: Sequence[Sequence[Any]],
+      args: Namespace) -> dict[str, Any]:
+    logger.info('Calculating metrics of code reasoning on the originals.')
+    pass_orig = calc_correctness(res_orig, args.src_lang)
+    logger.info('Calculating metrics of code reasoning on the variants.')
+    pass_span = [calc_correctness(variants, args.src_lang)
+                 for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
+    return {
+        'pass_orig': pass_orig,
+        'pass_span': pass_span,
+        'pass_span_avg': np.mean(pass_span),
+    }
 
-  data = load_data(args.data_path)
-  corpus = transform(transformer, snippets, data, args, ensure_correct=False)
-
-  save_data(args.data_path, data, snippets, corpus, returns_snippets=args.returns_snippets)
-
-  def worker() -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
-    res_orig = reason_func(agent, snippets, args.src_lang)
-    res_span = [reason_func(agent, variants, args.src_lang)
-                for variants in tqdm(corpus, desc='Reasoning', total=len(corpus), leave=False)]
-    return res_orig, res_span
-  res_orig, res_span = perform(snippets, corpus, data, worker, returns_snippets=args.returns_snippets)
-
-  save_data(args.data_path, data, snippets, corpus, res_orig, res_span, returns_snippets=args.returns_snippets)
-
-  logger.info('Calculating metrics of code reasoning on the originals.')
-  pass_orig = calc_correctness(res_orig, args.src_lang)
-  logger.info('Calculating metrics of code reasoning on the variants.')
-  pass_span = [calc_correctness(variants, args.src_lang)
-               for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(corpus[0]), leave=False)]
-
-  result = {
-      'pass_orig': pass_orig,
-      'pass_span': pass_span,
-      'pass_span_avg': np.mean(pass_span),
-  }
-  save_result(args.result_path, result)
+  _evaluate_task_template(
+      benchmark, transformer, agent, args,
+      load_snippets_func=lambda b, a: b.load_for_io_reasoning(a.src_lang),
+      perform_task_func=lambda ag, sn, a: reason_func(ag, sn, a.src_lang),
+      evaluate_metrics_func=evaluate_metrics,
+      uses_testcases=True,
+      ensure_correct=False,
+  )
 
 
 def evaluate_input_reasoning(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
-    args: argparse.Namespace,
+    args: Namespace,
 ) -> None:
   _evaluate_io_reasoning(benchmark, transformer, agent, args, reason_input)
 
@@ -465,7 +478,7 @@ def evaluate_output_reasoning(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
-    args: argparse.Namespace,
+    args: Namespace,
 ) -> None:
   _evaluate_io_reasoning(benchmark, transformer, agent, args, reason_output)
 
@@ -474,38 +487,30 @@ def evaluate_mcq_answering(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
-    args: argparse.Namespace,
+    args: Namespace,
 ) -> None:
-  snippets = benchmark.load_for_mcq_answering(args.src_lang)
-  snippets = pick_snippets(snippets, args, ensure_correct=False)
+  def evaluate_metrics(
+      snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
+      res_orig: Sequence[Any], res_span: Sequence[Sequence[Any]],
+      args: Namespace) -> dict[str, Any]:
+    answers = np.array([snippet.args['answer'] for snippet in snippets])
+    acc_orig = np.mean(np.array(res_orig) == answers)
+    acc_span = [np.mean(np.array(variants) == answers)
+                for variants in zip(*res_span)]
+    return {
+        'acc_orig': acc_orig,
+        'acc_span': acc_span,
+        'acc_span_avg': np.mean(acc_span),
+    }
 
-  data = load_data(args.data_path)
-  corpus = transform(transformer, snippets, data, args, ensure_correct=False)
-
-  save_data(args.data_path, data, snippets, corpus, returns_snippets=args.returns_snippets)
-
-  def worker() -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
-    logger.info('Answering on originals.')
-    res_orig = answer_to_mcq(agent, snippets, args.src_lang)
-    logger.info('Answering on variants.')
-    res_span = [answer_to_mcq(agent, variants, args.src_lang)
-                for variants in tqdm(corpus, desc='Answering', total=len(corpus), leave=False)]
-    return res_orig, res_span
-  res_orig, res_span = perform(snippets, corpus, data, worker)
-  answers = np.array([snippet.args['answer'] for snippet in snippets])
-
-  save_data(args.data_path, data, snippets, corpus, res_orig, res_span)
-
-  acc_orig = np.mean(np.array(res_orig) == answers)
-  acc_span = [np.mean(np.array(variants) == answers)
-              for variants in zip(*res_span)]
-
-  result = {
-      'acc_orig': acc_orig,
-      'acc_span': acc_span,
-      'acc_span_avg': np.mean(acc_span),
-  }
-  save_result(args.result_path, result)
+  _evaluate_task_template(
+      benchmark, transformer, agent, args,
+      load_snippets_func=lambda b, a: b.load_for_mcq_answering(a.src_lang),
+      perform_task_func=lambda ag, sn, a: answer_to_mcq(ag, sn, a.src_lang),
+      evaluate_metrics_func=evaluate_metrics,
+      uses_testcases=False,
+      ensure_correct=False,
+  )
 
 
 def main():
