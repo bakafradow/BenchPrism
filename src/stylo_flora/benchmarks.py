@@ -294,17 +294,10 @@ class CruxEvalX(BaseBenchmark):
       'java': 'Java',
   })
 
-  def _remove_main(self, lang: str, code: str) -> str:
-    match lang:
-      case 'java':
-        return re.sub(r'\s+public\s+static\s+void\s+main.*$', '\n}', code, flags=re.DOTALL)
-      case _:
-        raise TypeError(f'Unsupported language: {lang}')
-
   @check_lang_support
   def load_for_io_reasoning(self, lang: str) -> Sequence[Snippet]:
     ds = load_dataset('xhwl/cruxeval-x', trust_remote_code=True)
-    return [Snippet(id=row['id'], code=self._remove_main(lang, row['code']), args={
+    return [Snippet(id=row['id'], code=row['code'], args={
         'input_reasoning': row['input_reasoning'],
         'output_reasoning': row['output_reasoning'],
         'io_testcases': [IOTestCase(input='', outputs=[''])],  # tests by assertion

@@ -475,7 +475,7 @@ def _evaluate_io_reasoning(
       perform_task_func=lambda ag, sn, a: reason_func(ag, sn, a.src_lang),
       evaluate_metrics_func=evaluate_metrics,
       uses_testcases=True,
-      ensure_correct=False,
+      ensure_correct=True,
   )
 
 
