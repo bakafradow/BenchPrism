@@ -106,6 +106,8 @@ def _cut_testcases(
     snippets: Sequence[Snippet],
     args: Namespace,
 ) -> None:
+  if snippets and not snippets[0].args.get('io_testcases'):
+    return
   if args.num_tests < 0:
     return
   for snippet in snippets:
@@ -246,18 +248,16 @@ def _evaluate_task_template(
                                      Sequence[Any], Sequence[Sequence[Any]],
                                      Namespace], dict[str, Any]],
     *,
-    uses_testcases: bool = False,
     ensure_correct: bool = True,
 ) -> None:
   logger.info(f'Loading snippets for {args.task} from {args.dataset}...')
   snippets = load_snippets_func(benchmark, args)
   snippets = _pick_snippets(snippets, args, ensure_correct=ensure_correct)
-  if uses_testcases:
-    _cut_testcases(snippets, args)
+  _cut_testcases(snippets, args)
 
   data = _load_data(args.data_path)
   logger.info('Transforming styles of the code snippets...')
-  corpus = _transform_with(transformer, snippets, data, args)
+  corpus = _transform_with(transformer, snippets, data, args, ensure_correct=ensure_correct)
   _save_data(args.data_path, data, snippets, corpus,
              returns_snippets=args.returns_snippets)
   num_styles = len(corpus[0]) if corpus else 0
@@ -266,7 +266,7 @@ def _evaluate_task_template(
     res_orig = perform_task_func(agent, snippets, args)
     res_span = [perform_task_func(agent, variants, args)
                 for variants in tqdm(corpus, desc=args.task.capitalize(),
-                                     total=num_styles, leave=False)]
+                                     total=len(corpus), leave=False)]
     return res_orig, res_span
   logger.info(f'Performing {args.task} with {args.model}...')
   res_orig, res_span = _perform_with(worker, snippets, corpus, data, returns_snippets=args.returns_snippets)
@@ -336,7 +336,6 @@ def evaluate_code_translation(
       load_snippets_func=lambda b, a: b.load_for_translation(a.src_lang, a.dst_lang),
       perform_task_func=lambda ag, sn, a: translate(ag, sn, a.src_lang, args.dst_lang),
       evaluate_metrics_func=evaluate_metrics,
-      uses_testcases=True,
       ensure_correct=True,
   )
 
@@ -365,7 +364,6 @@ def evaluate_code_repair(
       load_snippets_func=lambda b, a: b.load_for_repair(a.src_lang),
       perform_task_func=lambda ag, sn, a: repair(ag, sn, a.src_lang),
       evaluate_metrics_func=evaluate_metrics,
-      uses_testcases=True,
       ensure_correct=False,
   )
 
@@ -397,7 +395,6 @@ def _evaluate_tag_classification(
       load_snippets_func=lambda b, a: b.load_for_tagging(a.src_lang),
       perform_task_func=lambda ag, sn, a: tag(ag, sn, a.src_lang, with_desc),
       evaluate_metrics_func=evaluate_metrics,
-      uses_testcases=False,
       ensure_correct=False,
   )
 
@@ -468,7 +465,6 @@ def evaluate_code_summarization(
       load_snippets_func=lambda b, a: b.load_for_summarization(a.src_lang),
       perform_task_func=lambda ag, sn, a: summarize(ag, sn, a.src_lang),
       evaluate_metrics_func=evaluate_metrics,
-      uses_testcases=False,
       ensure_correct=False,
   )
 
@@ -498,7 +494,6 @@ def _evaluate_io_reasoning(
       load_snippets_func=lambda b, a: b.load_for_io_reasoning(a.src_lang),
       perform_task_func=lambda ag, sn, a: reason_func(ag, sn, a.src_lang),
       evaluate_metrics_func=evaluate_metrics,
-      uses_testcases=True,
       ensure_correct=True,
   )
 
@@ -546,7 +541,6 @@ def evaluate_mcq_answering(
       load_snippets_func=lambda b, a: b.load_for_mcq_answering(a.src_lang),
       perform_task_func=lambda ag, sn, a: answer_to_mcq(ag, sn, a.src_lang),
       evaluate_metrics_func=evaluate_metrics,
-      uses_testcases=False,
       ensure_correct=False,
   )
 
