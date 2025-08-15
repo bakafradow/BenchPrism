@@ -11,7 +11,7 @@ SYSTEM_PROMPT = """
 Translate code from one language to another without changing its behavior.
 </task>
 <constraint>
-Your output MUST only contain the translated code WITHOUT any explanation, enclosed by triple back quotes.
+Your output MUST only contain the translated code WITHOUT any explanation, enclosed by triple back quotes with the language specified.
 Assertion statements, if exist, should also be considered.
 Apply camel case in Java; apply snake case in C++ and Python.
 </constraint>

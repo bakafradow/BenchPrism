@@ -22,7 +22,7 @@ SYSTEM_PROMPT = """
 Based on the given code, which may contain errors, reason out the "????" in the assertion statement to make it compilable and correct in Java 17.
 </task>
 <constraint>
-Your output MUST only contain the exact expression that should replace the "????" in the assertion statement without any explanations, enclosed by triple back quotes.
+Your output MUST only contain the exact expression that should replace the "????" in the assertion statement without any explanations, enclosed by triple back quotes with the language specified.
 </constraint>
 """
 USER_PROMPT = """
@@ -43,7 +43,7 @@ def _reason(agent: BaseAgent, snippets: Sequence[Snippet], lang: str) -> Sequenc
       logger.debug(response)
       return None
     logger.debug(f'Content for snippet {i}: {response}')
-    return snippet.replace(code=snippet.code.replace('????', matched.group(1).strip()))
+    return snippet.replace(code=snippet.code.replace('????', matched.group(1)))
 
   return work(worker=worker, snippets=snippets)
 
