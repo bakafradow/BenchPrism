@@ -198,8 +198,6 @@ def calc_correctness(snippets: Sequence[Snippet], lang: str) -> float:
   :param lang: the language of the code snippets
   """
   def worker(snippet: Snippet) -> bool:
-    if not snippet:
-      return False
     try:
       if snippet.args.get(f'api_testcases_{lang}'):
         return globals()[f'test_api_{lang}'](snippet)

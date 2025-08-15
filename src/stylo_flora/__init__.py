@@ -3,6 +3,10 @@ from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from typing import NamedTuple
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 @dataclass
 class Snippet:

@@ -7,6 +7,16 @@ Assesses the robustness of code task models by the following steps:
 4. Evaluates the space span by the translated code relative to the original source code.
 """
 
+from stylo_flora.transformer.base import BaseTransformer, transformer_factory
+from stylo_flora.metrics import (calc_bertscore, calc_bleu, calc_codebleu,
+                                 calc_correctness, calc_macro_f1, calc_meteor,
+                                 calc_rouge)
+from stylo_flora.logger import init_logger, logger
+from stylo_flora.inference import (BaseAgent, agent_factory, answer_to_mcq,
+                                   reason_input, reason_output, repair,
+                                   summarize, tag, translate)
+from stylo_flora.benchmarks import BaseBenchmark, benchmark_factory
+from stylo_flora import Snippet
 import json
 import math
 import os
@@ -22,21 +32,8 @@ from typing import Any
 import jsonlines
 import numpy as np
 import pandas as pd
-from dotenv import load_dotenv
 from tqdm import tqdm
 
-load_dotenv()
-
-from stylo_flora import Snippet
-from stylo_flora.benchmarks import BaseBenchmark, benchmark_factory
-from stylo_flora.inference import (BaseAgent, agent_factory, answer_to_mcq,
-                                   reason_input, reason_output, repair,
-                                   summarize, tag, translate)
-from stylo_flora.logger import init_logger, logger
-from stylo_flora.metrics import (calc_bertscore, calc_bleu, calc_codebleu,
-                                 calc_correctness, calc_macro_f1, calc_meteor,
-                                 calc_rouge)
-from stylo_flora.transformer.base import BaseTransformer, transformer_factory
 
 def parse_args() -> Namespace:
   parser = ArgumentParser(description='Code task evaluation tool.'
@@ -79,7 +76,12 @@ def parse_args() -> Namespace:
   return args
 
 
-def _pick_snippets(snippets: Sequence[Snippet], args: Namespace, *, ensure_correct: bool = True) -> Sequence[Snippet]:
+def _pick_snippets(
+    snippets: Sequence[Snippet],
+    args: Namespace,
+    *,
+    ensure_correct: bool = True,
+) -> Sequence[Snippet]:
   if args.num_snippets < 0:
     return snippets
 
@@ -100,7 +102,10 @@ def _pick_snippets(snippets: Sequence[Snippet], args: Namespace, *, ensure_corre
   return [snippets[i] for i in picked_indices]
 
 
-def _cut_testcases(snippets: Sequence[Snippet], args: Namespace) -> None:
+def _cut_testcases(
+    snippets: Sequence[Snippet],
+    args: Namespace,
+) -> None:
   if args.num_tests < 0:
     return
   for snippet in snippets:
@@ -109,7 +114,9 @@ def _cut_testcases(snippets: Sequence[Snippet], args: Namespace) -> None:
           .sample(n=args.num_tests, random_state=args.seed).tolist()
 
 
-def _load_data(path: Path) -> dict[str, Any]:
+def _load_data(
+    path: Path,
+) -> dict[str, Any]:
   if not path.exists():
     return {}
   data = {}
@@ -150,7 +157,10 @@ def _save_data(
   logger.info(f'Saved data to {path} with {len(data)} rows.')
 
 
-def _save_result(path: Path, result: dict[str, Any]) -> None:
+def _save_result(
+    path: Path,
+    result: dict[str, Any],
+) -> None:
   with open(path, mode='w') as f:
     json.dump(result, f, indent=2, ensure_ascii=False)
   logger.info(f'Saved results to {path}.')
@@ -162,7 +172,7 @@ def _transform_with(
     data: dict[str, Any],
     args: Namespace,
     *,
-    ensure_correct: bool = True
+    ensure_correct: bool = True,
 ) -> Sequence[Sequence[Snippet | None]]:
   # skip transformed snippets that already exist in the result file
   for snippet in snippets:
@@ -193,7 +203,7 @@ def _perform_with(
     corpus: Sequence[Sequence[Snippet]],
     data: dict[str, Any],
     *,
-    returns_snippets: bool = False
+    returns_snippets: bool = False,
 ) -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
   # skip snippets that already have outputs in data
   for i, snippet in enumerate(snippets):
@@ -263,19 +273,33 @@ def _evaluate_task_template(
   _save_data(args.data_path, data, snippets, corpus,
              res_orig, res_span, returns_snippets=args.returns_snippets)
 
-  fallbacks = [variants.count(None) for variants in zip(*corpus)]
-  padded_corpus = [[variant or snippets[i] for variant in variants]
-                   for i, variants in enumerate(corpus)]
-  padded_responses = [[res or res_orig[i] for res in responses]
-                      for i, responses in enumerate(res_span)]
+  # eliminate `None`s by filtering
+  indices_to_eval = [i for i, res in enumerate(res_orig) if res]
+  snippets_to_eval = [snippets[i] for i in indices_to_eval]
+  corpus_to_eval = [corpus[i] for i in indices_to_eval]
+  res_orig_to_eval = [res_orig[i] for i in indices_to_eval]
+  res_span_to_eval = [res_span[i] for i in indices_to_eval]
+  # eliminate `None`s by padding
+  fallbacks = [variants.count(None) for variants in zip(*corpus_to_eval)]
+  corpus_to_eval = [[variant or snippets_to_eval[i] for variant in variants]
+                    for i, variants in enumerate(corpus_to_eval)]
+  res_span_to_eval = [[res or res_orig_to_eval[i] for res in responses]
+                      for i, responses in enumerate(res_span_to_eval)]
+  assert all(snippets_to_eval)
+  assert all(variant for variants in corpus_to_eval for variant in variants)
+  assert all(res_orig_to_eval)
+  assert all(res for responses in res_span_to_eval for res in responses)
+
   logger.info('Calculating metrics for the responses...')
-  result = evaluate_metrics_func(snippets, padded_corpus, res_orig, padded_responses, args)
-  codebleu = [calc_codebleu([snippet.code for snippet in snippets],
+  result = evaluate_metrics_func(snippets_to_eval, corpus_to_eval, res_orig_to_eval, res_span_to_eval, args)
+  codebleu = [calc_codebleu([snippet.code for snippet in snippets_to_eval],
                             [variant.code for variant in variants], args.src_lang)['codebleu']
-              for variants in tqdm(zip(*padded_corpus), desc='Calculating CodeBLEU',
+              for variants in tqdm(zip(*corpus_to_eval), desc='Calculating CodeBLEU',
                                    total=num_styles, leave=False)]
   result.update({
-      'num_snippets': len(snippets),
+      'num_original': len(snippets),
+      'num_valid': len(snippets_to_eval),
+      'num_skipped': len(snippets) - len(indices_to_eval),
       'num_styles': num_styles,
       'fallbacks': fallbacks,
       'fallback_rate': np.mean(fallbacks) / num_styles,
