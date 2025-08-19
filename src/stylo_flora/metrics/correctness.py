@@ -54,7 +54,7 @@ def _run_with_io(args: Sequence[str], tests: Sequence[IOTestCase], id_: str) -> 
   return True
 
 
-def _extrace_java_classname(snippet: Snippet) -> str:
+def _extract_java_classname(snippet: Snippet) -> str:
   matched = re.search(r'public\s+(?:final\s+)?class\s+(\w+)', snippet.code)
   if not matched:
     matched = re.search(r'(?:final\s+)?class\s+(\w+)', snippet.code)
@@ -65,7 +65,7 @@ def _extrace_java_classname(snippet: Snippet) -> str:
 
 def test_io_java(snippet: Snippet) -> bool:
   try:
-    classname = _extrace_java_classname(snippet)
+    classname = _extract_java_classname(snippet)
     with tempfile.TemporaryDirectory() as tmpdir:
       with open(f'{tmpdir}/{classname}.java', 'w') as f:
         f.write(snippet.code)
@@ -87,7 +87,7 @@ def test_io_java(snippet: Snippet) -> bool:
 
 def test_api_java(snippet: Snippet) -> bool:
   try:
-    classname = _extrace_java_classname(snippet)
+    classname = _extract_java_classname(snippet)
     test_classes = re.findall(r'class\s+(\w+)', snippet.args['api_testcases_java'].code)
     if not test_classes:
       raise CompilationError(snippet.id, 'No test classes found in the test code.')

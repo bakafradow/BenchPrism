@@ -13,10 +13,10 @@ from stylo_flora.metrics import (calc_bertscore, calc_bleu, calc_codebleu,
                                  calc_rouge)
 from stylo_flora.logger import init_logger, logger
 from stylo_flora.inference import (BaseAgent, agent_factory, answer_to_mcq,
-                                   reason_input, reason_output, repair,
+                                   generate_tests, reason_input, reason_output, repair,
                                    summarize, tag, translate)
 from stylo_flora.benchmarks import BaseBenchmark, benchmark_factory
-from stylo_flora import Snippet
+from stylo_flora import IOTestCase, Snippet
 import json
 import math
 import os
@@ -52,6 +52,7 @@ def parse_args() -> Namespace:
                           'input_reasoning',
                           'output_reasoning',
                           'mcq_answering',
+                          'test_generation',
                       ],
                       help='Specify the code task to evaluate on.')
   parser.add_argument('--src-lang', type=str, required=True,
@@ -302,7 +303,7 @@ def _evaluate_task_template(
       'num_skipped': len(snippets) - len(indices_to_eval),
       'num_styles': num_styles,
       'fallbacks': fallbacks,
-      'fallback_rate': np.mean(fallbacks) / num_styles,
+      'fallback_rate': np.mean(fallbacks) / len(indices_to_eval),
       'codebleu': codebleu,
       'codebleu_avg': np.mean(codebleu),
   })
@@ -543,6 +544,50 @@ def evaluate_mcq_answering(
       evaluate_metrics_func=evaluate_metrics,
       ensure_correct=False,
   )
+
+
+def evaluate_test_generation(
+    benchmark: BaseBenchmark,
+    transformer: BaseTransformer,
+    agent: BaseAgent,
+    args: Namespace,
+) -> None:
+  def list_to_testcases(testcases: Sequence[Sequence]) -> Sequence[IOTestCase]:
+    return [IOTestCase(input=testcase[0], outputs=testcase[1])
+            for testcase in testcases]
+  def evaluate_metrics(
+          snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
+          res_orig: Sequence[Any], res_span: Sequence[Sequence[Any]],
+          args: Namespace) -> dict[str, Any]:
+    for i, res in enumerate(res_orig):
+      if isinstance(res, list):
+        res_orig[i] = list_to_testcases(res)
+    for i, variants in enumerate(res_span):
+      for j, res in enumerate(variants):
+        if isinstance(res, list):
+          res_span[i][j] = list_to_testcases(res)
+    snippets_with_res_orig = [snippet.replace(args={'io_testcases': res_orig[i]})
+                              for i, snippet in enumerate(snippets)]
+    snippets_with_res_span = [[snippet.replace(args={'io_testcases': testcase})
+                               for testcase in res_span[i]]
+                              for i, snippet in enumerate(snippets)]
+    pass_orig = calc_correctness(snippets_with_res_orig, args.src_lang)
+    pass_span = [calc_correctness(variants, args.src_lang)
+                 for variants in tqdm(zip(*snippets_with_res_span), desc='Evaluating',
+                                      total=len(res_span[0]), leave=False)]
+    return {
+        'pass_orig': pass_orig,
+        'pass_span': pass_span,
+        'pass_span_avg': np.mean(pass_span),
+    }
+
+  _evaluate_task_template(
+      benchmark, transformer, agent, args,
+      load_snippets_func=lambda b, a: b.load_for_test_generation(a.src_lang),
+      perform_task_func=lambda ag, sn, a: generate_tests(ag, sn, a.src_lang),
+      evaluate_metrics_func=evaluate_metrics,
+      ensure_correct=True,
+)
 
 
 def main():

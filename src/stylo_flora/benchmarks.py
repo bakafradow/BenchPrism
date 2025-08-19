@@ -235,6 +235,20 @@ class CodeScope(BaseBenchmark):
         'human_summarization': row['human_summarization'],
     }) for row in ds['train']]
 
+  @check_lang_support
+  def load_for_test_generation(self, lang: str) -> Sequence[Snippet]:
+    ds = load_dataset('json', data_files='data/CodeScope/data/automated_testing_data.jsonl')
+    ds = ds.filter(lambda row: row['lang_cluster'] == self._lang_to_name[lang])
+    return [Snippet(id=row['id'], code=row['source_code'], args={
+        'desc': row['description'],
+        'input_spec': row['input_specification'],
+        'output_spec': row['output_specification'],
+        'sample_inputs': row['sample_inputs'],
+        'sample_outputs': row['sample_outputs'],
+        'notes': row['notes'],
+        'io_testcases': self._normalize_test(row['human_testcases']),  # for ensuring correct transformation
+    }) for row in ds['train']]
+
 
 @dataclass
 class CodeMMLU(BaseBenchmark):
