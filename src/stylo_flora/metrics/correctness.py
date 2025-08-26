@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 import yaml
 from tqdm import tqdm
 
+from .utils import extract_classname_java
 from .. import Snippet, IOTestCase
 from ..logger import logger
 
@@ -54,18 +55,11 @@ def _run_with_io(args: Sequence[str], tests: Sequence[IOTestCase], id_: str) -> 
   return True
 
 
-def _extract_java_classname(snippet: Snippet) -> str:
-  matched = re.search(r'public\s+(?:final\s+)?class\s+(\w+)', snippet.code)
-  if not matched:
-    matched = re.search(r'(?:final\s+)?class\s+(\w+)', snippet.code)
-  if not matched:
-    raise CompilationError(snippet.id, 'Failed to extract class name from Java code.', f'Generated code:\n{snippet.code}')
-  return matched.group(1)
-
-
 def test_io_java(snippet: Snippet) -> bool:
+  classname = extract_classname_java(snippet)
+  if not classname:
+    raise CompilationError(snippet.id, 'Failed to extract class name from Java code.', f'Generated code:\n{snippet.code}')
   try:
-    classname = _extract_java_classname(snippet)
     with tempfile.TemporaryDirectory() as tmpdir:
       with open(f'{tmpdir}/{classname}.java', 'w') as f:
         f.write(snippet.code)
@@ -87,7 +81,7 @@ def test_io_java(snippet: Snippet) -> bool:
 
 def test_api_java(snippet: Snippet) -> bool:
   try:
-    classname = _extract_java_classname(snippet)
+    classname = extract_classname_java(snippet)
     test_classes = re.findall(r'class\s+(\w+)', snippet.args['api_testcases_java'].code)
     if not test_classes:
       raise CompilationError(snippet.id, 'No test classes found in the test code.')

@@ -7,16 +7,6 @@ Assesses the robustness of code task models by the following steps:
 4. Evaluates the space span by the translated code relative to the original source code.
 """
 
-from stylo_flora.transformer.base import BaseTransformer, transformer_factory
-from stylo_flora.metrics import (calc_bertscore, calc_bleu, calc_codebleu,
-                                 calc_correctness, calc_macro_f1, calc_meteor,
-                                 calc_rouge)
-from stylo_flora.logger import init_logger, logger
-from stylo_flora.inference import (BaseAgent, agent_factory, answer_to_mcq,
-                                   generate_tests, reason_input, reason_output, repair,
-                                   summarize, tag, translate)
-from stylo_flora.benchmarks import BaseBenchmark, benchmark_factory
-from stylo_flora import IOTestCase, Snippet
 import json
 import math
 import os
@@ -33,6 +23,17 @@ import jsonlines
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+
+from stylo_flora import IOTestCase, Snippet
+from stylo_flora.benchmarks import BaseBenchmark, benchmark_factory
+from stylo_flora.inference import (BaseAgent, agent_factory, answer_to_mcq,
+                                   generate_tests, reason_input, reason_output,
+                                   repair, summarize, tag, translate)
+from stylo_flora.logger import init_logger, logger
+from stylo_flora.metrics import (calc_bertscore, calc_bleu, calc_codebleu,
+                                 calc_correctness, calc_coverage,
+                                 calc_macro_f1, calc_meteor, calc_rouge)
+from stylo_flora.transformer.base import BaseTransformer, transformer_factory
 
 
 def parse_args() -> Namespace:
@@ -253,8 +254,8 @@ def _evaluate_task_template(
 ) -> None:
   logger.info(f'Loading snippets for {args.task} from {args.dataset}...')
   snippets = load_snippets_func(benchmark, args)
-  snippets = _pick_snippets(snippets, args, ensure_correct=ensure_correct)
   _cut_testcases(snippets, args)
+  snippets = _pick_snippets(snippets, args, ensure_correct=ensure_correct)
 
   data = _load_data(args.data_path)
   logger.info('Transforming styles of the code snippets...')
@@ -571,14 +572,23 @@ def evaluate_test_generation(
     snippets_with_res_span = [[snippet.replace(args={'io_testcases': testcase})
                                for testcase in res_span[i]]
                               for i, snippet in enumerate(snippets)]
-    pass_orig = calc_correctness(snippets_with_res_orig, args.src_lang)
-    pass_span = [calc_correctness(variants, args.src_lang)
-                 for variants in tqdm(zip(*snippets_with_res_span), desc='Evaluating',
-                                      total=len(res_span[0]), leave=False)]
+    cov_orig = calc_coverage(snippets_with_res_orig, args.src_lang)
+    cov_span = [calc_coverage(variants, args.src_lang)
+                for variants in tqdm(zip(*snippets_with_res_span), desc='Evaluating',
+                                     total=len(res_span[0]), leave=False)]
+    pass_span = [cov['pass_rate'] for cov in cov_span]
+    line_cov_span = [cov['line_cov_rate'] for cov in cov_span]
+    branch_cov_span = [cov['branch_cov_rate'] for cov in cov_span]
     return {
-        'pass_orig': pass_orig,
+        'pass_orig': cov_orig['pass_rate'],
         'pass_span': pass_span,
         'pass_span_avg': np.mean(pass_span),
+        'line_cov_orig': cov_orig['line_cov_rate'],
+        'line_cov_span': line_cov_span,
+        'line_cov_span_avg': np.mean(line_cov_span),
+        'branch_cov_orig': cov_orig['branch_cov_rate'],
+        'branch_cov_span': branch_cov_span,
+        'branch_cov_span_avg': np.mean(branch_cov_span),
     }
 
   _evaluate_task_template(

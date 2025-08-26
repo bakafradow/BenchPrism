@@ -1,4 +1,5 @@
 from .correctness import calc_correctness
+from .coverage import calc_coverage
 from .f1_score import calc_macro_f1
 from .similarity import (
     calc_bertscore,
@@ -10,6 +11,7 @@ from .similarity import (
 
 __all__ = [
     'calc_correctness',
+    'calc_coverage',
     'calc_macro_f1',
     'calc_bertscore',
     'calc_bleu',
