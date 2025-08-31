@@ -64,8 +64,8 @@ def calc_coverage(snippets: Sequence[Snippet], lang: str) -> dict:
   coverages = [coverage_func(snippet) for snippet in snippets]
   return {
       'pass_rate': np.mean([cov['pass_rate'] for cov in coverages]),
-      'line_cov_rate': np.mean([cov['LINE_COVERED'] / (cov['LINE_COVERED'] + cov['LINE_MISSED'])
+      'line_cov_rate': np.mean([cov['LINE_COVERED'] / (cov['LINE_COVERED'] + cov['LINE_MISSED']) if (cov['LINE_COVERED'] + cov['LINE_MISSED']) > 0 else 1
                                 for cov in coverages]),
-      'branch_cov_rate': np.mean([cov['BRANCH_COVERED'] / (cov['BRANCH_COVERED'] + cov['BRANCH_MISSED'])
+      'branch_cov_rate': np.mean([cov['BRANCH_COVERED'] / (cov['BRANCH_COVERED'] + cov['BRANCH_MISSED']) if (cov['BRANCH_COVERED'] + cov['BRANCH_MISSED']) > 0 else 1
                                   for cov in coverages]),
   }
