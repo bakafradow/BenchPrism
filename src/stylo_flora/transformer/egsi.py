@@ -110,11 +110,10 @@ class EGSI(BaseTransformer):
     seqs = self._generate_sequences(lang, seed)
 
     def worker(snippet_idx: int, seq_idx: int, snippet: Snippet, seq: Sequence[int]) -> Snippet | None:
-      if snippet.args.get('transformed'):
+      if seq_idx in snippet.args.get('transformed_seqs', set()):
         return None
       try:
         variant_code = self._span_until(snippet, seq, lang, ensure_correct, retry=config['retry'])
-        jp.java.lang.System.gc()
       except Exception as e:
         logger.error(f'Error occurred while spanning:\n{e}')
         variant_code = None

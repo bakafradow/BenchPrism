@@ -117,6 +117,7 @@ def test_io_cpp(snippet: Snippet) -> bool:
   try:
     with tempfile.NamedTemporaryFile(suffix='.cpp') as f:
       f.write(snippet.code.encode())
+      f.flush()
       executable = re.sub(r'\.cpp$', '', f.name)
       try:
         returned = subprocess.run(['g++', f.name, '-o', executable], stderr=subprocess.PIPE, encoding='utf-8', timeout=config['timeout'])

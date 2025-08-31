@@ -181,7 +181,7 @@ def _transform_with(
   # skip transformed snippets that already exist in the result file
   for snippet in snippets:
     if snippet.id in data:
-      snippet.args['transformed'] = True
+      snippet.args['transformed_seqs'] = {i for i, code in enumerate(data[snippet.id]['variants']) if code}
 
   corpus = transformer.transform(
       snippets=snippets,
@@ -556,6 +556,7 @@ def evaluate_test_generation(
   def list_to_testcases(testcases: Sequence[Sequence]) -> Sequence[IOTestCase]:
     return [IOTestCase(input=testcase[0], outputs=testcase[1])
             for testcase in testcases]
+
   def evaluate_metrics(
           snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
           res_orig: Sequence[Any], res_span: Sequence[Sequence[Any]],
@@ -597,7 +598,7 @@ def evaluate_test_generation(
       perform_task_func=lambda ag, sn, a: generate_tests(ag, sn, a.src_lang),
       evaluate_metrics_func=evaluate_metrics,
       ensure_correct=True,
-)
+  )
 
 
 def main():
@@ -611,9 +612,9 @@ def main():
   agent = agent_factory(args.model)
 
   os.makedirs(args.result_dir, exist_ok=True)
-  identifier = f'{args.dataset.lower()}_{args.task}_{args.src_lang}_' \
-      f'{"to_" + args.dst_lang if args.task == "code_translation" else ""}' \
-      f'with_{args.model.replace("/", "-")}_seed{args.seed}'
+  identifier = f'{args.dataset.lower()}_{args.task}_{args.src_lang}' \
+      f'{"_to_" + args.dst_lang if args.task == "code_translation" else ""}' \
+      f'_with_{args.model.replace("/", "-")}_seed{args.seed}'
   args.data_path = args.result_dir / f'data_{identifier}.jsonl'
   args.result_path = args.result_dir / f'result_{identifier}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
   args.returns_snippets = args.task in [
