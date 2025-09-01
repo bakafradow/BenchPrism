@@ -48,7 +48,6 @@ def parse_args() -> Namespace:
                           'code_translation',
                           'code_repair',
                           'code2tag',
-                          'des_code2tag',
                           'code_summarization',
                           'input_reasoning',
                           'output_reasoning',
@@ -60,6 +59,8 @@ def parse_args() -> Namespace:
                       help='Specify the source language.')
   parser.add_argument('--dst-lang', type=str, required=False,
                       help='Specify the destination language. Only used for code translation task.')
+  parser.add_argument('--with-desc', action='store_true', default=False,
+                      help='If set, append problem description in prompts. Only used for code2tag task.')
   parser.add_argument('--result-dir', type=Path, required=True,
                       help='Directory to save the results.')
   parser.add_argument('-n', '--num-snippets', type=int, default=-1,
@@ -130,13 +131,30 @@ def _load_data(
   return data
 
 
-def _save_data(
+def _save_variants(
     path: Path,
     data: dict[str, Any],
     snippets: Sequence[Snippet],
     corpus: Sequence[Sequence[Snippet]],
-    res_orig: Sequence[Any] | None = None,
-    res_span: Sequence[Sequence[Any]] | None = None,
+) -> None:
+  for i, snippet in enumerate(snippets):
+    data.setdefault(snippet.id, {})
+    data[snippet.id].update({
+        'id': snippet.id,
+        'variants': [variant.code if variant else None for variant in corpus[i]],
+    })
+  with jsonlines.open(path, mode='w') as writer:
+    for row in sorted(data.values(), key=itemgetter('id')):
+      writer.write(row)
+  logger.info(f'Saved variants to {path} with {len(data)} rows.')
+
+
+def _save_outputs(
+    path: Path,
+    data: dict[str, Any],
+    snippets: Sequence[Snippet],
+    res_orig: Sequence[Any],
+    res_span: Sequence[Sequence[Any]],
     *,
     returns_snippets: bool = False,
 ) -> None:
@@ -146,10 +164,7 @@ def _save_data(
     return variant.code if returns_snippets else variant
   for i, snippet in enumerate(snippets):
     data.setdefault(snippet.id, {})
-    data[snippet.id].update({
-        'id': snippet.id,
-        'variants': [variant.code if variant else None for variant in corpus[i]],
-    })
+    data[snippet.id].setdefault('id', snippet.id)
     if res_orig:
       data[snippet.id]['output'] = get_variant_output(res_orig[i])
     if res_span:
@@ -158,7 +173,7 @@ def _save_data(
   with jsonlines.open(path, mode='w') as writer:
     for row in sorted(data.values(), key=itemgetter('id')):
       writer.write(row)
-  logger.info(f'Saved data to {path} with {len(data)} rows.')
+  logger.info(f'Saved outputs to {path} with {len(data)} rows.')
 
 
 def _save_result(
@@ -257,11 +272,10 @@ def _evaluate_task_template(
   _cut_testcases(snippets, args)
   snippets = _pick_snippets(snippets, args, ensure_correct=ensure_correct)
 
-  data = _load_data(args.data_path)
+  variants_data = _load_data(args.variants_path)
   logger.info('Transforming styles of the code snippets...')
-  corpus = _transform_with(transformer, snippets, data, args, ensure_correct=ensure_correct)
-  _save_data(args.data_path, data, snippets, corpus,
-             returns_snippets=args.returns_snippets)
+  corpus = _transform_with(transformer, snippets, variants_data, args, ensure_correct=ensure_correct)
+  _save_variants(args.variants_path, variants_data, snippets, corpus)
   num_styles = len(corpus[0]) if corpus else 0
 
   def worker() -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
@@ -270,10 +284,12 @@ def _evaluate_task_template(
                 for variants in tqdm(corpus, desc=args.task.capitalize(),
                                      total=len(corpus), leave=False)]
     return res_orig, res_span
+  outputs_data = _load_data(args.outputs_path)
   logger.info(f'Performing {args.task} with {args.model}...')
-  res_orig, res_span = _perform_with(worker, snippets, corpus, data, returns_snippets=args.returns_snippets)
-  _save_data(args.data_path, data, snippets, corpus,
-             res_orig, res_span, returns_snippets=args.returns_snippets)
+  res_orig, res_span = _perform_with(worker, snippets, corpus, outputs_data,
+                                     returns_snippets=args.returns_snippets)
+  _save_outputs(args.outputs_path, outputs_data, snippets,
+                res_orig, res_span, returns_snippets=args.returns_snippets)
 
   # eliminate `None`s by filtering
   indices_to_eval = [i for i, res in enumerate(res_orig) if res]
@@ -370,13 +386,11 @@ def evaluate_code_repair(
   )
 
 
-def _evaluate_tag_classification(
+def evaluate_code2tag(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
     args: Namespace,
-    *,
-    with_desc: bool,
 ) -> None:
   def evaluate_metrics(
           snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
@@ -395,28 +409,10 @@ def _evaluate_tag_classification(
   _evaluate_task_template(
       benchmark, transformer, agent, args,
       load_snippets_func=lambda b, a: b.load_for_tagging(a.src_lang),
-      perform_task_func=lambda ag, sn, a: tag(ag, sn, a.src_lang, with_desc),
+      perform_task_func=lambda ag, sn, a: tag(ag, sn, a.src_lang, args.with_desc),
       evaluate_metrics_func=evaluate_metrics,
       ensure_correct=False,
   )
-
-
-def evaluate_code2tag(
-    benchmark: BaseBenchmark,
-    transformer: BaseTransformer,
-    agent: BaseAgent,
-    args: Namespace,
-) -> None:
-  _evaluate_tag_classification(benchmark, transformer, agent, args, with_desc=False)
-
-
-def evaluate_des_code2tag(
-    benchmark: BaseBenchmark,
-    transformer: BaseTransformer,
-    agent: BaseAgent,
-    args: Namespace,
-) -> None:
-  _evaluate_tag_classification(benchmark, transformer, agent, args, with_desc=True)
 
 
 def evaluate_code_summarization(
@@ -612,14 +608,21 @@ def main():
   agent = agent_factory(args.model)
 
   os.makedirs(args.result_dir, exist_ok=True)
-  identifier = f'{args.dataset.lower()}_{args.task}_{args.src_lang}' \
-      f'{"_to_" + args.dst_lang if args.task == "code_translation" else ""}' \
-      f'_with_{args.model.replace("/", "-")}_seed{args.seed}'
-  args.data_path = args.result_dir / f'data_{identifier}.jsonl'
-  args.result_path = args.result_dir / f'result_{identifier}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+  args.variants_path = args.result_dir /\
+      f'variants_{args.dataset.lower()}_{args.task}_{args.src_lang}_seed{args.seed}.jsonl'
+  identifier = f'{args.dataset.lower()}_{args.task}_{args.src_lang}'
+  if args.task == 'code_translation':
+    identifier += f'{"_to_" + args.dst_lang}'
+  elif args.task == 'code2tag' and args.with_desc:
+    identifier += '_with_desc'
+  identifier += f'_with_{args.model.replace("/", "-")}_seed{args.seed}'
+  args.outputs_path = args.result_dir /\
+      f'outputs_{identifier}.jsonl'
+  args.result_path = args.result_dir /\
+      f'results_{identifier}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
   args.returns_snippets = args.task in [
       'code_translation', 'code_repair', 'input_reasoning', 'output_reasoning',
-  ]
+  ]  # tasks that respond with code snippets
 
   evaluator = globals().get(f'evaluate_{args.task}')
   if not evaluator:
