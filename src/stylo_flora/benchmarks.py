@@ -211,7 +211,7 @@ class CodeScope(BaseBenchmark):
     ds = load_dataset('json', data_files='data/CodeScope/data/code_translation_data.jsonl')
     ds = ds.filter(lambda row: row['source_lang_cluster'] == self._lang_to_name[src_lang] and row['target_lang_cluster'] == self._lang_to_name[dst_lang])
     return [Snippet(id=row['src_uid'], code=row['source_code'], args={
-        'io_testcases': self._normalize_test(row['io_testcases']),
+        'io_testcases': self._normalize_test(row['testcases']),
     }) for row in ds['train']]
 
   @check_lang_support
@@ -224,7 +224,7 @@ class CodeScope(BaseBenchmark):
         'output_spec': row['output_specification'],
         'sample_inputs': row['sample_inputs'],
         'sample_outputs': row['sample_outputs'],
-        'io_testcases': self._normalize_test(row['io_testcases']),
+        'io_testcases': self._normalize_test(row['testcases']),
     }) for row in ds['train']]
 
   @check_lang_support
