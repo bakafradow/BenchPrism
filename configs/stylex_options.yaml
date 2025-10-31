@@ -1,0 +1,177 @@
+- IndentionStyler:
+  - indention_unit:  # control `indentionUnit` and `indentionType` simultaneously
+      option_type: enum
+      options:
+        - TAB
+        - TWO_SPACES
+        - FOUR_SPACES
+
+- SpaceStyler:  # specialized configuration needed
+  - operator_spacing:
+      option_type: bool
+
+  - parenthetical_spacing:
+      option_type: bool
+
+  - control_flow_spacing:
+      option_type: bool
+
+  - method_call_spacing:
+      option_type: bool
+
+  - delimiter_spacing:
+      option_type: bool
+
+- NewlineStyler:  # specialized configuration needed
+  - member_padding:
+      option_type: number
+      length: 2
+
+  - block_padding:
+      option_type: number
+      length: 2
+
+  - declaration_padding:
+      option_type: number
+      length: 2
+
+  - brace_style:
+      option_type: enum
+      options:
+        - SAME_LINE
+        - NEXT_LINE
+
+  - chained_method_call_wrapping:
+      option_type: bool
+
+- OptionalBraceStyler:
+  - compact:  # control `useBrace` (for all possible contexts)
+      option_type: bool
+
+- ModifierOrderStyler:
+  - order:  # control `order`
+      option_type: enum
+      options:
+        - STANDARD
+        - REVERSED
+
+- DeclarationLayoutStyler:
+  - merge_declarations:  # control `mergeVar`
+      option_type: bool
+
+- StructureStyler:  #  control `preferenceIndex` for each `EquivalentStructure`
+  - op_preference1:
+      option_type: number
+      length: 2
+
+  - op_preference2:
+      option_type: number
+      length: 2
+
+  - op_preference3:
+      option_type: number
+      length: 2
+
+  - literal_position:
+      option_type: number
+      length: 2
+
+  - inc:
+      option_type: number
+      length: 5
+
+  - dec:
+      option_type: number
+      length: 4
+
+  - assignment1:
+      option_type: number
+      length: 2
+
+  - array_declaration1:
+      option_type: number
+      length: 2
+
+  - array_declaration2:
+      option_type: number
+      length: 2
+
+  - loop_empty:
+      option_type: number
+      length: 2
+
+  - loop1:
+      option_type: number
+      length: 2
+
+  - loop2:
+      option_type: number
+      length: 2
+
+  - loop3:
+      option_type: number
+      length: 3
+
+  - loop4:
+      option_type: number
+      length: 2
+
+  - loop5:
+      option_type: number
+      length: 2
+
+  - loop6:
+      option_type: number
+      length: 3
+
+  - nesting_if:
+      option_type: number
+      length: 2
+
+  - cascading_if:
+      option_type: number
+      length: 2
+
+  - check_then_return:
+      option_type: number
+      length: 2
+
+  - dec_then_check_assign:
+      option_type: number
+      length: 4
+
+  - check_then_assign:
+      option_type: number
+      length: 2
+
+  - continue_jump1:
+      option_type: number
+      length: 3
+
+  - continue_jump2:
+      option_type: number
+      length: 3
+
+  - redundant_code1:
+      option_type: number
+      length: 2
+
+  - redundant_code2:
+      option_type: number
+      length: 2
+
+- IfElseBodyOrderStyler:
+  - short_body_comes_first:  # control `shortBodyComesFirst`
+      option_type: bool
+
+- NamingStyler:
+  - case:  # control `caseFormat`
+      option_type: enum
+      options:
+        - UPPER_UNDERSCORE,
+        - LOWER_UNDERSCORE,
+        - UPPER_CAMEL,
+        - LOWER_CAMEL
+
+  - brief:  # control `maxLength`
+      option_type: bool
