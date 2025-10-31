@@ -25,5 +25,5 @@ class BaseTransformer(ABC):
 
 
 def transformer_factory() -> BaseTransformer:
-  from .egsi import EGSI
-  return EGSI()
+  from .stylex import StyleX
+  return StyleX()

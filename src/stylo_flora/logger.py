@@ -26,7 +26,7 @@ logger = logging.getLogger('stylo_flora')
 
 
 def init_logger(verbose: bool = False, debug: bool = False) -> None:
-  with open('settings.yml') as f:
+  with open('configs/settings.yaml') as f:
     logger_config = yaml.safe_load(f)['logger']
 
   VERBOSE_LEVEL = 15

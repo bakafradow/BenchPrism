@@ -16,7 +16,7 @@ from ..logger import logger
 from ..metrics.correctness import calc_correctness
 from .base import BaseTransformer
 
-with open('settings.yml', 'r') as f:
+with open('configs/settings.yaml', 'r') as f:
   config = yaml.safe_load(f)['transformer']
 
 pict_path = os.getenv('PICT_PATH', 'pict')
@@ -24,7 +24,7 @@ if not pict_path or not shutil.which(pict_path):
   raise ValueError(f'PICT_PATH is not set or the pict executable is not found at {pict_path}.')
 
 
-class EGSI(BaseTransformer):
+class StyleX(BaseTransformer):
   def __init__(self):
     jp.startJVM('-ea', jvmpath=os.getenv('JVM_PATH'),
                 classpath=[os.getenv('TSFM_CLASSPATH')])

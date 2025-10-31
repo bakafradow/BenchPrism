@@ -9,12 +9,13 @@ in `${ROOT}/data/`.
 `File | Settings | Project: PROJECT_NAME | Project Structure` and from SonarLint analysis in
 `File | Settings | Other Settings | SonarLint | File Exclusions` to avoid performance issues in the IDE.
 2. Install the packaged framework by running `pip install -e .`.
-3. Package `code-style-transformer` with Maven, configure the path to the JAR file and your JVM in `settings.yml`.
+3. Package `code-style-transformer` with Maven, configure the path to the JAR file and your JVM in `settings.yaml`.
 
 ## Structure
 
 ```
 .
+├── configs         # configurations
 ├── data            # benchmarks and datasets
 ├── experiments     # scripts for experiments
 ├── logs            # logs while running
@@ -22,7 +23,6 @@ in `${ROOT}/data/`.
 ├── README.md
 ├── results         # outputs for further analysis
 ├── scripts         # helper scripts
-├── settings.yml    # configuration file
 ├── src             # source code of StyloFlora
 └── targets         # compiled code while running
 ```

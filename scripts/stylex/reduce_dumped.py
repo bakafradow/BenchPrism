@@ -1,5 +1,5 @@
 """
-Given a snippet dumped by EGSI, finds the simplest sequence that triggers failure and then reduces the snippet with Perses.
+Given a snippet dumped by StyleX, finds the simplest sequence that triggers failure and then reduces the snippet with Perses.
 """
 
 import ast
@@ -41,7 +41,7 @@ def reduce_seq(snippet: str, seq: list[int]) -> None:
 
 def main():
   if len(sys.argv) < 3:
-    print("Usage: python reduce_dumped.py <working_dir> <result_dir>")
+    print(f'Usage: python {os.path.basename(__file__)} <working_dir> <result_dir>')
     exit(1)
   working_dir = Path(sys.argv[1])
   if not working_dir.exists():

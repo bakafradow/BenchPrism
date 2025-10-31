@@ -12,7 +12,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from ..logger import logger
 
-with open('settings.yml') as f:
+with open('configs/settings.yaml') as f:
   config = yaml.safe_load(f)['agent']
 
 

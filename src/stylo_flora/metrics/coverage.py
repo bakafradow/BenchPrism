@@ -13,7 +13,7 @@ from .. import IOTestCase, Snippet
 from ..logger import logger
 from .utils import extract_classname_java
 
-with open('settings.yml') as f:
+with open('configs/settings.yaml') as f:
   config = yaml.safe_load(f)['metrics']
 
 

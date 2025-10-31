@@ -1,20 +1,23 @@
 """
-Attempts to span a snippet using the EGSI transformer.
+Attempts to span a snippet using the StyleX transformer.
 """
 
-import jpype as jp
+import os
 import sys
+
+import jpype as jp
 from dotenv import load_dotenv
-from stylo_flora.transformer.egsi import EGSI
+
+from stylo_flora.transformer.stylex import StyleX
 
 load_dotenv()
 
-egsi = EGSI()
+stylex = StyleX()
 
 
 def span(snippet: str, seq: list[int]) -> str:
   seq_list = jp.java.util.List.of(*[jp.java.lang.Integer(num) for num in seq])
-  mutant = egsi.cls.span("java", snippet, seq_list)
+  mutant = stylex.cls.span("java", snippet, seq_list)
   seq_list = None
   jp.java.lang.System.gc()
   return str(mutant)
@@ -22,7 +25,7 @@ def span(snippet: str, seq: list[int]) -> str:
 
 def main():
   if len(sys.argv) < 3:
-    print("Usage: python test_egsi.py <input file> <output file> [style file]")
+    print(f'Usage: python {os.path.basename(__file__)} <input file> <output file> [style file]')
     sys.exit(1)
   with open(sys.argv[1], 'r', encoding='utf-8') as f:
     snippet = f.read()
