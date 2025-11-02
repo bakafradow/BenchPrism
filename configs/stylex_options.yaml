@@ -6,15 +6,15 @@
         - TWO_SPACES
         - FOUR_SPACES
 
-- SpaceStyler:  # specialized configuration needed
+- SpaceStyler:
   - operator_spacing:
       option_type: bool
 
-  - parenthetical_spacing:
-      option_type: bool
+  # - parenthetical_spacing:
+  #     option_type: bool
 
-  - control_flow_spacing:
-      option_type: bool
+  # - control_flow_spacing:
+  #     option_type: bool
 
   - method_call_spacing:
       option_type: bool
@@ -22,30 +22,28 @@
   - delimiter_spacing:
       option_type: bool
 
-- NewlineStyler:  # specialized configuration needed
+- NewlineStyler:
   - member_padding:
-      option_type: number
-      length: 2
+      option_type: bool
 
   - block_padding:
-      option_type: number
-      length: 2
+      option_type: bool
 
   - declaration_padding:
-      option_type: number
-      length: 2
+      option_type: bool
 
-  - brace_style:
-      option_type: enum
-      options:
-        - SAME_LINE
-        - NEXT_LINE
+- IntraNewlineStyler:
+  - long_line_wrapping:
+      option_type: bool
 
-  - chained_method_call_wrapping:
+# - InterNewlineStyler:
+
+- BodyLayoutStyler:
+  - break_before_brace:
       option_type: bool
 
 - OptionalBraceStyler:
-  - compact:  # control `useBrace` (for all possible contexts)
+  - omit_braces:  # control `useBrace` (for all possible contexts)
       option_type: bool
 
 - ModifierOrderStyler:
@@ -60,103 +58,103 @@
       option_type: bool
 
 - StructureStyler:  #  control `preferenceIndex` for each `EquivalentStructure`
-  - op_preference1:
-      option_type: number
-      length: 2
-
-  - op_preference2:
-      option_type: number
-      length: 2
-
-  - op_preference3:
-      option_type: number
-      length: 2
-
-  - literal_position:
-      option_type: number
-      length: 2
-
-  - inc:
+  - 1:  # inc
       option_type: number
       length: 5
 
-  - dec:
+  - 2:  # dec
       option_type: number
       length: 4
 
-  - assignment1:
+  - 3:  # assignment1
       option_type: number
       length: 2
 
-  - array_declaration1:
+  - 4:  # nesting_if
       option_type: number
       length: 2
 
-  - array_declaration2:
+  - 5:  # cascading_if
       option_type: number
       length: 2
 
-  - loop_empty:
+  - 6:  # loop_empty
       option_type: number
       length: 2
 
-  - loop1:
+  - 7:  # loop1
       option_type: number
       length: 2
 
-  - loop2:
-      option_type: number
-      length: 2
-
-  - loop3:
+  - 8:  # loop2
       option_type: number
       length: 3
 
-  - loop4:
+  - 9:  # loop3
       option_type: number
       length: 2
 
-  - loop5:
+  - 10:  # loop4
       option_type: number
       length: 2
 
-  - loop6:
-      option_type: number
-      length: 3
-
-  - nesting_if:
+  - 11:  # loop5
       option_type: number
       length: 2
 
-  - cascading_if:
+  - 12:  # loop6
       option_type: number
       length: 2
 
-  - check_then_return:
+  - 13:  # check_then_return
       option_type: number
       length: 2
 
-  - dec_then_check_assign:
+  - 14:  # dec_then_check_assign
       option_type: number
       length: 4
 
-  - check_then_assign:
-      option_type: number
-      length: 2
-
-  - continue_jump1:
+  - 15:  # check_then_assign
       option_type: number
       length: 3
 
-  - continue_jump2:
-      option_type: number
-      length: 3
-
-  - redundant_code1:
+  - 16:  # op_preference1
       option_type: number
       length: 2
 
-  - redundant_code2:
+  - 17:  # op_preference2
+      option_type: number
+      length: 2
+
+  - 18:  # op_preference3
+      option_type: number
+      length: 2
+
+  - 19:  # literal_position
+      option_type: number
+      length: 2
+
+  - 20:  # array_declaration1
+      option_type: number
+      length: 2
+
+  - 21:  # array_declaration2
+      option_type: number
+      length: 2
+
+  - 22:  # continue_jump1
+      option_type: number
+      length: 3
+
+  - 23:  # continue_jump2
+      option_type: number
+      length: 3
+
+  - 24:  # redundant_code1
+      option_type: number
+      length: 2
+
+  - 25:  # redundant_code2
       option_type: number
       length: 2
 
@@ -165,12 +163,12 @@
       option_type: bool
 
 - NamingStyler:
-  - case:  # control `caseFormat`
+  - case_format:  # control `caseFormat`
       option_type: enum
       options:
-        - UPPER_UNDERSCORE,
-        - LOWER_UNDERSCORE,
-        - UPPER_CAMEL,
+        - UPPER_UNDERSCORE
+        - LOWER_UNDERSCORE
+        - UPPER_CAMEL
         - LOWER_CAMEL
 
   - brief:  # control `maxLength`

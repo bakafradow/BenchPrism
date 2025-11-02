@@ -4,14 +4,16 @@ import os
 import shutil
 import subprocess
 from collections import defaultdict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from itertools import chain
 from tempfile import NamedTemporaryFile
+from typing import Any
 
 import jpype as jp
 import yaml
 from tqdm import tqdm
+
 
 def shutdown():
   if jp.isJVMStarted():
@@ -26,25 +28,20 @@ atexit.register(shutdown)
 from .. import Snippet
 from ..logger import logger
 from ..metrics.correctness import calc_correctness
-from . import stylex_builders
 from .base import BaseTransformer
+from .stylex_builders import build
 
-# import Java classes manually
-Configuration = jp.JClass('org.example.Configuration')
-Applicator = jp.JClass('org.example.controller.Applicator')
-Extractor = jp.JClass('org.example.controller.Extractor')
-StylerContainer = jp.JClass('org.example.controller.StylerContainer')
-TokenAugmentor = jp.JClass('org.example.controller.TokenAugmentor')
-GlobalInfo = jp.JClass('org.example.global.GlobalInfo')
-ApplyException = jp.JClass('org.example.myException.ApplyException')
-ExtractException = jp.JClass('org.example.myException.ExtractException')
-MyParseTreeWalker = jp.JClass('org.example.parser.common.MyParseTreeWalker')
-MyParserFactory = jp.JClass('org.example.parser.common.factory.MyParserFactory')
-Spot = jp.JClass('org.example.parser.java.Spot')
-SpotDetectorListener = jp.JClass('org.example.parser.java.SpotDetectorListener')
-ProgramStyle = jp.JClass('org.example.style.ProgramStyle')
-StyleFileIO = jp.JClass('org.example.style.StyleFileIO')
-Stage = jp.JClass('org.example.styler.Stage')
+from org.example import Configuration
+from org.example.controller import (Applicator, Extractor, StylerContainer,
+                                    TokenAugmentor)
+from org.example.myException import ApplyException, ExtractException
+from org.example.parser.common import MyParseTreeWalker
+from org.example.parser.common.factory import MyParserFactory
+from org.example.parser.java import SpotDetectorListener
+from org.example.style import ProgramStyle, StyleFileIO
+from org.example.styler import Stage
+GlobalInfo = jp.JClass('org.example.global.GlobalInfo')  # cannot import directly due to package name
+
 
 with open('configs/settings.yaml', 'r') as f:
   config = yaml.safe_load(f)['transformer']
@@ -120,7 +117,8 @@ class StyleX(BaseTransformer):
         return None
       try:
         # TODO: fall back with self style?
-        styler_container = self._build_stylers(seq)
+        chioce_dict = self._create_choice_dict(seq)
+        styler_container = self._build_stylers(lang, chioce_dict)
         variant_code = self._apply_styles(lang, snippet.code, styler_container)
         if variant_code and ensure_correct:
           correctness = calc_correctness([snippet.replace(code=variant_code)], lang)
@@ -136,7 +134,8 @@ class StyleX(BaseTransformer):
       logger.debug(f'Successfully transformed snippet {snippet_idx} ({snippet.id}).')
       return snippet.replace(code=str(variant_code))
 
-    seqs = self._generate_seqs(seed)
+    option_counts = self._count_options()
+    seqs = self._generate_seqs(seed, option_counts)
     num_seq = len(seqs)
     corpus = [None] * len(snippets)
     for i, snippet in tqdm(enumerate(snippets), desc='Spanning', total=len(snippets), leave=False):
@@ -222,10 +221,9 @@ class StyleX(BaseTransformer):
       logger.warning(f'Failed to apply rules.\n{e}')
       return None
 
-  def _generate_seqs(
+  def _count_options(
       self,
-      seed: int,
-  ) -> Sequence[Sequence[int]]:
+  ) -> Sequence[int]:
     with open('configs/stylex_options.yaml', 'r') as f:
       option_config = yaml.safe_load(f)
     option_counts = []
@@ -234,14 +232,20 @@ class StyleX(BaseTransformer):
       match option.get('option_type'):
         case 'bool':
           count = 2
-        case 'enum':
-          count = len(option.get('options', []))
         case 'number':
           count = option.get('length', 0)
+        case 'enum':
+          count = len(option.get('options', []))
         case _:
-          raise TypeError(f'Unknown option type: {option.get("option_type")}')
+          raise ValueError(f'Unknown option type: {option.get("option_type")}')
       option_counts.append(count)
+    return option_counts
 
+  def _generate_seqs(
+      self,
+      seed: int,
+      option_counts: Sequence[int],
+  ) -> Sequence[Sequence[int]]:
     with NamedTemporaryFile('w', encoding='utf-8', prefix='model', suffix='.txt', delete=False) as f:
       f.write('\n'.join([f'{i}: {",".join(map(str, range(count)))}' for i, count in enumerate(option_counts)]))
       f.flush()
@@ -255,13 +259,13 @@ class StyleX(BaseTransformer):
     seqs = [[int(num) for num in line.split()] for line in completed.stdout.splitlines()[1:]]
     return seqs
 
-  def _build_stylers(
+  def _create_choice_dict(
       self,
       seq: Sequence[int],
-  ) -> jp.JObject:
+  ) -> Mapping[str, Mapping[str, Any]]:
     with open('configs/stylex_options.yaml', 'r') as f:
       option_config = yaml.safe_load(f)
-    option_dict = defaultdict(dict)
+    choice_dict: dict[str, dict[str, Any]] = defaultdict(dict)
     idx = 0
     for item in option_config:
       styler_name = list(item.keys())[0]
@@ -271,26 +275,32 @@ class StyleX(BaseTransformer):
         option_item = styles[i][style_name]
         match option_item.get('option_type'):
           case 'bool':
-            option = 'true' if seq[idx] == 1 else 'false'
-          case 'enum':
-            option = option_item.get('options')[seq[idx]]
+            choice = seq[idx] == 1
           case 'number':
-            option = str(seq[idx])
+            choice = seq[idx]
+          case 'enum':
+            choice = option_item.get('options')[seq[idx]]
           case _:
-            raise TypeError(f'Unknown option type: {option_item.get("option_type")}')
-        option_dict[styler_name][style_name] = option
+            raise ValueError(f'Unknown option type: {option_item.get("option_type")}')
+        choice_dict[styler_name][style_name] = choice
         idx += 1
+    return choice_dict
 
+  def _build_stylers(
+      self,
+      lang: str,
+      choice_dict: Mapping[str, Mapping[str, Any]],
+  ) -> jp.JObject:
     container = StylerContainer()
     for styler in container.getStylers():
       if not styler.isEnable(Stage.APPLY):
         continue
       styler_name = styler.getClass().getSimpleName()
       try:
-        options = option_dict[styler_name]
-        builder = getattr(stylex_builders, f'{styler_name}Builder')
-        style = builder.build(options)
-        styler.setStyle(style)
+        choices = choice_dict[styler_name]
+        build(styler, lang, choices)
+      except KeyError:
+        logger.warning(f'No choices found for styler {styler_name}. Skipping.')
       except Exception as e:
         logger.warning(f'Error occurred while building styler {styler_name}:\n{e}')
     return container
