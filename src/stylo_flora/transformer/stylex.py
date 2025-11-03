@@ -29,7 +29,7 @@ from .. import Snippet
 from ..logger import logger
 from ..metrics.correctness import calc_correctness
 from .base import BaseTransformer
-from .stylex_builders import build
+from .stylex_builders import build_styler
 
 from org.example import Configuration
 from org.example.controller import (Applicator, Extractor, StylerContainer,
@@ -116,10 +116,8 @@ class StyleX(BaseTransformer):
       if seq_idx in snippet.args.get('transformed_seqs', set()):
         return None
       try:
-        # TODO: fall back with self style?
-        chioce_dict = self._create_choice_dict(seq)
-        styler_container = self._build_stylers(lang, chioce_dict)
-        variant_code = self._apply_styles(lang, snippet.code, styler_container)
+        choice_dict = self._create_choice_dict(seq)
+        variant_code = self._apply_styles_by_choices(lang, snippet.code, choice_dict)
         if variant_code and ensure_correct:
           correctness = calc_correctness([snippet.replace(code=variant_code)], lang)
           if not math.isclose(correctness, 1.0):
@@ -221,6 +219,22 @@ class StyleX(BaseTransformer):
       logger.warning(f'Failed to apply rules.\n{e}')
       return None
 
+  def _apply_styles_by_choices(
+      self,
+      lang: str,
+      code: str,
+      choice_dict: Mapping[str, Mapping[str, Any]],
+  ) -> str:
+    self_style = self._extract_from_code(lang, code)
+    styler_container = StylerContainer()
+    for styler in styler_container.getStylers():
+      if styler.isEnable(Stage.APPLY):
+        style_name = styler.getStyle().getStyleName()
+        style = self_style.getStyle(style_name)
+        styler.setStyle(style)
+    self._build_styler_container(lang, styler_container, choice_dict)
+    return self._apply_styles(lang, code, styler_container)
+
   def _count_options(
       self,
   ) -> Sequence[int]:
@@ -286,22 +300,21 @@ class StyleX(BaseTransformer):
         idx += 1
     return choice_dict
 
-  def _build_stylers(
+  def _build_styler_container(
       self,
       lang: str,
+      styler_container: jp.JObject,
       choice_dict: Mapping[str, Mapping[str, Any]],
-  ) -> jp.JObject:
-    container = StylerContainer()
-    for styler in container.getStylers():
+  ) -> None:
+    for styler in styler_container.getStylers():
       if not styler.isEnable(Stage.APPLY):
         continue
       styler_name = styler.getClass().getSimpleName()
       try:
         choices = choice_dict[styler_name]
-        build(styler, lang, choices)
+        build_styler(styler, lang, choices)
         styler.getStyle().fillStyle()
       except KeyError:
         logger.warning(f'No choices found for styler {styler_name}. Skipping.')
       except Exception as e:
         logger.warning(f'Error occurred while building styler {styler_name}:\n{e}')
-    return container

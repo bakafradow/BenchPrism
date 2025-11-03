@@ -17,11 +17,10 @@ GlobalInfo = jp.JClass('org.example.global.GlobalInfo')
 Configuration = jp.JClass('org.example.Configuration')
 
 
-def span_single(code: str, lang: str, choice_dict: dict) -> str:
+def span_single(lang: str, code: str, choice_dict: dict) -> str:
   GlobalInfo.setConf(Configuration())
   GlobalInfo.setLanguage(lang)
-  styler_container = stylex._build_stylers(lang, choice_dict)
-  return stylex._apply_styles(lang, code, styler_container)
+  return stylex._apply_styles_by_choices(lang, code, choice_dict)
 
 
 def main():
@@ -38,7 +37,7 @@ def main():
     choice_dict = json.load(f)
     print(f'Read choice dict with {len(choice_dict)} entries from {choice_file}')
 
-  variant_code = span_single(code, lang, choice_dict)
+  variant_code = span_single(lang, code, choice_dict)
 
   if len(sys.argv) < 4:
     print(f"""

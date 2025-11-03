@@ -56,7 +56,7 @@ from org.example.styler.structure.style import (StructPreferenceContext,
 
 
 @singledispatch
-def build(styler: Styler, lang: str, choices: Mapping[str, Any]) -> None:
+def build_styler(styler: Styler, lang: str, choices: Mapping[str, Any]) -> None:
   """
   Builds a StyleX styler instance based on given choices.
 
@@ -67,7 +67,7 @@ def build(styler: Styler, lang: str, choices: Mapping[str, Any]) -> None:
   raise NotImplementedError(f'Styler builder not implemented for {type(styler)}')
 
 
-@build.register
+@build_styler.register
 def _(styler: IndentionStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = IndentionStyle()
   match choices['indention_unit']:
@@ -83,7 +83,7 @@ def _(styler: IndentionStyler, lang: str, choices: Mapping[str, Any]) -> None:
   styler.setStyle(style)
 
 
-@build.register
+@build_styler.register
 def _(styler: SpaceStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = SpaceStyle()
   prop_dual = SpaceProperty(True, True)
@@ -127,7 +127,7 @@ def _(styler: SpaceStyler, lang: str, choices: Mapping[str, Any]) -> None:
   styler.setStyle(style)
 
 
-@build.register
+@build_styler.register
 def _(styler: NewlineStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = NewlineStyle()
 
@@ -161,7 +161,7 @@ def _(styler: NewlineStyler, lang: str, choices: Mapping[str, Any]) -> None:
   styler.setStyle(style)
 
 
-@build.register
+@build_styler.register
 def _(styler: IntraNewlineStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = IntraNewlineStyle()
   if choices['long_line_wrapping']:
@@ -171,12 +171,12 @@ def _(styler: IntraNewlineStyler, lang: str, choices: Mapping[str, Any]) -> None
   styler.setStyle(style)
 
 
-@build.register
+@build_styler.register
 def _(styler: InterNewlineStyler, lang: str, choices: Mapping[str, Any]) -> None:
   ...
 
 
-@build.register
+@build_styler.register
 def _(styler: BodyLayoutStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = BodyLayoutStyle()
   if choices['break_before_brace']:
@@ -199,7 +199,7 @@ def _(styler: BodyLayoutStyler, lang: str, choices: Mapping[str, Any]) -> None:
   styler.setStyle(style)
 
 
-@build.register
+@build_styler.register
 def _(styler: OptionalBraceStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = OptionalBraceStyle()
   prop = OptionalBraceProperty(not choices['omit_braces'])
@@ -215,7 +215,7 @@ def _(styler: OptionalBraceStyler, lang: str, choices: Mapping[str, Any]) -> Non
   styler.setStyle(style)
 
 
-@build.register
+@build_styler.register
 def _(styler: ModifierOrderStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = ModifierOrderStyle()
   modifiers = 'ANNOTATION ACCESS_CONTROL abstract static final' \
@@ -233,7 +233,7 @@ def _(styler: ModifierOrderStyler, lang: str, choices: Mapping[str, Any]) -> Non
   styler.setStyle(style)
 
 
-@build.register
+@build_styler.register
 def _(styler: DeclarationLayoutStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = DeclarationLayoutStyle()
   if choices['merge_declarations']:
@@ -244,7 +244,7 @@ def _(styler: DeclarationLayoutStyler, lang: str, choices: Mapping[str, Any]) ->
   styler.setStyle(style)
 
 
-@build.register
+@build_styler.register
 def _(styler: StructureStyler, lang: str, choices: Mapping[str, Any]) -> None:
   # implemented in Java's side due to complexity...
   choice_map = jp.java.util.Map.ofEntries([jp.java.util.Map.entry(jp.JInt(k), jp.JInt(v))
@@ -252,7 +252,7 @@ def _(styler: StructureStyler, lang: str, choices: Mapping[str, Any]) -> None:
   styler.setAs(lang, choice_map)
 
 
-@build.register
+@build_styler.register
 def _(styler: IfElseBodyOrderStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = IfElseBodyOrderStyle()
   if choices['short_body_comes_first']:
@@ -263,7 +263,7 @@ def _(styler: IfElseBodyOrderStyler, lang: str, choices: Mapping[str, Any]) -> N
   styler.setStyle(style)
 
 
-@build.register
+@build_styler.register
 def _(styler: NamingStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = NamingFormatStyle()
   prop = NamingFormatProperty(False, MyCaseFormat.valueOf(choices['case_format']),
