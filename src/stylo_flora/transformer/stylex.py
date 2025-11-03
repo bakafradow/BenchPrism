@@ -137,13 +137,13 @@ class StyleX(BaseTransformer):
     option_counts = self._count_options()
     seqs = self._generate_seqs(seed, option_counts)
     num_seq = len(seqs)
-    corpus = [None] * len(snippets)
+    corpus = []
     for i, snippet in tqdm(enumerate(snippets), desc='Spanning', total=len(snippets), leave=False):
       with ThreadPoolExecutor(max_workers=config['max_workers']) as executor:
         results = list(tqdm(executor.map(worker, [i] * num_seq, range(num_seq),
                                          [snippet] * num_seq, seqs),
                             desc=f'Spanning snippet {i}', total=num_seq, leave=False))
-      corpus[i] = results
+      corpus.append(results)
     logger.info(f'Spanned {len(corpus)} variant benchmarks.')
     return corpus
 
@@ -151,8 +151,8 @@ class StyleX(BaseTransformer):
       self,
       lang: str,
       snippets: Sequence[Snippet],
-  ) -> int:
-    counts = [None] * len(snippets)
+  ) -> Sequence[int]:
+    counts = []
     for i, snippet in enumerate(snippets):
       spots = jp.java.util.HashMap()
       parser = MyParserFactory.createParser(lang)
@@ -160,7 +160,7 @@ class StyleX(BaseTransformer):
       tree = parser.parseFromString(snippet.code)
       walker = MyParseTreeWalker()
       walker.walk(listener, tree)
-      counts[i] = spots.size()
+      counts.append(spots.size())
     return counts
 
   def _extract_from_file(
@@ -277,7 +277,7 @@ class StyleX(BaseTransformer):
           case 'bool':
             choice = seq[idx] == 1
           case 'number':
-            choice = seq[idx]
+            choice = seq[idx]  # type: ignore[assignment]
           case 'enum':
             choice = option_item.get('options')[seq[idx]]
           case _:

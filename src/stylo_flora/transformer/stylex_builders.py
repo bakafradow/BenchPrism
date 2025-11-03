@@ -1,10 +1,11 @@
+from collections.abc import Mapping
 from functools import singledispatch
 from itertools import product, tee
+from typing import Any
 
 import jpype as jp
 import jpype.imports
 
-# pylint: disable=import-error, no-name-in-module
 from org.example.parser.common.factory import MyParserFactory
 from org.example.styler import Styler
 from org.example.styler.arrangement.modifier import ModifierOrderStyler
@@ -52,11 +53,10 @@ from org.example.styler.structure import (EquivalentStructure,
 from org.example.styler.structure.style import (StructPreferenceContext,
                                                 StructPreferenceProperty,
                                                 StructureStyle)
-# pylint: enable=import-error, no-name-in-module
 
 
 @singledispatch
-def build(styler: Styler, lang: str, choices: dict) -> None:
+def build(styler: Styler, lang: str, choices: Mapping[str, Any]) -> None:
   """
   Builds a StyleX styler instance based on given choices.
 
@@ -68,7 +68,7 @@ def build(styler: Styler, lang: str, choices: dict) -> None:
 
 
 @build.register
-def _(styler: IndentionStyler, lang: str, choices: dict) -> None:
+def _(styler: IndentionStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = IndentionStyle()
   match choices['indention_unit']:
     case 'TAB':
@@ -84,13 +84,13 @@ def _(styler: IndentionStyler, lang: str, choices: dict) -> None:
 
 
 @build.register
-def _(styler: SpaceStyler, lang: str, choices: dict) -> None:
+def _(styler: SpaceStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = SpaceStyle()
   prop_dual = SpaceProperty(True, True)
   prop_left = SpaceProperty(True, False)
   prop_right = SpaceProperty(False, True)
   prop_none = SpaceProperty(False, False)
-  
+
   def set_spacing(spacing: bool, ltoken: str, rtoken: str = '',
                   prop: SpaceProperty = prop_right) -> None:
     context = SpaceContext(ltoken, rtoken)
@@ -111,7 +111,7 @@ def _(styler: SpaceStyler, lang: str, choices: dict) -> None:
 
 
 @build.register
-def _(styler: NewlineStyler, lang: str, choices: dict) -> None:
+def _(styler: NewlineStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = NewlineStyle()
   props = [NewlineProperty(i, 1) for i in range(3)]
 
@@ -142,7 +142,7 @@ def _(styler: NewlineStyler, lang: str, choices: dict) -> None:
 
 
 @build.register
-def _(styler: IntraNewlineStyler, lang: str, choices: dict) -> None:
+def _(styler: IntraNewlineStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = IntraNewlineStyle()
   if choices['long_line_wrapping']:
     context = IntraNewlineContext(20)
@@ -152,12 +152,12 @@ def _(styler: IntraNewlineStyler, lang: str, choices: dict) -> None:
 
 
 @build.register
-def _(styler: InterNewlineStyler, lang: str, choices: dict) -> None:
+def _(styler: InterNewlineStyler, lang: str, choices: Mapping[str, Any]) -> None:
   ...
 
 
 @build.register
-def _(styler: BodyLayoutStyler, lang: str, choices: dict) -> None:
+def _(styler: BodyLayoutStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = BodyLayoutStyle()
   if choices['break_before_brace']:
     prop = BodyLayoutProperty(True, False, True, False)
@@ -180,7 +180,7 @@ def _(styler: BodyLayoutStyler, lang: str, choices: dict) -> None:
 
 
 @build.register
-def _(styler: OptionalBraceStyler, lang: str, choices: dict) -> None:
+def _(styler: OptionalBraceStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = OptionalBraceStyle()
   prop = OptionalBraceProperty(not choices['omit_braces'])
   for body_type, body_size, has_right_neighbor in product(
@@ -196,7 +196,7 @@ def _(styler: OptionalBraceStyler, lang: str, choices: dict) -> None:
 
 
 @build.register
-def _(styler: ModifierOrderStyler, lang: str, choices: dict) -> None:
+def _(styler: ModifierOrderStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = ModifierOrderStyle()
   modifiers = 'ANNOTATION ACCESS_CONTROL abstract static final' \
               'sealed non-sealed transient volatile default' \
@@ -214,7 +214,7 @@ def _(styler: ModifierOrderStyler, lang: str, choices: dict) -> None:
 
 
 @build.register
-def _(styler: DeclarationLayoutStyler, lang: str, choices: dict) -> None:
+def _(styler: DeclarationLayoutStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = DeclarationLayoutStyle()
   if choices['merge_declarations']:
     prop = DeclarationLayoutProperty(1., 1.)
@@ -225,7 +225,7 @@ def _(styler: DeclarationLayoutStyler, lang: str, choices: dict) -> None:
 
 
 @build.register
-def _(styler: StructureStyler, lang: str, choices: dict) -> None:
+def _(styler: StructureStyler, lang: str, choices: Mapping[str, Any]) -> None:
   # implemented in Java's side due to complexity...
   choice_map = jp.java.util.Map.ofEntries([jp.java.util.Map.entry(jp.JInt(k), jp.JInt(v))
                                            for k, v in choices.items()])
@@ -233,7 +233,7 @@ def _(styler: StructureStyler, lang: str, choices: dict) -> None:
 
 
 @build.register
-def _(styler: IfElseBodyOrderStyler, lang: str, choices: dict) -> None:
+def _(styler: IfElseBodyOrderStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = IfElseBodyOrderStyle()
   if choices['short_body_comes_first']:
     prop = IfElseBodyOrderProperty(True)
@@ -244,7 +244,7 @@ def _(styler: IfElseBodyOrderStyler, lang: str, choices: dict) -> None:
 
 
 @build.register
-def _(styler: NamingStyler, lang: str, choices: dict) -> None:
+def _(styler: NamingStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = NamingFormatStyle()
   prop = NamingFormatProperty(False, MyCaseFormat.valueOf(choices['case_format']),
                               4 if choices['brief'] else jp.java.lang.Integer.MAX_VALUE)

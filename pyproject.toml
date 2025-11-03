@@ -34,3 +34,24 @@ dev = [
 [build-system]
 requires = ["flit_core>=3.6"]
 build-backend = "flit_core.buildapi"
+
+[tool.mypy]
+
+[[tool.mypy.overrides]]
+module = [
+  "codebleu",
+  "datasets",
+  "evaluate",
+  "jpype.*",
+  "jsonlines",
+  "nltk.*",
+  "org.*", # modules from StyleX
+  "pandas",
+  "torch",
+  "tqdm",
+  "transformers",
+  "tree_sitter",
+  "tree_sitter_java",
+  "yaml",
+]
+ignore_missing_imports = true

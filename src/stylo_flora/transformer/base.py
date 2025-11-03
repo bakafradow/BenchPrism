@@ -21,7 +21,7 @@ class BaseTransformer(ABC):
     :param lang: the language of the code snippet
     :return: the transformed code snippets
     """
-    return ((snippets,),)
+    return (snippets,)
 
 
 def transformer_factory() -> BaseTransformer:
