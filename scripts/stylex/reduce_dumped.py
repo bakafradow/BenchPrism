@@ -13,14 +13,15 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from try_spanning import span
+from scripts.stylex.test_apply_by_seq import span_single, stylex
 
 
-def reduce_seq(snippet: str, seq: list[int]) -> None:
+def reduce_seq(lang: str, snippet: str, seq: list[int]) -> None:
   def worker(idx: int):
     selection = seq[idx]
     seq[idx] = -1
-    mutant_str = span(snippet, seq)
+    choice_dict = stylex._create_choice_dict(seq)
+    mutant_str = span_single(snippet, lang, choice_dict)
     matched = re.search(r'public\s+(?:final\s+)?class\s+(\w+)', mutant_str)
     if not matched:
       print('No class name found. Skipping.')
@@ -40,14 +41,14 @@ def reduce_seq(snippet: str, seq: list[int]) -> None:
 
 
 def main():
-  if len(sys.argv) < 3:
-    print(f'Usage: python {os.path.basename(__file__)} <working_dir> <result_dir>')
+  if len(sys.argv) < 4:
+    print(f'Usage: python {os.path.basename(__file__)} <lang> <working_dir> <result_dir>')
     exit(1)
-  working_dir = Path(sys.argv[1])
+  working_dir = Path(sys.argv[2])
   if not working_dir.exists():
     print('Dump directory does not exist.')
     exit(1)
-  result_dir = Path(sys.argv[2])
+  result_dir = Path(sys.argv[3])
   os.makedirs(result_dir, exist_ok=True)
 
   for file in tqdm(working_dir.glob('*.txt'), desc='Processing files', leave=False, total=len(list(working_dir.glob('*.txt')))):
@@ -61,7 +62,7 @@ def main():
     seq_str = matched.group(1)
     seq = ast.literal_eval(seq_str)
 
-    reduce_seq(snippet, seq)
+    reduce_seq(sys.argv[1], snippet, seq)
 
     if all(selection == -1 for selection in seq):
       print(f'All selections in {file} are -1. Skipping.')

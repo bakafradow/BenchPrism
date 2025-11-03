@@ -16,10 +16,13 @@
   # - control_flow_spacing:
   #     option_type: bool
 
-  - method_call_spacing:
+  - call_spacing:
       option_type: bool
 
-  - delimiter_spacing:
+  - comma_spacing:
+      option_type: bool
+
+  - semicolon_spacing:
       option_type: bool
 
 - NewlineStyler:

@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from functools import singledispatch
+from functools import lru_cache, singledispatch
 from itertools import product, tee
 from typing import Any
 
@@ -87,47 +87,67 @@ def _(styler: IndentionStyler, lang: str, choices: Mapping[str, Any]) -> None:
 def _(styler: SpaceStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = SpaceStyle()
   prop_dual = SpaceProperty(True, True)
-  prop_left = SpaceProperty(True, False)
-  prop_right = SpaceProperty(False, True)
+  prop_mono = SpaceProperty(False, True)
   prop_none = SpaceProperty(False, False)
 
-  def set_spacing(spacing: bool, ltoken: str, rtoken: str = '',
-                  prop: SpaceProperty = prop_right) -> None:
+  def set_spacing(spacing: bool, ltoken: str, rtoken: str = '') -> None:
     context = SpaceContext(ltoken, rtoken)
     if spacing:
-      style.addRule(context, prop)
+      if not rtoken:
+        style.addRule(context, prop_dual)
+      else:
+        style.addRule(context, prop_mono)
     else:
       style.addRule(context, prop_none)
 
-  set_spacing(choices['operator_spacing'], 'BIN_OP', prop=prop_dual)
-  set_spacing(choices['operator_spacing'], 'QUESTION', prop=prop_dual)
-  set_spacing(choices['operator_spacing'], 'COLON', prop=prop_dual)
-  set_spacing(choices['operator_spacing'], 'COLON_COLON', prop=prop_dual)
-  set_spacing(choices['method_call_spacing'], 'IDENTIFIER', '(')
-  set_spacing(choices['method_call_spacing'], 'DOT', prop=prop_dual)
-  set_spacing(choices['delimiter_spacing'], ',')
-  set_spacing(choices['delimiter_spacing'], ';', prop=prop_left)
+  set_spacing(choices['operator_spacing'], 'BIN_OP')
+  set_spacing(choices['operator_spacing'], 'QUESTION')
+  set_spacing(choices['operator_spacing'], 'COLON')
+  set_spacing(choices['operator_spacing'], 'COLON_COLON')
+  set_spacing(choices['call_spacing'], 'IDENTIFIER', '(')
+  set_spacing(choices['call_spacing'], 'DOT')
+  set_spacing(choices['comma_spacing'], ',', 'LITERAL')
+  set_spacing(choices['comma_spacing'], ',', 'IDENTIFIER')
+  set_spacing(choices['comma_spacing'], ',', 'UNARY_OP')
+  set_spacing(choices['comma_spacing'], ',', 'KEYWORD')
+  set_spacing(choices['comma_spacing'], ',', '(')
+  set_spacing(choices['comma_spacing'], ',', ')')
+  set_spacing(choices['comma_spacing'], ',', '[')
+  set_spacing(choices['comma_spacing'], ',', ']')
+  set_spacing(choices['comma_spacing'], ',', '{')
+  set_spacing(choices['comma_spacing'], ',', '}')
+  set_spacing(choices['semicolon_spacing'], 'LITERAL', ';')
+  set_spacing(choices['semicolon_spacing'], 'IDENTIFIER', ';')
+  set_spacing(choices['semicolon_spacing'], 'UNARY_OP', ';')
+  set_spacing(choices['semicolon_spacing'], 'KEYWORD', ';')
+  set_spacing(choices['semicolon_spacing'], ')', ';')
+  set_spacing(choices['semicolon_spacing'], ']', ';')
+  set_spacing(choices['semicolon_spacing'], '{', ';')
+  set_spacing(choices['semicolon_spacing'], '}', ';')
   styler.setStyle(style)
 
 
 @build.register
 def _(styler: NewlineStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = NewlineStyle()
-  props = [NewlineProperty(i, 1) for i in range(3)]
+
+  @lru_cache(maxsize=None)
+  def get_prop(num_newlines: int) -> NewlineProperty:
+    return NewlineProperty(num_newlines, 1)
 
   def set_newline(newline: bool, lnode: str, l_ast: bool, rnode: str, r_ast: bool,
                   extra_newline: int = 0) -> None:
     node_types = jp.java.util.List.of([NewlineContext.NodeType(lnode, l_ast),
                                        NewlineContext.NodeType(rnode, r_ast)])
-    lengths = jp.java.util.List.of([0, 0])  # dummy lengths
+    lengths = jp.java.util.List.of([jp.JDouble(0)])  # dummy lengths
     context = NewlineContext(node_types, lengths)
     if newline:
-      style.addRule(context, props[1 + extra_newline])
+      style.addRule(context, get_prop(1 + extra_newline))
     else:
-      style.addRule(context, props[extra_newline])
+      style.addRule(context, get_prop(extra_newline))
 
   for (lnode, l_ast), (rnode, r_ast) in product(*tee(
-    [('methodDeclaration', True), ('fieldDeclarationList', True)],
+    [('fieldDeclarationList', True), ('methodDeclarationList', True), ('methodDeclaration', True)],
   )):
     set_newline(choices['member_padding'], lnode, l_ast, rnode, r_ast, 1)
   for (lnode, l_ast), (rnode, r_ast) in product(*tee(
@@ -160,9 +180,9 @@ def _(styler: InterNewlineStyler, lang: str, choices: Mapping[str, Any]) -> None
 def _(styler: BodyLayoutStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = BodyLayoutStyle()
   if choices['break_before_brace']:
-    prop = BodyLayoutProperty(True, False, True, False)
+    prop = BodyLayoutProperty(True, True, True, True)
   else:
-    prop = BodyLayoutProperty(False, True, True, False)
+    prop = BodyLayoutProperty(False, True, True, True)
   for body_type, body_size, has_left_neighbor, has_right_neighbor, has_brace in product(
     ['DEC_BODY', 'STMT_BODY'],
     ['EMPTY', 'ONE_SINGLE_STMT', 'ONE_COMPOUND_STMT', 'MULTI_STMTS'],

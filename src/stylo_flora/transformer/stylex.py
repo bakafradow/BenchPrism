@@ -299,6 +299,7 @@ class StyleX(BaseTransformer):
       try:
         choices = choice_dict[styler_name]
         build(styler, lang, choices)
+        styler.getStyle().fillStyle()
       except KeyError:
         logger.warning(f'No choices found for styler {styler_name}. Skipping.')
       except Exception as e:
