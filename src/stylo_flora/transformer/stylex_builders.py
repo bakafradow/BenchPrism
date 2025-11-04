@@ -124,6 +124,44 @@ def _(styler: SpaceStyler, lang: str, choices: Mapping[str, Any]) -> None:
   set_spacing(choices['semicolon_spacing'], ']', ';')
   set_spacing(choices['semicolon_spacing'], '{', ';')
   set_spacing(choices['semicolon_spacing'], '}', ';')
+
+  # uniformly formatting some spaces
+  set_spacing(False, '(', 'LITERAL')
+  set_spacing(False, '(', 'IDENTIFIER')
+  set_spacing(False, '(', 'UNARY_OP')
+  set_spacing(False, 'LITERAL', ')')
+  set_spacing(False, 'IDENTIFIER', ')')
+  set_spacing(False, 'UNARY_OP', ')')
+  set_spacing(False, '[', 'LITERAL')
+  set_spacing(False, '[', 'IDENTIFIER')
+  set_spacing(False, '[', 'UNARY_OP')
+  set_spacing(False, 'LITERAL', ']')
+  set_spacing(False, 'IDENTIFIER', ']')
+  set_spacing(False, 'UNARY_OP', ']')
+  set_spacing(False, '{', 'LITERAL')
+  set_spacing(False, '{', 'IDENTIFIER')
+  set_spacing(False, '{', 'UNARY_OP')
+  set_spacing(False, 'LITERAL', '}')
+  set_spacing(False, 'IDENTIFIER', '}')
+  set_spacing(False, 'UNARY_OP', '}')
+  set_spacing(True, 'IDENTIFIER', 'COMMENT')
+  set_spacing(True, 'KEYWORD', 'COMMENT')
+  set_spacing(True, 'COMMENT', 'COMMENT')
+  set_spacing(True, 'LITERAL', 'COMMENT')
+  set_spacing(True, 'UNARY_OP', 'COMMENT')
+  set_spacing(True, 'BIN_OP', 'COMMENT')
+  set_spacing(True, 'QUESTION', 'COMMENT')
+  set_spacing(True, 'COLON', 'COMMENT')
+  set_spacing(True, 'DOT', 'COMMENT')
+  set_spacing(True, 'COLON_COLON', 'COMMENT')
+  set_spacing(True, ',', 'COMMENT')
+  set_spacing(True, ';', 'COMMENT')
+  set_spacing(True, '(', 'COMMENT')
+  set_spacing(True, ')', 'COMMENT')
+  set_spacing(True, '[', 'COMMENT')
+  set_spacing(True, ']', 'COMMENT')
+  set_spacing(True, '{', 'COMMENT')
+  set_spacing(True, '}', 'COMMENT')
   styler.setStyle(style)
 
 
@@ -196,6 +234,20 @@ def _(styler: BodyLayoutStyler, lang: str, choices: Mapping[str, Any]) -> None:
                           has_right_neighbor,
                           has_brace)
     style.addRule(context, prop)
+  prop_no_brace = BodyLayoutProperty(True)
+  for body_type, body_size, has_left_neighbor, has_right_neighbor, has_brace in product(
+    ['STMT_BODY'],
+    ['EMPTY', 'ONE_SINGLE_STMT'],
+    [True],
+    [False, True],
+    [False],
+  ):  # uniformly formatting bodies without braces
+    context = BodyContext(BodyTypeEnum.valueOf(body_type),
+                          BodySizeType.valueOf(body_size),
+                          has_left_neighbor,
+                          has_right_neighbor,
+                          has_brace)
+    style.addRule(context, prop_no_brace)
   styler.setStyle(style)
 
 
