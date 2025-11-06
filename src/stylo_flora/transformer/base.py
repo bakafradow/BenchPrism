@@ -13,8 +13,8 @@ class BaseTransformer(ABC):
   @abstractmethod
   def transform(
     self,
-    snippets: Seq[Snippet],
     lang: str,
+    snippets: Seq[Snippet],
     **kwargs,
   ) -> MSeq[MSeq[Snippet | None]]:
     """

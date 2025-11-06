@@ -45,6 +45,8 @@ def parse_args() -> Namespace:
                       help='Specify one dataset to evaluate.')
   parser.add_argument('-m', '--model', type=str, required=True,
                       help='Specify the model to use.')
+  parser.add_argument('--model-dir', type=str, required=False,
+                      help='Specify the root directory of a local model. Only used for local models.')
   parser.add_argument('-t', '--task', type=str, required=True,
                       choices=[
                           'code_translation',
@@ -65,6 +67,8 @@ def parse_args() -> Namespace:
                       help='If set, append problem description in prompts. Only used for code2tag task.')
   parser.add_argument('--result-dir', type=Path, required=True,
                       help='Directory to save the results.')
+  parser.add_argument('--log-path', type=Path, required=False,
+                      help='Path to save the log file. If not set, only logs to console.')
   parser.add_argument('-n', '--num-snippets', type=int, default=-1,
                       help='Limit the number of snippets to test. -1 for all.')
   parser.add_argument('--num-tests', type=int, default=-1,
@@ -203,8 +207,8 @@ def _transform_with(
       snippet.args['transformed_seqs'] = {i for i, code in enumerate(data[snippet.id]['variants']) if code}
 
   corpus = transformer.transform(
-      snippets=snippets,
       lang=args.src_lang,
+      snippets=snippets,
       seed=args.seed,
       ensure_correct=ensure_correct,
   )
@@ -607,7 +611,7 @@ def evaluate_test_generation(
 
 def main():
   args = parse_args()
-  init_logger(verbose=args.verbose, debug=args.debug)
+  init_logger(path=args.log_path, verbose=args.verbose, debug=args.debug)
   logger.info(f'Initializing benchmark {args.dataset}...')
   benchmark = benchmark_factory(args.dataset)
   logger.info('Initializing transformer...')

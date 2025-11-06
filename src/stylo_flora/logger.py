@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Any, cast
 
 import yaml
@@ -38,7 +39,7 @@ class ColorFormatter(logging.Formatter):
 logger = cast(VerboseLogger, logging.getLogger('stylo_flora'))
 
 
-def init_logger(verbose: bool = False, debug: bool = False) -> None:
+def init_logger(path: Path, verbose: bool = False, debug: bool = False) -> None:
   with open('configs/settings.yaml') as f:
     logger_config = yaml.safe_load(f)['logger']
 
@@ -54,17 +55,16 @@ def init_logger(verbose: bool = False, debug: bool = False) -> None:
   stream_handler.setFormatter(ColorFormatter(pattern))
   logger.addHandler(stream_handler)
 
-  log_path = os.getenv('LOG_FILE')
-  if not log_path:
-    logger.warning('LOG_FILE is not set, logging to stdout only.')
+  if not path:
+    logger.warning('LOG_FILE environment variable is not set, logging to stdout only.')
     return
-  if not os.path.exists(os.path.dirname(log_path)):
+  if not os.path.exists(os.path.dirname(path)):
     try:
-      os.makedirs(os.path.dirname(log_path))
+      os.makedirs(os.path.dirname(path))
     except OSError as e:
       if e.errno != errno.EEXIST:
         raise
-  file_handler = RotatingFileHandler(log_path, mode='a', maxBytes=logger_config['max_bytes'], backupCount=logger_config['backup_count'])
+  file_handler = RotatingFileHandler(path, mode='a', maxBytes=logger_config['max_bytes'], backupCount=logger_config['backup_count'])
   file_handler.setFormatter(logging.Formatter(pattern))
   logger.addHandler(file_handler)
 

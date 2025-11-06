@@ -9,7 +9,7 @@ in `${ROOT}/data/`.
 `File | Settings | Project: PROJECT_NAME | Project Structure` and from SonarLint analysis in
 `File | Settings | Other Settings | SonarLint | File Exclusions` to avoid performance issues in the IDE.
 2. Install the packaged framework by running `pip install -e .`.
-3. Package `code-style-transformer` with Maven, configure the path to the JAR file and your JVM in `settings.yaml`.
+3. Add StyleX JAR path to `CLASSPATH` environment variable; ensure PICT executable can be found in `PATH` environment variable.
 
 ## Structure
 
@@ -17,7 +17,6 @@ in `${ROOT}/data/`.
 .
 ├── configs         # configurations
 ├── data            # benchmarks and datasets
-├── experiments     # scripts for experiments
 ├── logs            # logs while running
 ├── notebooks       # notebooks for exploration
 ├── README.md
@@ -29,8 +28,11 @@ in `${ROOT}/data/`.
 
 ## Usage
 
-Refer to scripts in `experiments`.
+Refer to scripts in `scripts/experiments`.
 Example usage:
 ```bash
-python3 experiments/evaluate_translation.py -d HumanEvalX -m gemini-2.0-flash --src-lang java --dst-lang python -n 100 --seed 42
+python3 -m scripts.experiments.run_evaluation \
+  -d xCodeEval -m gemini-2.0-flash -t code_translation \
+  --src-lang java --dst-lang python --result-dir results --log-path logs/StyloFlora.log \
+  -n 100 --seed 42 -rv
 ```

@@ -13,6 +13,7 @@ from tempfile import NamedTemporaryFile
 from typing import Any
 
 import jpype as jp
+import jpype.imports
 import yaml
 from tqdm import tqdm
 
@@ -23,8 +24,7 @@ def shutdown():
     logger.info('JVM shutdown successfully.')
 
 
-jp.startJVM('-ea', '--enable-native-access=ALL-UNNAMED',
-            jvmpath=os.getenv('JVM_PATH'), classpath=[os.getenv('STYLEX_CLASSPATH')])
+jp.startJVM('-ea', '--enable-native-access=ALL-UNNAMED')
 atexit.register(shutdown)
 
 from org.example import Configuration
@@ -36,6 +36,7 @@ from org.example.parser.common.factory import MyParserFactory
 from org.example.parser.java import SpotDetectorListener
 from org.example.style import ProgramStyle, StyleFileIO
 from org.example.styler import Stage
+GlobalInfo = jp.JClass('org.example.global.GlobalInfo')  # cannot import directly due to package name
 
 from .. import Snippet
 from ..logger import logger
@@ -43,15 +44,11 @@ from ..metrics.correctness import calc_correctness
 from .base import BaseTransformer
 from .stylex_builders import build_styler
 
-GlobalInfo = jp.JClass('org.example.global.GlobalInfo')  # cannot import directly due to package name
-
-
 with open('configs/settings.yaml', 'r') as f:
   config = yaml.safe_load(f)['transformer']
 
-pict_path = os.getenv('PICT_PATH', 'pict')
-if not pict_path or not shutil.which(pict_path):
-  raise ValueError(f'PICT_PATH is not set or the pict executable is not found at {pict_path}.')
+if not shutil.which('pict'):
+  raise ValueError('PICT executable not found.')
 
 
 def set_global_info(func: Callable) -> Callable:
@@ -64,10 +61,11 @@ def set_global_info(func: Callable) -> Callable:
 
 
 class StyleX(BaseTransformer):
+  @set_global_info
   def transform(
       self,
-      snippets: Seq[Snippet],
       lang: str,
+      snippets: Seq[Snippet],
       **kwargs,
   ) -> MSeq[MSeq[Snippet | None]]:
     """
@@ -77,44 +75,9 @@ class StyleX(BaseTransformer):
     :param seed: the random seed for reproducibility
     :return: a series of transformed snippets, each of which is corresponding to a variant sequence
     """
-    style_file = os.getenv('STYLE_FILE')
-    if not style_file:
-      seed = kwargs.get('seed', 42)
-      ensure_correct = kwargs.get('ensure_correct', True)
-      return self.span(lang, snippets, seed, ensure_correct)
-    return [self.apply(lang, snippets, style_file)]
+    seed = kwargs.get('seed', 42)
+    ensure_correct = kwargs.get('ensure_correct', True)
 
-  @set_global_info
-  def apply(
-      self,
-      lang: str,
-      snippets: Seq[Snippet],
-      style_file: str,
-  ) -> list[Snippet | None]:
-    styler_container = self._extract_from_file(lang, style_file)
-
-    variants: list[Snippet | None] = []
-    for i, snippet in tqdm(enumerate(snippets), desc='Transforming', total=len(snippets), leave=False):
-      try:
-        variant = self._apply_styles(lang, snippet.code, styler_container)
-      except Exception as e:
-        logger.error(f'Error occurred for snippet {snippet.id}.\n{e}')
-        variant = None
-      if not variant:
-        logger.warning(f'Failed to transform snippet {i} ({snippet.id}).')
-        variants.append(None)
-      else:
-        variants.append(snippet.replace(code=str(variant)))
-    return variants
-
-  @set_global_info
-  def span(
-      self,
-      lang: str,
-      snippets: Seq[Snippet],
-      seed: int,
-      ensure_correct: bool,
-  ) -> list[list[Snippet | None]]:
     def worker(snippet_idx: int, seq_idx: int, snippet: Snippet, seq: Seq[int]) -> Snippet | None:
       if seq_idx in snippet.args.get('transformed_seqs', set()):
         return None
@@ -148,6 +111,7 @@ class StyleX(BaseTransformer):
     logger.info(f'Spanned {len(corpus)} variant benchmarks.')
     return corpus
 
+  @set_global_info
   def count_spots(
       self,
       lang: str,
@@ -267,7 +231,7 @@ class StyleX(BaseTransformer):
       f.write('\n'.join([f'{i}: {",".join(map(str, range(count)))}' for i, count in enumerate(option_counts)]))
       f.flush()
     try:
-      args = [pict_path, f.name, f'/r:{seed}']
+      args = ['pict', f.name, f'/r:{seed}']
       completed = subprocess.run(args, check=True, encoding='utf-8', stdout=subprocess.PIPE)
     except subprocess.CalledProcessError as e:
       logger.error(f'Error occurred while running pict.\n{e}')
