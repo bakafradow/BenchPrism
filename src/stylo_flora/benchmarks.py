@@ -1,7 +1,8 @@
 import json
 import re
 from abc import ABC
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Sequence as Seq
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,7 @@ from typing import Any
 import jsonlines
 from datasets import load_dataset
 
-from . import APITestCase, Snippet, IOTestCase
+from . import APITestCase, IOTestCase, Snippet
 
 
 def check_lang_support(func: Callable) -> Callable:
@@ -39,7 +40,7 @@ class BaseBenchmark(ABC):
   def supported_langs(self, langs: frozenset[str]):
     self._supported_langs = langs
 
-  def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
+  def load_for_translation(self, src_lang: str, dst_lang: str) -> Seq[Snippet]:
     """
     Loads the source code snippets for evaluation.
 
@@ -49,7 +50,7 @@ class BaseBenchmark(ABC):
     """
     raise NotImplementedError('Translation unsupported for current benchmark.')
 
-  def load_for_repair(self, lang: str) -> Sequence[Snippet]:
+  def load_for_repair(self, lang: str) -> Seq[Snippet]:
     """
     Loads the source code snippets for automatic program repair.
 
@@ -58,7 +59,7 @@ class BaseBenchmark(ABC):
     """
     raise NotImplementedError('Repair unsupported for current benchmark.')
 
-  def load_for_tagging(self, lang: str) -> Sequence[Snippet]:
+  def load_for_tagging(self, lang: str) -> Seq[Snippet]:
     """
     Loads the source code snippets for tag classification.
 
@@ -67,7 +68,7 @@ class BaseBenchmark(ABC):
     """
     raise NotImplementedError('Tag classification unsupported for current benchmark.')
 
-  def load_for_summarization(self, lang: str) -> Sequence[Snippet]:
+  def load_for_summarization(self, lang: str) -> Seq[Snippet]:
     """
     Loads the source code snippets for code summarization.
 
@@ -76,7 +77,7 @@ class BaseBenchmark(ABC):
     """
     raise NotImplementedError('Code summarization unsupported for current benchmark.')
 
-  def load_for_test_generation(self, lang: str) -> Sequence[Snippet]:
+  def load_for_test_generation(self, lang: str) -> Seq[Snippet]:
     """
     Loads the source code snippets for test generation.
 
@@ -85,7 +86,7 @@ class BaseBenchmark(ABC):
     """
     raise NotImplementedError('Test generation unsupported for current benchmark.')
 
-  def load_for_io_reasoning(self, lang: str) -> Sequence[Snippet]:
+  def load_for_io_reasoning(self, lang: str) -> Seq[Snippet]:
     """
     Loads the source code snippets for input reasoning.
 
@@ -94,7 +95,7 @@ class BaseBenchmark(ABC):
     """
     raise NotImplementedError('Input reasoning unsupported for current benchmark.')
 
-  def load_for_mcq_answering(self, lang: str) -> Sequence[Snippet]:
+  def load_for_mcq_answering(self, lang: str) -> Seq[Snippet]:
     """
     Loads the source code snippets for Multiple-Choice Question (MCQ) answering.
 
@@ -124,13 +125,13 @@ class XCodeEval(BaseBenchmark):
   })
 
   @check_lang_support
-  def _load(self, lang: str, task: str, column: str) -> Sequence[str]:
+  def _load(self, lang: str, task: str, column: str) -> Seq[str]:
     lang_name = self._lang_to_name[lang]
     ds = load_dataset('json', data_dir=f'data/xCodeEval/{task}/test')  # there's an issue in loading from HF when the version of datasets != 2.16.1
     ds = ds.filter(lambda row: row['lang_cluster'] == lang_name)
     return ds['train'][column]
 
-  def _load_tests(self, ids: Iterable[str]) -> Sequence[Sequence[IOTestCase]]:
+  def _load_tests(self, ids: Iterable[str]) -> Seq[Seq[IOTestCase]]:
     with open('data/xCodeEval/unittest_db.json', 'r') as f:
       unittests = json.load(f)
     return [[IOTestCase(input=pair['input'].replace('\r\n', '\n'),
@@ -138,7 +139,7 @@ class XCodeEval(BaseBenchmark):
              for pair in batch]
             for batch in (unittests[uid] for uid in ids)]
 
-  def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
+  def load_for_translation(self, src_lang: str, dst_lang: str) -> Seq[Snippet]:
     TASK_NAME = 'code_translation'
     src_uids = self._load(src_lang, TASK_NAME, 'src_uid')
     sources = self._load(src_lang, TASK_NAME, 'source_code')
@@ -163,7 +164,7 @@ class XCodeEval(BaseBenchmark):
     return [Snippet(id=src_uid, code=source, args={**args_dict[src_uid], 'io_testcases': testcases[i]})
             for i, (src_uid, source) in enumerate(zip(src_uids, sources))]
 
-  def load_for_tagging(self, lang: str) -> Sequence[Snippet]:
+  def load_for_tagging(self, lang: str) -> Seq[Snippet]:
     TASK_NAME = 'tag_classification'
     src_uids = self._load(lang, TASK_NAME, 'src_uid')
     sources = self._load(lang, TASK_NAME, 'source_code')
@@ -198,7 +199,7 @@ class CodeScope(BaseBenchmark):
   })
 
   @classmethod
-  def _normalize_test(cls, testcases: str) -> Sequence[IOTestCase]:
+  def _normalize_test(cls, testcases: str) -> Seq[IOTestCase]:
     if any(not isinstance(testcase['input'], str) and len(testcase['input']) != 1 for testcase in eval(testcases)):
       raise ValueError('Input of testcases must be a string or a sequence with length 1.')
     return [IOTestCase(input=testcase['input'].replace('\r\n', '\n') if isinstance(testcase['input'], str) \
@@ -207,7 +208,7 @@ class CodeScope(BaseBenchmark):
             for testcase in eval(testcases)]
 
   @check_lang_support
-  def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
+  def load_for_translation(self, src_lang: str, dst_lang: str) -> Seq[Snippet]:
     ds = load_dataset('json', data_files='data/CodeScope/data/code_translation_data.jsonl')
     ds = ds.filter(lambda row: row['source_lang_cluster'] == self._lang_to_name[src_lang] and row['target_lang_cluster'] == self._lang_to_name[dst_lang])
     return [Snippet(id=row['src_uid'], code=row['source_code'], args={
@@ -215,7 +216,7 @@ class CodeScope(BaseBenchmark):
     }) for row in ds['train']]
 
   @check_lang_support
-  def load_for_repair(self, lang: str) -> Sequence[Snippet]:
+  def load_for_repair(self, lang: str) -> Seq[Snippet]:
     ds = load_dataset('json', data_files='data/CodeScope/data/code_repair_data.jsonl')
     ds = ds.filter(lambda row: row['lang_cluster'] == self._lang_to_name[lang])
     return [Snippet(id=row['src_uid'], code=row['source_code'], args={
@@ -228,7 +229,7 @@ class CodeScope(BaseBenchmark):
     }) for row in ds['train']]
 
   @check_lang_support
-  def load_for_summarization(self, lang: str) -> Sequence[Snippet]:
+  def load_for_summarization(self, lang: str) -> Seq[Snippet]:
     ds = load_dataset('json', data_files='data/CodeScope/data/code_summarization_data.jsonl')
     ds = ds.filter(lambda row: row['lang_cluster'] == self._lang_to_name[lang])
     return [Snippet(id=row['id'], code=row['source_code'], args={
@@ -236,7 +237,7 @@ class CodeScope(BaseBenchmark):
     }) for row in ds['train']]
 
   @check_lang_support
-  def load_for_test_generation(self, lang: str) -> Sequence[Snippet]:
+  def load_for_test_generation(self, lang: str) -> Seq[Snippet]:
     ds = load_dataset('json', data_files='data/CodeScope/data/automated_testing_data.jsonl')
     ds = ds.filter(lambda row: row['lang_cluster'] == self._lang_to_name[lang])
     return [Snippet(id=row['id'], code=row['source_code'], args={
@@ -309,7 +310,7 @@ class CruxEvalX(BaseBenchmark):
   })
 
   @check_lang_support
-  def load_for_io_reasoning(self, lang: str) -> Sequence[Snippet]:
+  def load_for_io_reasoning(self, lang: str) -> Seq[Snippet]:
     ds = load_dataset('xhwl/cruxeval-x', trust_remote_code=True)
     return [Snippet(id=row['id'], code=row['code'], args={
         'input_reasoning': row['input_reasoning'],
@@ -330,7 +331,7 @@ class ClassEvalT(BaseBenchmark):
   })
 
   @check_lang_support
-  def load_for_translation(self, src_lang: str, dst_lang: str) -> Sequence[Snippet]:
+  def load_for_translation(self, src_lang: str, dst_lang: str) -> Seq[Snippet]:
     data_dir = Path('data/ClassEval-T/ClassEval_T')
 
     def get_testcase(name: str, lang: str) -> APITestCase:

@@ -6,7 +6,7 @@ from typing import NamedTuple
 
 import torch
 import yaml
-from openai import OpenAI
+from openai import OpenAI  # type: ignore[attr-defined]
 from requests.exceptions import Timeout
 from transformers import AutoModelForCausalLM, AutoTokenizer
 

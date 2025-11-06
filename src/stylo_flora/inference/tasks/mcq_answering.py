@@ -1,4 +1,5 @@
-from collections.abc import Sequence
+from collections.abc import MutableSequence as MSeq
+from collections.abc import Sequence as Seq
 
 from ... import Snippet
 from ...logger import logger
@@ -23,7 +24,7 @@ USER_PROMPT = """
 """
 
 
-def answer_to_mcq(agent: BaseAgent, snippets: Sequence[Snippet | None], lang: str) -> Sequence[str | None]:
+def answer_to_mcq(agent: BaseAgent, snippets: Seq[Snippet | None], lang: str) -> MSeq[str | None]:
   def worker(i: int, snippet: Snippet) -> str | None:
     prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
                     user=USER_PROMPT.format(lang=lang, code=snippet.code,

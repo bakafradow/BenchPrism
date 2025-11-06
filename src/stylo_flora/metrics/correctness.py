@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import types
 import unittest
-from collections.abc import Sequence
+from collections.abc import Sequence as Seq
 from concurrent.futures import ThreadPoolExecutor
 
 import yaml
@@ -25,7 +25,7 @@ class CompilationError(Exception):
     super().__init__(f'{id}: {message}')
 
 
-def _run_with_io(args: Sequence[str], tests: Sequence[IOTestCase], id_: str) -> bool:
+def _run_with_io(args: Seq[str], tests: Seq[IOTestCase], id_: str) -> bool:
   for test in tqdm(tests, desc='Running tests', total=len(tests), leave=False):
     try:
       returned = subprocess.run(args, input=test.input, text=True, capture_output=True, encoding='utf-8', timeout=config['timeout'])
@@ -186,7 +186,7 @@ def test_api_python(snippet: Snippet) -> bool:
 
 # TODO: 1. execute in Docker
 #       2. extend implementation to pass@k
-def calc_correctness(snippets: Sequence[Snippet], lang: str) -> float:
+def calc_correctness(snippets: Seq[Snippet], lang: str) -> float:
   """
   Checks the correctness of the translated code with the tests.
   :param snippets: the translated code snippets

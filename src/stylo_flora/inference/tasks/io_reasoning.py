@@ -3,7 +3,8 @@ Modified from CRUXEval-X repository (https://github.com/CRUXEVAL-X/cruxeval-x).
 """
 
 import re
-from collections.abc import Sequence
+from collections.abc import MutableSequence as MSeq
+from collections.abc import Sequence as Seq
 
 import tree_sitter_java as tsjava
 from tree_sitter import Language, Node, Parser
@@ -32,7 +33,7 @@ USER_PROMPT = """
 """
 
 
-def _reason(agent: BaseAgent, snippets: Sequence[Snippet], lang: str) -> Sequence[Snippet | None]:
+def _reason(agent: BaseAgent, snippets: Seq[Snippet | None], lang: str) -> MSeq[Snippet | None]:
   def worker(i: int, snippet: Snippet) -> Snippet | None:
     prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
                     user=USER_PROMPT.format(lang=lang, code=snippet.code))
@@ -96,13 +97,13 @@ def _mask(lang: str, code: str, type: str) -> str:
   return mask_func(code, type)
 
 
-def reason_input(agent: BaseAgent, snippets: Sequence[Snippet | None], lang: str) -> Sequence[Snippet | None]:
+def reason_input(agent: BaseAgent, snippets: Seq[Snippet | None], lang: str) -> MSeq[Snippet | None]:
   snippets_without_input = [snippet.replace(code=_mask(lang, snippet.code, type='input'))
                             if snippet else None for snippet in snippets]
   return _reason(agent, snippets_without_input, lang)
 
 
-def reason_output(agent: BaseAgent, snippets: Sequence[Snippet | None], lang: str) -> Sequence[Snippet | None]:
+def reason_output(agent: BaseAgent, snippets: Seq[Snippet | None], lang: str) -> MSeq[Snippet | None]:
   snippets_without_output = [snippet.replace(code=_mask(lang, snippet.code, type='output'))
                              if snippet else None for snippet in snippets]
   return _reason(agent, snippets_without_output, lang)

@@ -4,7 +4,9 @@ import os
 import shutil
 import subprocess
 from collections import defaultdict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
+from collections.abc import MutableSequence as MSeq
+from collections.abc import Sequence as Seq
 from concurrent.futures import ThreadPoolExecutor
 from itertools import chain
 from tempfile import NamedTemporaryFile
@@ -25,12 +27,6 @@ jp.startJVM('-ea', '--enable-native-access=ALL-UNNAMED',
             jvmpath=os.getenv('JVM_PATH'), classpath=[os.getenv('STYLEX_CLASSPATH')])
 atexit.register(shutdown)
 
-from .. import Snippet
-from ..logger import logger
-from ..metrics.correctness import calc_correctness
-from .base import BaseTransformer
-from .stylex_builders import build_styler
-
 from org.example import Configuration
 from org.example.controller import (Applicator, Extractor, StylerContainer,
                                     TokenAugmentor)
@@ -40,6 +36,13 @@ from org.example.parser.common.factory import MyParserFactory
 from org.example.parser.java import SpotDetectorListener
 from org.example.style import ProgramStyle, StyleFileIO
 from org.example.styler import Stage
+
+from .. import Snippet
+from ..logger import logger
+from ..metrics.correctness import calc_correctness
+from .base import BaseTransformer
+from .stylex_builders import build_styler
+
 GlobalInfo = jp.JClass('org.example.global.GlobalInfo')  # cannot import directly due to package name
 
 
@@ -63,12 +66,10 @@ def set_global_info(func: Callable) -> Callable:
 class StyleX(BaseTransformer):
   def transform(
       self,
-      snippets: Sequence[Snippet],
+      snippets: Seq[Snippet],
       lang: str,
-      *,
-      seed: int = 42,
-      ensure_correct: bool = True,
-  ) -> Sequence[Sequence[Snippet | None]]:
+      **kwargs,
+  ) -> MSeq[MSeq[Snippet | None]]:
     """
     Applies transformations to the source code and generates variant sequence.
     :param snippets: the snippets to be transformed
@@ -78,6 +79,8 @@ class StyleX(BaseTransformer):
     """
     style_file = os.getenv('STYLE_FILE')
     if not style_file:
+      seed = kwargs.get('seed', 42)
+      ensure_correct = kwargs.get('ensure_correct', True)
       return self.span(lang, snippets, seed, ensure_correct)
     return [self.apply(lang, snippets, style_file)]
 
@@ -85,12 +88,12 @@ class StyleX(BaseTransformer):
   def apply(
       self,
       lang: str,
-      snippets: Sequence[Snippet],
+      snippets: Seq[Snippet],
       style_file: str,
-  ) -> Sequence[Snippet | None]:
+  ) -> list[Snippet | None]:
     styler_container = self._extract_from_file(lang, style_file)
 
-    variants = [None] * len(snippets)
+    variants: list[Snippet | None] = []
     for i, snippet in tqdm(enumerate(snippets), desc='Transforming', total=len(snippets), leave=False):
       try:
         variant = self._apply_styles(lang, snippet.code, styler_container)
@@ -99,20 +102,20 @@ class StyleX(BaseTransformer):
         variant = None
       if not variant:
         logger.warning(f'Failed to transform snippet {i} ({snippet.id}).')
-        variants[i] = None
+        variants.append(None)
       else:
-        variants[i] = snippet.replace(code=str(variant))
+        variants.append(snippet.replace(code=str(variant)))
     return variants
 
   @set_global_info
   def span(
       self,
       lang: str,
-      snippets: Sequence[Snippet],
+      snippets: Seq[Snippet],
       seed: int,
       ensure_correct: bool,
-  ) -> Sequence[Sequence[Snippet | None]]:
-    def worker(snippet_idx: int, seq_idx: int, snippet: Snippet, seq: Sequence[int]) -> Snippet | None:
+  ) -> list[list[Snippet | None]]:
+    def worker(snippet_idx: int, seq_idx: int, snippet: Snippet, seq: Seq[int]) -> Snippet | None:
       if seq_idx in snippet.args.get('transformed_seqs', set()):
         return None
       try:
@@ -148,8 +151,8 @@ class StyleX(BaseTransformer):
   def count_spots(
       self,
       lang: str,
-      snippets: Sequence[Snippet],
-  ) -> Sequence[int]:
+      snippets: Seq[Snippet],
+  ) -> list[int]:
     counts = []
     for i, snippet in enumerate(snippets):
       spots = jp.java.util.HashMap()
@@ -224,7 +227,7 @@ class StyleX(BaseTransformer):
       lang: str,
       code: str,
       choice_dict: Mapping[str, Mapping[str, Any]],
-  ) -> str:
+  ) -> str | None:
     self_style = self._extract_from_code(lang, code)
     styler_container = StylerContainer()
     for styler in styler_container.getStylers():
@@ -237,7 +240,7 @@ class StyleX(BaseTransformer):
 
   def _count_options(
       self,
-  ) -> Sequence[int]:
+  ) -> list[int]:
     with open('configs/stylex_options.yaml', 'r') as f:
       option_config = yaml.safe_load(f)
     option_counts = []
@@ -258,8 +261,8 @@ class StyleX(BaseTransformer):
   def _generate_seqs(
       self,
       seed: int,
-      option_counts: Sequence[int],
-  ) -> Sequence[Sequence[int]]:
+      option_counts: Seq[int],
+  ) -> list[list[int]]:
     with NamedTemporaryFile('w', encoding='utf-8', prefix='model', suffix='.txt', delete=False) as f:
       f.write('\n'.join([f'{i}: {",".join(map(str, range(count)))}' for i, count in enumerate(option_counts)]))
       f.flush()
@@ -275,7 +278,7 @@ class StyleX(BaseTransformer):
 
   def _create_choice_dict(
       self,
-      seq: Sequence[int],
+      seq: Seq[int],
   ) -> Mapping[str, Mapping[str, Any]]:
     with open('configs/stylex_options.yaml', 'r') as f:
       option_config = yaml.safe_load(f)

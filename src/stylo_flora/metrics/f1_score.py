@@ -1,7 +1,7 @@
-from collections.abc import Sequence
+from collections.abc import Sequence as Seq
 
 
-def calc_macro_f1(pred: Sequence[Sequence[str]], gold: Sequence[Sequence[str]]) -> float:
+def calc_macro_f1(pred: Seq[Seq[str]], gold: Seq[Seq[str]]) -> float:
   """
   Calculate the macro F1 score for the predicted and gold tags.
   :param pred: the predicted tags

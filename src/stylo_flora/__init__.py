@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Sequence as Seq
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from typing import NamedTuple
@@ -35,7 +35,7 @@ class Snippet:
 
 class IOTestCase(NamedTuple):
   input: str
-  outputs: Sequence[str]
+  outputs: Seq[str]
 
 
 class APITestCase(NamedTuple):

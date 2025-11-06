@@ -16,6 +16,7 @@ dependencies = [
   "openai",
   "rouge_score",
   "seaborn",
+  "tiktoken",
   "transformers",
   "tree-sitter-cpp<0.23",
   "tree-sitter-java<0.23",
@@ -36,12 +37,14 @@ requires = ["flit_core>=3.6"]
 build-backend = "flit_core.buildapi"
 
 [tool.mypy]
+mypy_path = "src"
 
 [[tool.mypy.overrides]]
 module = [
   "codebleu",
   "datasets",
   "evaluate",
+  "google.*",
   "jpype.*",
   "jsonlines",
   "nltk.*",

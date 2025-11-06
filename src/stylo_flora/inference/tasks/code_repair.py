@@ -1,5 +1,6 @@
 import re
-from collections.abc import Sequence
+from collections.abc import MutableSequence as MSeq
+from collections.abc import Sequence as Seq
 
 from ... import Snippet
 from ...logger import logger
@@ -32,7 +33,7 @@ USER_PROMPT = """
 """
 
 
-def repair(agent: BaseAgent, snippets: Sequence[Snippet | None], lang: str) -> Sequence[Snippet | None]:
+def repair(agent: BaseAgent, snippets: Seq[Snippet | None], lang: str) -> MSeq[Snippet | None]:
   def worker(i: int, snippet: Snippet) -> Snippet | None:
     prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
                     user=USER_PROMPT.format(

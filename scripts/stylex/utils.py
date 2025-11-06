@@ -1,9 +1,11 @@
-from stylo_flora.transformer.stylex import StyleX
 import ast
 import re
+from collections.abc import Mapping
 
 import jpype as jp
 from dotenv import load_dotenv
+
+from stylo_flora.transformer.stylex import StyleX
 
 load_dotenv()
 
@@ -13,7 +15,7 @@ GlobalInfo = jp.JClass('org.example.global.GlobalInfo')
 Configuration = jp.JClass('org.example.Configuration')
 
 
-def span_single(lang: str, code: str, choice_dict: dict) -> str:
+def span_single(lang: str, code: str, choice_dict: Mapping) -> str | None:
   GlobalInfo.setConf(Configuration())
   GlobalInfo.setLanguage(lang)
   return stylex._apply_styles_by_choices(lang, code, choice_dict)

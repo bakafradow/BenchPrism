@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import MutableSequence as MSeq
+from collections.abc import Sequence as Seq
 
 from .. import Snippet
 
@@ -12,16 +13,17 @@ class BaseTransformer(ABC):
   @abstractmethod
   def transform(
     self,
-    snippets: Sequence[Snippet],
-    lang: str
-  ) -> Sequence[Sequence[Snippet | None]]:
+    snippets: Seq[Snippet],
+    lang: str,
+    **kwargs,
+  ) -> MSeq[MSeq[Snippet | None]]:
     """
     Transforms the given code snippet.
     :param snippets: the code snippets to transform
     :param lang: the language of the code snippet
     :return: the transformed code snippets
     """
-    return (snippets,)
+    return [list(snippets)]
 
 
 def transformer_factory() -> BaseTransformer:

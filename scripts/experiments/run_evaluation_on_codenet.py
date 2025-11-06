@@ -1,3 +1,5 @@
+# NOTE: this script is not up-to-date with the latest codebase changes.
+
 import argparse
 from collections.abc import Sequence
 from itertools import groupby

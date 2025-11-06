@@ -1,6 +1,9 @@
 import subprocess
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
+from collections.abc import MutableSequence as MSeq
+from collections.abc import Sequence as Seq
 from concurrent.futures import ThreadPoolExecutor
+from typing import TypeVar
 
 import torch
 import yaml
@@ -11,6 +14,8 @@ from ..logger import logger
 
 with open('configs/settings.yaml') as f:
   config = yaml.safe_load(f)['agent']
+
+T = TypeVar('T')
 
 
 def get_freest_gpu() -> str:
@@ -34,15 +39,15 @@ def get_freest_gpu() -> str:
   return f'cuda:{gpu}'
 
 
-def return_none_wrapper(worker: Callable[[int, Snippet | None], Snippet | None]) -> Callable[[int, Snippet | None], Snippet | None]:
-  def wrapper(i: int, snippet: Snippet | None) -> Snippet | None:
+def return_none_wrapper(worker: Callable) -> Callable:
+  def wrapper(i: int, snippet: Snippet) -> T | None:
     if not snippet or snippet.args.get('performed'):
       return None
     return worker(i, snippet)
   return wrapper
 
 
-def work(worker: Callable[[int, Snippet | None], Snippet | None], snippets: Sequence[Snippet]) -> Sequence[Snippet]:
+def work(worker: Callable[[int, Snippet], T | None], snippets: Seq[Snippet | None]) -> MSeq[T | None]:
   max_workers = max(1, config['max_workers'])
   with ThreadPoolExecutor(max_workers=max_workers) as executor:
     return list(tqdm(executor.map(return_none_wrapper(worker), range(len(snippets)), snippets),

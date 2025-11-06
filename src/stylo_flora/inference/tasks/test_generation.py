@@ -1,6 +1,7 @@
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import MutableSequence as MSeq
+from collections.abc import Sequence as Seq
 
 from ... import IOTestCase, Snippet
 from ...logger import logger
@@ -37,8 +38,8 @@ USER_PROMPT = """
 """
 
 
-def generate_tests(agent: BaseAgent, snippets: Sequence[Snippet | None], lang: str) -> Sequence[IOTestCase | None]:
-  def worker(i: int, snippet: Snippet) -> IOTestCase | None:
+def generate_tests(agent: BaseAgent, snippets: Seq[Snippet | None], lang: str) -> MSeq[MSeq[IOTestCase] | None]:
+  def worker(i: int, snippet: Snippet) -> MSeq[IOTestCase] | None:
     prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
                     user=USER_PROMPT.format(
                         lang=lang,

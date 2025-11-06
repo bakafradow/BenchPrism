@@ -1,6 +1,6 @@
 import subprocess
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Sequence as Seq
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -60,7 +60,7 @@ def calc_coverage_java(snippet: Snippet) -> dict:
       return pd.read_csv(f).to_dict(orient='records')[0] | {'pass_rate': pass_rate}
 
 
-def calc_coverage(snippets: Sequence[Snippet], lang: str) -> dict:
+def calc_coverage(snippets: Seq[Snippet], lang: str) -> dict:
   coverage_func = globals().get(f'calc_coverage_{lang}')
   if not coverage_func:
     raise TypeError(f'Unsupported language: {lang}')

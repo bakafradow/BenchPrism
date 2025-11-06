@@ -1,5 +1,6 @@
 import re
-from collections.abc import Sequence
+from collections.abc import MutableSequence as MSeq
+from collections.abc import Sequence as Seq
 
 from ... import Snippet
 from ...logger import logger
@@ -25,7 +26,7 @@ USER_PROMPT = """
 """
 
 
-def translate(agent: BaseAgent, snippets: Sequence[Snippet | None], src_lang: str, dst_lang: str) -> Sequence[Snippet | None]:
+def translate(agent: BaseAgent, snippets: Seq[Snippet | None], src_lang: str, dst_lang: str) -> MSeq[Snippet | None]:
   """
   Translates snippets in code set with code translation model.
   :param translator: the translation model
@@ -35,7 +36,7 @@ def translate(agent: BaseAgent, snippets: Sequence[Snippet | None], src_lang: st
   :param dst_lang: destination language
   :return: a sequence of translated code
   """
-  def worker(i: int, snippet: Snippet | None) -> Snippet | None:
+  def worker(i: int, snippet: Snippet) -> Snippet | None:
     prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
                     user=USER_PROMPT.format(src_lang=src_lang, dst_lang=dst_lang, code=snippet.code))
     response = agent.generate(prompt)

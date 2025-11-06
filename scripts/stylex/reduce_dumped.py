@@ -21,6 +21,10 @@ def reduce_seq(lang: str, snippet: str, seq: list[int]) -> None:
     seq[idx] = -1
     choice_dict = stylex._create_choice_dict(seq)
     mutant_str = span_single(lang, snippet, choice_dict)
+    if not mutant_str:
+      print('Failed to generate mutant. Reverting selection.')
+      seq[idx] = selection
+      return
     matched = re.search(r'public\s+(?:final\s+)?class\s+(\w+)', mutant_str)
     if not matched:
       print('No class name found. Skipping.')

@@ -12,7 +12,9 @@ import math
 import os
 import random
 from argparse import ArgumentParser, Namespace
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
+from collections.abc import MutableSequence as MSeq
+from collections.abc import Sequence as Seq
 from datetime import datetime
 from itertools import islice
 from operator import itemgetter
@@ -82,11 +84,11 @@ def parse_args() -> Namespace:
 
 
 def _pick_snippets(
-    snippets: Sequence[Snippet],
+    snippets: Seq[Snippet],
     args: Namespace,
     *,
     ensure_correct: bool = True,
-) -> Sequence[Snippet]:
+) -> Seq[Snippet]:
   if args.num_snippets < 0:
     return snippets
 
@@ -108,7 +110,7 @@ def _pick_snippets(
 
 
 def _cut_testcases(
-    snippets: Sequence[Snippet],
+    snippets: Seq[Snippet],
     args: Namespace,
 ) -> None:
   if snippets and not snippets[0].args.get('io_testcases'):
@@ -136,8 +138,8 @@ def _load_data(
 def _save_variants(
     path: Path,
     data: dict[str, Any],
-    snippets: Sequence[Snippet],
-    corpus: Sequence[Sequence[Snippet]],
+    snippets: Seq[Snippet],
+    corpus: Seq[Seq[Snippet | None]],
 ) -> None:
   for i, snippet in enumerate(snippets):
     data.setdefault(snippet.id, {})
@@ -154,9 +156,9 @@ def _save_variants(
 def _save_outputs(
     path: Path,
     data: dict[str, Any],
-    snippets: Sequence[Snippet],
-    res_orig: Sequence[Any],
-    res_span: Sequence[Sequence[Any]],
+    snippets: Seq[Snippet],
+    res_orig: MSeq[Any],
+    res_span: MSeq[MSeq[Any]],
     *,
     returns_snippets: bool = False,
 ) -> None:
@@ -189,12 +191,12 @@ def _save_result(
 
 def _transform_with(
     transformer: BaseTransformer,
-    snippets: Sequence[Snippet],
+    snippets: Seq[Snippet],
     data: dict[str, Any],
     args: Namespace,
     *,
     ensure_correct: bool = True,
-) -> Sequence[Sequence[Snippet | None]]:
+) -> MSeq[MSeq[Snippet | None]]:
   # skip transformed snippets that already exist in the result file
   for snippet in snippets:
     if snippet.id in data:
@@ -219,13 +221,13 @@ def _transform_with(
 
 
 def _perform_with(
-    worker: Callable,
-    snippets: Sequence[Snippet],
-    corpus: Sequence[Sequence[Snippet]],
+    worker: Callable[[], tuple[MSeq[Any], MSeq[MSeq[Any]]]],
+    snippets: Seq[Snippet],
+    corpus: Seq[Seq[Snippet | None]],
     data: dict[str, Any],
     *,
     returns_snippets: bool = False,
-) -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
+) -> tuple[MSeq[Any], MSeq[MSeq[Any]]]:
   # skip snippets that already have outputs in data
   for i, snippet in enumerate(snippets):
     if snippet.id not in data:
@@ -235,7 +237,7 @@ def _perform_with(
     if not data[snippet.id].get('variant_outputs'):
       continue
     for j, variant in enumerate(corpus[i]):
-      if data[snippet.id]['variant_outputs'][j]:
+      if variant and data[snippet.id]['variant_outputs'][j]:
         variant.args['performed'] = True
 
   res_orig, res_span = worker()
@@ -261,10 +263,10 @@ def _evaluate_task_template(
     transformer: BaseTransformer,
     agent: BaseAgent,
     args: Namespace,
-    load_snippets_func: Callable[[BaseBenchmark, Namespace], Sequence[Snippet]],
-    perform_task_func: Callable[[BaseAgent, Sequence[Snippet], Namespace], Sequence[Any]],
-    evaluate_metrics_func: Callable[[Sequence[Snippet], Sequence[Sequence[Snippet]],
-                                     Sequence[Any], Sequence[Sequence[Any]],
+    load_snippets_func: Callable[[BaseBenchmark, Namespace], Seq[Snippet]],
+    perform_task_func: Callable[[BaseAgent, Seq[Snippet], Namespace], MSeq[Any]],
+    evaluate_metrics_func: Callable[[Seq[Snippet], Seq[Seq[Snippet]],
+                                     Seq[Any], Seq[Seq[Any]],
                                      Namespace], dict[str, Any]],
     *,
     ensure_correct: bool = True,
@@ -278,14 +280,14 @@ def _evaluate_task_template(
   logger.info('Transforming styles of the code snippets...')
   corpus = _transform_with(transformer, snippets, variants_data, args, ensure_correct=ensure_correct)
   num_styles = len(corpus[0]) if corpus else 0
-  # TODO: debug StyleX...
-  # TODO: record time consumption for transformation
+  # TODO 0: debug StyleX...
+  # TODO 1: record time consumption for transformation
   _save_variants(args.variants_path, variants_data, snippets, corpus)
   if args.no_perform:
     logger.info('--no-perform is set, skipping performing tasks.')
     return
 
-  def worker() -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
+  def worker() -> tuple[MSeq[Any], MSeq[MSeq[Any]]]:
     res_orig = perform_task_func(agent, snippets, args)
     res_span = [perform_task_func(agent, variants, args)
                 for variants in tqdm(corpus, desc=args.task.capitalize(),
@@ -295,40 +297,40 @@ def _evaluate_task_template(
   logger.info(f'Performing {args.task} with {args.model}...')
   res_orig, res_span = _perform_with(worker, snippets, corpus, outputs_data,
                                      returns_snippets=args.returns_snippets)
-  # TODO: record token and time consumption for performing tasks
+  # TODO 2: record token and time consumption for performing tasks
   _save_outputs(args.outputs_path, outputs_data, snippets,
                 res_orig, res_span, returns_snippets=args.returns_snippets)
 
   # eliminate `None`s by filtering
-  indices_to_eval = [i for i, res in enumerate(res_orig) if res]
-  snippets_to_eval = [snippets[i] for i in indices_to_eval]
-  corpus_to_eval = [corpus[i] for i in indices_to_eval]
-  res_orig_to_eval = [res_orig[i] for i in indices_to_eval]
-  res_span_to_eval = [res_span[i] for i in indices_to_eval]
+  indices_filtered = [i for i, res in enumerate(res_orig) if res]
+  snippets_filtered = [snippets[i] for i in indices_filtered]
+  corpus_filtered = [corpus[i] for i in indices_filtered]
+  res_orig_filtered = [res_orig[i] for i in indices_filtered]
+  res_span_filtered = [res_span[i] for i in indices_filtered]
   # eliminate `None`s by padding
-  fallbacks = [variants.count(None) for variants in zip(*corpus_to_eval)]
-  corpus_to_eval = [[variant or snippets_to_eval[i] for variant in variants]
-                    for i, variants in enumerate(corpus_to_eval)]
-  res_span_to_eval = [[res or res_orig_to_eval[i] for res in responses]
-                      for i, responses in enumerate(res_span_to_eval)]
-  assert all(snippets_to_eval)
+  fallbacks = [variants.count(None) for variants in zip(*corpus_filtered)]
+  corpus_to_eval = [[variant or snippets_filtered[i] for variant in variants]
+                    for i, variants in enumerate(corpus_filtered)]
+  res_span_to_eval = [[res or res_orig_filtered[i] for res in responses]
+                      for i, responses in enumerate(res_span_filtered)]
+  assert all(snippets_filtered)
   assert all(variant for variants in corpus_to_eval for variant in variants)
-  assert all(res_orig_to_eval)
+  assert all(res_orig_filtered)
   assert all(res for responses in res_span_to_eval for res in responses)
 
   logger.info('Calculating metrics for the responses...')
-  result = evaluate_metrics_func(snippets_to_eval, corpus_to_eval, res_orig_to_eval, res_span_to_eval, args)
-  codebleu = [calc_codebleu([snippet.code for snippet in snippets_to_eval],
+  result = evaluate_metrics_func(snippets_filtered, corpus_to_eval, res_orig_filtered, res_span_to_eval, args)
+  codebleu = [calc_codebleu([snippet.code for snippet in snippets_filtered],
                             [variant.code for variant in variants], args.src_lang)['codebleu']
               for variants in tqdm(zip(*corpus_to_eval), desc='Calculating CodeBLEU',
                                    total=num_styles, leave=False)]
   result.update({
       'num_original': len(snippets),
-      'num_valid': len(snippets_to_eval),
-      'num_skipped': len(snippets) - len(indices_to_eval),
+      'num_valid': len(snippets_filtered),
+      'num_skipped': len(snippets) - len(indices_filtered),
       'num_styles': num_styles,
       'fallbacks': fallbacks,
-      'fallback_rate': np.mean(fallbacks) / len(indices_to_eval),
+      'fallback_rate': np.mean(fallbacks) / len(indices_filtered),
       'codebleu': codebleu,
       'codebleu_avg': np.mean(codebleu),
   })
@@ -345,8 +347,8 @@ def evaluate_code_translation(
     raise ValueError('Destination language must be specified for code translation task.')
 
   def evaluate_metrics(
-          snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
-          res_orig: Sequence[Any], res_span: Sequence[Sequence[Any]],
+          snippets: Seq[Snippet], corpus: Seq[Seq[Snippet]],
+          res_orig: Seq[Any], res_span: Seq[Seq[Any]],
           args: Namespace) -> dict[str, Any]:
     pass_orig = calc_correctness(res_orig, args.dst_lang)
     pass_span = [calc_correctness(variants, args.dst_lang)
@@ -373,8 +375,8 @@ def evaluate_code_repair(
     args: Namespace,
 ) -> None:
   def evaluate_metrics(
-          snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
-          res_orig: Sequence[Any], res_span: Sequence[Sequence[Any]],
+          snippets: Seq[Snippet], corpus: Seq[Seq[Snippet]],
+          res_orig: Seq[Any], res_span: Seq[Seq[Any]],
           args: Namespace) -> dict[str, Any]:
     pass_orig = calc_correctness(res_orig, args.src_lang)
     pass_span = [calc_correctness(variants, args.src_lang)
@@ -401,8 +403,8 @@ def evaluate_code2tag(
     args: Namespace,
 ) -> None:
   def evaluate_metrics(
-          snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
-          res_orig: Sequence[Any], res_span: Sequence[Sequence[Any]],
+          snippets: Seq[Snippet], corpus: Seq[Seq[Snippet]],
+          res_orig: Seq[Any], res_span: Seq[Seq[Any]],
           args: Namespace) -> dict[str, Any]:
     gloden_tags = [snippet.args['tags'] for snippet in snippets]
     f1_orig = calc_macro_f1(res_orig, gloden_tags)
@@ -430,8 +432,8 @@ def evaluate_code_summarization(
     args: Namespace,
 ) -> None:
   def evaluate_metrics(
-          snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
-          res_orig: Sequence[Any], res_span: Sequence[Sequence[Any]],
+          snippets: Seq[Snippet], corpus: Seq[Seq[Snippet]],
+          res_orig: Seq[Any], res_span: Seq[Seq[Any]],
           args: Namespace) -> dict[str, Any]:
     human_summaries = [snippet.args['human_summarization'] for snippet in snippets]
     bleu_orig = calc_bleu(res_orig, human_summaries)
@@ -480,11 +482,11 @@ def _evaluate_io_reasoning(
     transformer: BaseTransformer,
     agent: BaseAgent,
     args: Namespace,
-    reason_func: Callable[[BaseAgent, Sequence[Snippet], str], Sequence[Sequence[Any]]],
+    reason_func: Callable[[BaseAgent, Seq[Snippet | None], str], MSeq[Snippet | None]],
 ) -> None:
   def evaluate_metrics(
-          snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
-          res_orig: Sequence[Any], res_span: Sequence[Sequence[Any]],
+          snippets: Seq[Snippet], corpus: Seq[Seq[Snippet]],
+          res_orig: Seq[Any], res_span: Seq[Seq[Any]],
           args: Namespace) -> dict[str, Any]:
     pass_orig = calc_correctness(res_orig, args.src_lang)
     pass_span = [calc_correctness(variants, args.src_lang)
@@ -529,8 +531,8 @@ def evaluate_mcq_answering(
     args: Namespace,
 ) -> None:
   def evaluate_metrics(
-          snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
-          res_orig: Sequence[Any], res_span: Sequence[Sequence[Any]],
+          snippets: Seq[Snippet], corpus: Seq[Seq[Snippet]],
+          res_orig: Seq[Any], res_span: Seq[Seq[Any]],
           args: Namespace) -> dict[str, Any]:
     answers = np.array([snippet.args['answer'] for snippet in snippets])
     acc_orig = np.mean(np.array(res_orig) == answers)
@@ -557,30 +559,28 @@ def evaluate_test_generation(
     agent: BaseAgent,
     args: Namespace,
 ) -> None:
-  def list_to_testcases(testcases: Sequence[Sequence]) -> Sequence[IOTestCase]:
+  def objectize(testcases: Seq[Seq]) -> MSeq[IOTestCase]:
     return [IOTestCase(input=testcase[0], outputs=testcase[1])
             for testcase in testcases]
 
   def evaluate_metrics(
-          snippets: Sequence[Snippet], corpus: Sequence[Sequence[Snippet]],
-          res_orig: Sequence[Any], res_span: Sequence[Sequence[Any]],
+          snippets: Seq[Snippet], corpus: Seq[Seq[Snippet]],
+          res_orig: Seq[Any], res_span: Seq[Seq[Any]],
           args: Namespace) -> dict[str, Any]:
-    for i, res in enumerate(res_orig):
-      if isinstance(res, list):
-        res_orig[i] = list_to_testcases(res)
-    for i, variants in enumerate(res_span):
-      for j, res in enumerate(variants):
-        if isinstance(res, list):
-          res_span[i][j] = list_to_testcases(res)
-    snippets_with_res_orig = [snippet.replace(args={'io_testcases': res_orig[i]})
+    tc_orig = [objectize(res) if isinstance(res, list) else None
+               for res in res_orig]
+    tc_span = [[objectize(res) if isinstance(res, list) else None
+                for res in results]
+                for results in res_span]
+    snippets_with_res_orig = [snippet.replace(args={'io_testcases': tc_orig[i]})
                               for i, snippet in enumerate(snippets)]
     snippets_with_res_span = [[snippet.replace(args={'io_testcases': testcase})
-                               for testcase in res_span[i]]
+                               for testcase in tc_span[i]]
                               for i, snippet in enumerate(snippets)]
     cov_orig = calc_coverage(snippets_with_res_orig, args.src_lang)
     cov_span = [calc_coverage(variants, args.src_lang)
                 for variants in tqdm(zip(*snippets_with_res_span), desc='Evaluating',
-                                     total=len(res_span[0]), leave=False)]
+                                     total=len(tc_span[0]), leave=False)]
     pass_span = [cov['pass_rate'] for cov in cov_span]
     line_cov_span = [cov['line_cov_rate'] for cov in cov_span]
     branch_cov_span = [cov['branch_cov_rate'] for cov in cov_span]
