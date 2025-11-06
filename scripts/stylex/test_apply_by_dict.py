@@ -1,34 +1,37 @@
 """
-Attempts to span a snippet using the StyleX transformer with a sequence of choices which is written in the first line of the input file as a comment.
+Attempts to span a snippet using the StyleX transformer with a given choice dictionary in JSON format.
 """
 
+import json
 import os
 import sys
 
-from scripts.stylex.utils import find_seq, span_single, stylex
+from scripts.stylex.utils import span_single
 
 
 def main():
-  if len(sys.argv) < 3:
-    print(f'Usage: python {os.path.basename(__file__)} <lang> <input file> [output file]')
+  if len(sys.argv) < 4:
+    print(f'Usage: python {os.path.basename(__file__)} <lang> <input file> <choice file> [output file]')
     sys.exit(1)
   lang = sys.argv[1]
   input_file = sys.argv[2]
+  choice_file = sys.argv[3]
   with open(input_file, 'r', encoding='utf-8') as f:
     code = f.read()
     print(f'Read {lang} code with {len(code.splitlines())} lines from {input_file}')
+  with open(choice_file, 'r', encoding='utf-8') as f:
+    choice_dict = json.load(f)
+    print(f'Read choice dict with {len(choice_dict)} entries from {choice_file}')
 
-  seq = find_seq(lang, code)
-  choice_dict = stylex._create_choice_dict(seq)
   variant_code = span_single(lang, code, choice_dict)
 
-  if len(sys.argv) < 3:
+  if len(sys.argv) < 4:
     print(f"""
 =========== VARIANT ============
 {variant_code}
 ================================""")
     return
-  output_file = sys.argv[3]
+  output_file = sys.argv[4]
   with open(output_file, 'w', encoding='utf-8') as f:
     f.write(variant_code)
     print(f'Wrote variant with {len(variant_code.splitlines())} lines to {output_file}')

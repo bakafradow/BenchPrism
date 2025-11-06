@@ -2,7 +2,6 @@
 Given a snippet dumped by StyleX, finds the simplest sequence that triggers failure and then reduces the snippet with Perses.
 """
 
-import ast
 import os
 import re
 import subprocess
@@ -13,7 +12,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from scripts.stylex.test_apply_by_seq import span_single, stylex
+from scripts.stylex.utils import find_seq, span_single, stylex
 
 
 def reduce_seq(lang: str, snippet: str, seq: list[int]) -> None:
@@ -44,6 +43,7 @@ def main():
   if len(sys.argv) < 4:
     print(f'Usage: python {os.path.basename(__file__)} <lang> <working_dir> <result_dir>')
     exit(1)
+  lang = sys.argv[1]
   working_dir = Path(sys.argv[2])
   if not working_dir.exists():
     print('Dump directory does not exist.')
@@ -55,14 +55,12 @@ def main():
     with open(file, 'r', encoding='utf-8') as f:
       snippet = f.read()
       print(f'Read snippet with {len(snippet.splitlines())} lines from {file}')
-    matched = re.search(r'// Seq=(\[[^\]]*\])', snippet)
-    if not matched:
+
+    seq = find_seq(lang, snippet)
+    if not seq:
       print(f'No sequence found in {file}. Skipping.')
       continue
-    seq_str = matched.group(1)
-    seq = ast.literal_eval(seq_str)
-
-    reduce_seq(sys.argv[1], snippet, seq)
+    reduce_seq(lang, snippet, seq)
 
     if all(selection == -1 for selection in seq):
       print(f'All selections in {file} are -1. Skipping.')

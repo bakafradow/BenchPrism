@@ -75,6 +75,8 @@ def parse_args() -> Namespace:
                       help='If set, enables verbose level logging.')
   parser.add_argument('--debug', action='store_true', default=False,
                       help='If set, enables debugging level logging.')
+  parser.add_argument('--no-perform', action='store_true', default=False,
+                      help='If set, skip performing tasks and only transform and save variants.')
   args = parser.parse_args()
   return args
 
@@ -260,7 +262,7 @@ def _evaluate_task_template(
     agent: BaseAgent,
     args: Namespace,
     load_snippets_func: Callable[[BaseBenchmark, Namespace], Sequence[Snippet]],
-    perform_task_func: Callable[[BaseAgent, Sequence[Snippet], str], Sequence[Any]],
+    perform_task_func: Callable[[BaseAgent, Sequence[Snippet], Namespace], Sequence[Any]],
     evaluate_metrics_func: Callable[[Sequence[Snippet], Sequence[Sequence[Snippet]],
                                      Sequence[Any], Sequence[Sequence[Any]],
                                      Namespace], dict[str, Any]],
@@ -275,8 +277,13 @@ def _evaluate_task_template(
   variants_data = _load_data(args.variants_path)
   logger.info('Transforming styles of the code snippets...')
   corpus = _transform_with(transformer, snippets, variants_data, args, ensure_correct=ensure_correct)
-  _save_variants(args.variants_path, variants_data, snippets, corpus)
   num_styles = len(corpus[0]) if corpus else 0
+  # TODO: debug StyleX...
+  # TODO: record time consumption for transformation
+  _save_variants(args.variants_path, variants_data, snippets, corpus)
+  if args.no_perform:
+    logger.info('--no-perform is set, skipping performing tasks.')
+    return
 
   def worker() -> tuple[Sequence[Any], Sequence[Sequence[Any]]]:
     res_orig = perform_task_func(agent, snippets, args)
@@ -288,6 +295,7 @@ def _evaluate_task_template(
   logger.info(f'Performing {args.task} with {args.model}...')
   res_orig, res_span = _perform_with(worker, snippets, corpus, outputs_data,
                                      returns_snippets=args.returns_snippets)
+  # TODO: record token and time consumption for performing tasks
   _save_outputs(args.outputs_path, outputs_data, snippets,
                 res_orig, res_span, returns_snippets=args.returns_snippets)
 

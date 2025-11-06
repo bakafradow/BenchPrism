@@ -21,8 +21,8 @@ def shutdown():
     logger.info('JVM shutdown successfully.')
 
 
-jp.startJVM('-ea', jvmpath=os.getenv('JVM_PATH'),
-            classpath=[os.getenv('STYLEX_CLASSPATH')])
+jp.startJVM('-ea', '--enable-native-access=ALL-UNNAMED',
+            jvmpath=os.getenv('JVM_PATH'), classpath=[os.getenv('STYLEX_CLASSPATH')])
 atexit.register(shutdown)
 
 from .. import Snippet

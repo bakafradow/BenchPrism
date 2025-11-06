@@ -1,6 +1,5 @@
 transformer:
-  class: org.example.Mutator
-  max_workers: 1
+  max_workers: 8
 
 agent:
   ######### settings for remote API #########

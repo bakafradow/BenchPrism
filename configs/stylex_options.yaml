@@ -10,12 +10,6 @@
   - operator_spacing:
       option_type: bool
 
-  # - parenthetical_spacing:
-  #     option_type: bool
-
-  # - control_flow_spacing:
-  #     option_type: bool
-
   - call_spacing:
       option_type: bool
 
