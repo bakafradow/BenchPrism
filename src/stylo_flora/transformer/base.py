@@ -13,10 +13,10 @@ class BaseTransformer(ABC):
   @abstractmethod
   def transform(
     self,
-    lang: str,
     snippets: Seq[Snippet],
+    lang: str,
     **kwargs,
-  ) -> MSeq[MSeq[Snippet | None]]:
+  ) -> list[list[Snippet | None]]:
     """
     Transforms the given code snippet.
     :param snippets: the code snippets to transform

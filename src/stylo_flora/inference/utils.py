@@ -3,7 +3,7 @@ from collections.abc import Callable
 from collections.abc import MutableSequence as MSeq
 from collections.abc import Sequence as Seq
 from concurrent.futures import ThreadPoolExecutor
-from typing import TypeVar
+from typing import ParamSpec, TypeVar
 
 import torch
 import yaml
@@ -39,16 +39,21 @@ def get_freest_gpu() -> str:
   return f'cuda:{gpu}'
 
 
-def return_none_wrapper(worker: Callable) -> Callable:
-  def wrapper(i: int, snippet: Snippet) -> T | None:
+def skip_empty_or_existing(
+    worker: Callable[[int, Snippet], T]
+) -> Callable[[int, Snippet], T | None]:
+  def wrapper(i: int, snippet: Snippet):
     if not snippet or snippet.args.get('performed'):
       return None
     return worker(i, snippet)
   return wrapper
 
 
-def work(worker: Callable[[int, Snippet], T | None], snippets: Seq[Snippet | None]) -> MSeq[T | None]:
+def work(
+    worker: Callable[[int, Snippet], T | None],
+    snippets: Seq[Snippet | None]
+) -> MSeq[T | None]:
   max_workers = max(1, config['max_workers'])
   with ThreadPoolExecutor(max_workers=max_workers) as executor:
-    return list(tqdm(executor.map(return_none_wrapper(worker), range(len(snippets)), snippets),
+    return list(tqdm(executor.map(skip_empty_or_existing(worker), range(len(snippets)), snippets),
                  desc='Generating', total=len(snippets), leave=False))

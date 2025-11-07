@@ -1,4 +1,5 @@
 import atexit
+import inspect
 import math
 import os
 import shutil
@@ -10,7 +11,7 @@ from collections.abc import Sequence as Seq
 from concurrent.futures import ThreadPoolExecutor
 from itertools import chain
 from tempfile import NamedTemporaryFile
-from typing import Any
+from typing import Any, ParamSpec, TypeVar
 
 import jpype as jp
 import jpype.imports
@@ -50,13 +51,27 @@ with open('configs/settings.yaml', 'r') as f:
 if not shutil.which('pict'):
   raise ValueError('PICT executable not found.')
 
+P = ParamSpec('P')
+T = TypeVar('T')
 
-def set_global_info(func: Callable) -> Callable:
-  def wrapper(self, lang: str, *args, **kwargs):
-    # boilerplate to use StyleX
+
+def set_global_info(func: Callable[P, T]) -> Callable[P, T]:
+  """
+  A decorator to set global configuration and language before executing the function, which is a boilerplate for StyleX.
+  """
+  def wrapper(*args, **kwargs):
+    try:
+      sig = inspect.signature(func)
+      bound_args = sig.bind(*args, **kwargs)
+      bound_args.apply_defaults()
+      lang = bound_args.arguments['lang']
+    except TypeError as e:
+      raise TypeError(f'Failed to bind arguments for {func.__name__}.\n{e}') from e
+    except KeyError as e:
+      raise TypeError(f'Decorator @set_global_info requires {func.__name__} to have a \'lang\' argument.') from e
     GlobalInfo.setConf(Configuration())
     GlobalInfo.setLanguage(lang)
-    return func(self, lang, *args, **kwargs)
+    return func(*args, **kwargs)
   return wrapper
 
 
@@ -64,15 +79,16 @@ class StyleX(BaseTransformer):
   @set_global_info
   def transform(
       self,
-      lang: str,
       snippets: Seq[Snippet],
+      lang: str,
       **kwargs,
-  ) -> MSeq[MSeq[Snippet | None]]:
+  ) -> list[list[Snippet | None]]:
     """
     Applies transformations to the source code and generates variant sequence.
     :param snippets: the snippets to be transformed
     :param lang: the language of the snippets
     :param seed: the random seed for reproducibility
+    :param ensure_correct: whether to reject incorrectly transformed snippets
     :return: a series of transformed snippets, each of which is corresponding to a variant sequence
     """
     seed = kwargs.get('seed', 42)
@@ -89,8 +105,10 @@ class StyleX(BaseTransformer):
           if not math.isclose(correctness, 1.0):
             logger.warning(f'Correctness check failed: {correctness}')
             variant_code = None
+      except jp.JVMNotRunning:  # in case of keyboard interrupt
+        return None
       except Exception as e:
-        logger.error(f'Error occurred while spanning:\n{e}')
+        logger.error(f'{e.__class__.__name__} occurred while spanning:\n{e}')
         variant_code = None
       if not variant_code:
         logger.warning(f'Failed to transform snippet {snippet_idx} ({snippet.id}) with sequence {seq_idx} ({seq}).')
@@ -114,8 +132,8 @@ class StyleX(BaseTransformer):
   @set_global_info
   def count_spots(
       self,
-      lang: str,
       snippets: Seq[Snippet],
+      lang: str,
   ) -> list[int]:
     counts = []
     for i, snippet in enumerate(snippets):
@@ -234,7 +252,7 @@ class StyleX(BaseTransformer):
       args = ['pict', f.name, f'/r:{seed}']
       completed = subprocess.run(args, check=True, encoding='utf-8', stdout=subprocess.PIPE)
     except subprocess.CalledProcessError as e:
-      logger.error(f'Error occurred while running pict.\n{e}')
+      logger.error(f'{e.__class__.__name__} occurred while running pict.\n{e}')
       raise e
     os.remove(f.name)
     seqs = [[int(num) for num in line.split()] for line in completed.stdout.splitlines()[1:]]
@@ -284,4 +302,4 @@ class StyleX(BaseTransformer):
       except KeyError:
         logger.warning(f'No choices found for styler {styler_name}. Skipping.')
       except Exception as e:
-        logger.warning(f'Error occurred while building styler {styler_name}:\n{e}')
+        logger.warning(f'{e.__class__.__name__} occurred while building styler {styler_name}:\n{e}')

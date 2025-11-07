@@ -22,7 +22,7 @@ class Prompt(NamedTuple):
   user: str
 
 
-def empty_cache(func: Callable):
+def empty_cache(func: Callable) -> Callable:
   def wrapper(*args, **kwargs):
     torch.cuda.empty_cache()
     return func(*args, **kwargs)
@@ -72,7 +72,7 @@ class OpenAIAgent(BaseAgent):
         logger.warning(f'Timeout occurred for snippet {prompt.id}. Retrying {attempt + 1}/{retry}...')
         time.sleep(config['retry_interval'])
       except Exception as e:
-        logger.error(f'Error occurred for snippet {prompt.id}: {e}...')
+        logger.error(f'{e.__class__.__name__} occurred for snippet {prompt.id}: {e}...')
         break
     logger.warning(f'Failed to translate snippet {prompt.id} after {retry} attempts.')
     return ''

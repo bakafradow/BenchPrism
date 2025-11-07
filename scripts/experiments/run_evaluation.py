@@ -81,8 +81,8 @@ def parse_args() -> Namespace:
                       help='If set, enables verbose level logging.')
   parser.add_argument('--debug', action='store_true', default=False,
                       help='If set, enables debugging level logging.')
-  parser.add_argument('--no-perform', action='store_true', default=False,
-                      help='If set, skip performing tasks and only transform and save variants.')
+  parser.add_argument('--transform-only', action='store_true', default=False,
+                      help='If set, terminates after code transformation without performing tasks.')
   args = parser.parse_args()
   return args
 
@@ -200,15 +200,15 @@ def _transform_with(
     args: Namespace,
     *,
     ensure_correct: bool = True,
-) -> MSeq[MSeq[Snippet | None]]:
+) -> list[list[Snippet | None]]:
   # skip transformed snippets that already exist in the result file
   for snippet in snippets:
     if snippet.id in data:
       snippet.args['transformed_seqs'] = {i for i, code in enumerate(data[snippet.id]['variants']) if code}
 
   corpus = transformer.transform(
-      lang=args.src_lang,
       snippets=snippets,
+      lang=args.src_lang,
       seed=args.seed,
       ensure_correct=ensure_correct,
   )
@@ -287,8 +287,8 @@ def _evaluate_task_template(
   # TODO 0: debug StyleX...
   # TODO 1: record time consumption for transformation
   _save_variants(args.variants_path, variants_data, snippets, corpus)
-  if args.no_perform:
-    logger.info('--no-perform is set, skipping performing tasks.')
+  if args.transform_only:
+    logger.info('--transform-only is set, skipping performing tasks.')
     return
 
   def worker() -> tuple[MSeq[Any], MSeq[MSeq[Any]]]:
