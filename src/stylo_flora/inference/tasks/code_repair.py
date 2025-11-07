@@ -33,8 +33,8 @@ USER_PROMPT = """
 """
 
 
-def repair(agent: BaseAgent, snippets: Seq[Snippet | None], lang: str) -> MSeq[Snippet | None]:
-  def worker(i: int, snippet: Snippet) -> Snippet | None:
+def repair(agent: BaseAgent, snippets: Seq[Snippet | None], lang: str) -> MSeq[str | None]:
+  def worker(i: int, snippet: Snippet) -> str | None:
     prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
                     user=USER_PROMPT.format(
                       lang=lang,
@@ -53,7 +53,7 @@ def repair(agent: BaseAgent, snippets: Seq[Snippet | None], lang: str) -> MSeq[S
       logger.debug(response)
       return None
     logger.debug(f'Snippet {i}:\n{matched.group(1)}')
-    return snippet.replace(code=matched.group(1))
+    return matched.group(1)
 
   return work(worker=worker, snippets=snippets)
 

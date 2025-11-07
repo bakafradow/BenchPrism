@@ -26,7 +26,7 @@ USER_PROMPT = """
 """
 
 
-def translate(agent: BaseAgent, snippets: Seq[Snippet | None], src_lang: str, dst_lang: str) -> MSeq[Snippet | None]:
+def translate(agent: BaseAgent, snippets: Seq[Snippet | None], src_lang: str, dst_lang: str) -> MSeq[str | None]:
   """
   Translates snippets in code set with code translation model.
   :param translator: the translation model
@@ -36,7 +36,7 @@ def translate(agent: BaseAgent, snippets: Seq[Snippet | None], src_lang: str, ds
   :param dst_lang: destination language
   :return: a sequence of translated code
   """
-  def worker(i: int, snippet: Snippet) -> Snippet | None:
+  def worker(i: int, snippet: Snippet) -> str | None:
     prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
                     user=USER_PROMPT.format(src_lang=src_lang, dst_lang=dst_lang, code=snippet.code))
     response = agent.generate(prompt)
@@ -46,6 +46,6 @@ def translate(agent: BaseAgent, snippets: Seq[Snippet | None], src_lang: str, ds
       logger.debug(response)
       return None
     logger.debug(f'Snippet {i}:\n{matched.group(1)}')
-    return snippet.replace(code=matched.group(1))
+    return matched.group(1)
 
   return work(worker=worker, snippets=snippets)

@@ -33,8 +33,8 @@ USER_PROMPT = """
 """
 
 
-def _reason(agent: BaseAgent, snippets: Seq[Snippet | None], lang: str) -> MSeq[Snippet | None]:
-  def worker(i: int, snippet: Snippet) -> Snippet | None:
+def _reason(agent: BaseAgent, snippets: Seq[Snippet | None], lang: str) -> MSeq[str | None]:
+  def worker(i: int, snippet: Snippet) -> str | None:
     prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
                     user=USER_PROMPT.format(lang=lang, code=snippet.code))
     response = agent.generate(prompt)
@@ -44,7 +44,7 @@ def _reason(agent: BaseAgent, snippets: Seq[Snippet | None], lang: str) -> MSeq[
       logger.debug(response)
       return None
     logger.debug(f'Content for snippet {i}: {response}')
-    return snippet.replace(code=snippet.code.replace('????', matched.group(1)))
+    return snippet.code.replace('????', matched.group(1))
 
   return work(worker=worker, snippets=snippets)
 
@@ -77,7 +77,7 @@ def _mask_java(code: str, type: str) -> str:
         result_bytes = code_bytes[:binary_exp_node.child(2).start_byte] + mask + \
             code_bytes[binary_exp_node.child(binary_exp_node.child_count - 1).end_byte:]
       else:
-        raise ValueError(f'Unexpected pattern in assertion statement: f{assert_node.text}')
+        raise ValueError(f'Unexpected pattern in assertion statement: f{assert_node.text.decode()}')
     case _:
       raise TypeError(f'Unsupported type: {type}')
   return result_bytes.decode(encoding='utf8')
@@ -97,13 +97,13 @@ def _mask(lang: str, code: str, type: str) -> str:
   return mask_func(code, type)
 
 
-def reason_input(agent: BaseAgent, snippets: Seq[Snippet | None], lang: str) -> MSeq[Snippet | None]:
+def reason_input(agent: BaseAgent, snippets: Seq[Snippet | None], lang: str) -> MSeq[str | None]:
   snippets_without_input = [snippet.replace(code=_mask(lang, snippet.code, type='input'))
                             if snippet else None for snippet in snippets]
   return _reason(agent, snippets_without_input, lang)
 
 
-def reason_output(agent: BaseAgent, snippets: Seq[Snippet | None], lang: str) -> MSeq[Snippet | None]:
+def reason_output(agent: BaseAgent, snippets: Seq[Snippet | None], lang: str) -> MSeq[str | None]:
   snippets_without_output = [snippet.replace(code=_mask(lang, snippet.code, type='output'))
                              if snippet else None for snippet in snippets]
   return _reason(agent, snippets_without_output, lang)

@@ -21,6 +21,9 @@ class Snippet:
   code: str
   args: dict = field(default_factory=dict)
 
+  def __str__(self):
+    return self.code
+
   def __deepcopy__(self, memo: dict) -> 'Snippet':
     new_args = self.args.copy()
     snippet = Snippet(id=self.id, code=self.code, args=new_args)

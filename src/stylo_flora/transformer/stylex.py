@@ -101,7 +101,7 @@ class StyleX(BaseTransformer):
         choice_dict = self._create_choice_dict(seq)
         variant_code = self._apply_styles_by_choices(lang, snippet.code, choice_dict)
         if variant_code and ensure_correct:
-          correctness = calc_correctness([snippet.replace(code=variant_code)], lang)
+          correctness = calc_correctness([variant_code], [snippet.args], lang)
           if not math.isclose(correctness, 1.0):
             logger.warning(f'Correctness check failed: {correctness}')
             variant_code = None

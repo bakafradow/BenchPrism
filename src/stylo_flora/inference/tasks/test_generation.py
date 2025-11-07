@@ -38,8 +38,8 @@ USER_PROMPT = """
 """
 
 
-def generate_tests(agent: BaseAgent, snippets: Seq[Snippet | None], lang: str) -> MSeq[MSeq[IOTestCase] | None]:
-  def worker(i: int, snippet: Snippet) -> MSeq[IOTestCase] | None:
+def generate_tests(agent: BaseAgent, snippets: Seq[Snippet | None], lang: str) -> MSeq[Seq[IOTestCase] | None]:
+  def worker(i: int, snippet: Snippet) -> Seq[IOTestCase] | None:
     prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
                     user=USER_PROMPT.format(
                         lang=lang,
@@ -61,9 +61,9 @@ def generate_tests(agent: BaseAgent, snippets: Seq[Snippet | None], lang: str) -
     try:
       testcases = json.loads(json_str, strict=False)
       logger.debug(f'Snippet {i}:\n{json_str}')
-      return [IOTestCase(input=testcase['input'][0] if isinstance(testcase['input'], list)
+      return [IOTestCase(input=testcase['input'][0] if isinstance(testcase['input'], list) \
                          else testcase['input'],
-                         outputs=testcase['output'] if isinstance(testcase['output'], list)
+                         outputs=testcase['output'] if isinstance(testcase['output'], list) \
                          else [testcase['output']])
               for testcase in testcases]
     except Exception as e:
