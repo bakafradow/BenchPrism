@@ -11,6 +11,7 @@ from collections.abc import Sequence as Seq
 from concurrent.futures import ThreadPoolExecutor
 from itertools import chain
 from tempfile import NamedTemporaryFile
+from threading import Lock
 from typing import Any, ParamSpec, TypeVar
 
 import jpype as jp
@@ -47,6 +48,8 @@ from .stylex_builders import build_styler
 
 with open('configs/settings.yaml', 'r') as f:
   config = yaml.safe_load(f)['transformer']
+with open('configs/stylex_options.yaml', 'r') as f:
+  option_config = yaml.safe_load(f)
 
 if not shutil.which('pict'):
   raise ValueError('PICT executable not found.')
@@ -76,6 +79,8 @@ def set_global_info(func: Callable[P, T]) -> Callable[P, T]:
 
 
 class StyleX(BaseTransformer):
+  lock = Lock()
+
   @set_global_info
   def transform(
       self,
@@ -94,12 +99,17 @@ class StyleX(BaseTransformer):
     seed = kwargs.get('seed', 42)
     ensure_correct = kwargs.get('ensure_correct', True)
 
-    def worker(snippet_idx: int, seq_idx: int, snippet: Snippet, seq: Seq[int]) -> Snippet | None:
+    def worker(
+        snippet_idx: int,
+        snippet: Snippet,
+        seq_idx: int,
+        styler_container: jp.JObject,
+    ) -> Snippet | None:
       if seq_idx in snippet.args.get('transformed_seqs', set()):
         return None
       try:
-        choice_dict = self._create_choice_dict(seq)
-        variant_code = self._apply_styles_by_choices(lang, snippet.code, choice_dict)
+        with self.lock:
+          variant_code = self._apply_styles(lang, snippet.code, styler_container)
         if variant_code and ensure_correct:
           correctness = calc_correctness([variant_code], [snippet.args], lang)
           if not math.isclose(correctness, 1.0):
@@ -111,7 +121,7 @@ class StyleX(BaseTransformer):
         logger.error(f'{e.__class__.__name__} occurred while spanning:\n{e}')
         variant_code = None
       if not variant_code:
-        logger.warning(f'Failed to transform snippet {snippet_idx} ({snippet.id}) with sequence {seq_idx} ({seq}).')
+        logger.warning(f'Failed to transform snippet {snippet_idx} ({snippet.id}) with sequence {seq_idx} ({seqs[seq_idx]}).')
         return None
       logger.debug(f'Successfully transformed snippet {snippet_idx} ({snippet.id}).')
       return snippet.replace(code=str(variant_code))
@@ -119,11 +129,18 @@ class StyleX(BaseTransformer):
     option_counts = self._count_options()
     seqs = self._generate_seqs(seed, option_counts)
     num_seq = len(seqs)
+
+    styler_containers = []
+    for seq in seqs:
+      choice_dict = self._create_choice_dict(seq)
+      styler_container = self._build_styler_container(lang, choice_dict)
+      styler_containers.append(styler_container)
+
     corpus = []
     for i, snippet in tqdm(enumerate(snippets), desc='Spanning', total=len(snippets), leave=False):
       with ThreadPoolExecutor(max_workers=config['max_workers']) as executor:
-        results = list(tqdm(executor.map(worker, [i] * num_seq, range(num_seq),
-                                         [snippet] * num_seq, seqs),
+        results = list(tqdm(executor.map(track_time(worker), [i] * num_seq, [snippet] * num_seq,
+                                         range(num_seq), styler_containers),
                             desc=f'Spanning snippet {i}', total=num_seq, leave=False))
       corpus.append(results)
     logger.info(f'Spanned {len(corpus)} variant benchmarks.')
@@ -204,27 +221,9 @@ class StyleX(BaseTransformer):
       logger.warning(f'Failed to apply rules.\n{e}')
       return None
 
-  def _apply_styles_by_choices(
-      self,
-      lang: str,
-      code: str,
-      choice_dict: Mapping[str, Mapping[str, Any]],
-  ) -> str | None:
-    self_style = self._extract_from_code(lang, code)
-    styler_container = StylerContainer()
-    for styler in styler_container.getStylers():
-      if styler.isEnable(Stage.APPLY):
-        style_name = styler.getStyle().getStyleName()
-        style = self_style.getStyle(style_name)
-        styler.setStyle(style)
-    self._build_styler_container(lang, styler_container, choice_dict)
-    return self._apply_styles(lang, code, styler_container)
-
   def _count_options(
       self,
   ) -> list[int]:
-    with open('configs/stylex_options.yaml', 'r') as f:
-      option_config = yaml.safe_load(f)
     option_counts = []
     for style in chain(*[list(item.values())[0] for item in option_config]):
       option = list(style.values())[0]
@@ -262,8 +261,6 @@ class StyleX(BaseTransformer):
       self,
       seq: Seq[int],
   ) -> Mapping[str, Mapping[str, Any]]:
-    with open('configs/stylex_options.yaml', 'r') as f:
-      option_config = yaml.safe_load(f)
     choice_dict: dict[str, dict[str, Any]] = defaultdict(dict)
     idx = 0
     for item in option_config:
@@ -288,9 +285,9 @@ class StyleX(BaseTransformer):
   def _build_styler_container(
       self,
       lang: str,
-      styler_container: jp.JObject,
       choice_dict: Mapping[str, Mapping[str, Any]],
-  ) -> None:
+  ) -> jp.JObject:
+    styler_container = StylerContainer()
     for styler in styler_container.getStylers():
       if not styler.isEnable(Stage.APPLY):
         continue
@@ -303,3 +300,4 @@ class StyleX(BaseTransformer):
         logger.warning(f'No choices found for styler {styler_name}. Skipping.')
       except Exception as e:
         logger.warning(f'{e.__class__.__name__} occurred while building styler {styler_name}:\n{e}')
+    return styler_container

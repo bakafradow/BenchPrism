@@ -5,7 +5,6 @@ Usage:
   ipython -i <path_to_this_file> -- -d <dataset> -t <task> --src-lang <src-lang>
 """
 
-
 import ast
 import json
 from argparse import ArgumentParser
@@ -14,8 +13,8 @@ from pathlib import Path
 from stylo_flora.benchmarks import benchmark_factory
 from stylo_flora.transformer.stylex import StyleX
 
-SRC_PATH = Path('~/playground/research/samples/src.java')
-CHOICE_DICT_PATH = Path('~/playground/research/samples/choices.json')
+SRC_PATH = Path('~/playground/research/samples/src.java').expanduser()
+CHOICE_DICT_PATH = Path('~/playground/research/samples/choices.json').expanduser()
 
 
 def dump_code(idx: int) -> None:

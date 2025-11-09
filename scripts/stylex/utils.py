@@ -18,7 +18,8 @@ Configuration = jp.JClass('org.example.Configuration')
 def span_single(lang: str, code: str, choice_dict: Mapping) -> str | None:
   GlobalInfo.setConf(Configuration())
   GlobalInfo.setLanguage(lang)
-  return stylex._apply_styles_by_choices(lang, code, choice_dict)
+  styler_container = stylex._build_styler_container(lang, choice_dict)
+  return stylex._apply_styles(lang, code, styler_container)
 
 
 def find_seq(lang: str, code: str) -> list[int] | None:

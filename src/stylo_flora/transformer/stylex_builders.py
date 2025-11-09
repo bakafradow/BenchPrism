@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 from functools import lru_cache, singledispatch
-from itertools import product, tee
+from itertools import chain, product, tee
 from typing import Any
 
 import jpype as jp
@@ -100,68 +100,36 @@ def _(styler: SpaceStyler, lang: str, choices: Mapping[str, Any]) -> None:
     else:
       style.addRule(context, prop_none)
 
-  set_spacing(choices['operator_spacing'], 'BIN_OP')
-  set_spacing(choices['operator_spacing'], 'QUESTION')
-  set_spacing(choices['operator_spacing'], 'COLON')
-  set_spacing(choices['operator_spacing'], 'COLON_COLON')
+  for token in ['BIN_OP', 'QUESTION', 'COLON', 'COLON_COLON']:
+    set_spacing(choices['operator_spacing'], token)
   set_spacing(choices['call_spacing'], 'IDENTIFIER', '(')
   set_spacing(choices['call_spacing'], 'DOT')
-  set_spacing(choices['comma_spacing'], ',', 'LITERAL')
-  set_spacing(choices['comma_spacing'], ',', 'IDENTIFIER')
-  set_spacing(choices['comma_spacing'], ',', 'UNARY_OP')
-  set_spacing(choices['comma_spacing'], ',', 'KEYWORD')
-  set_spacing(choices['comma_spacing'], ',', '(')
-  set_spacing(choices['comma_spacing'], ',', ')')
-  set_spacing(choices['comma_spacing'], ',', '[')
-  set_spacing(choices['comma_spacing'], ',', ']')
-  set_spacing(choices['comma_spacing'], ',', '{')
-  set_spacing(choices['comma_spacing'], ',', '}')
-  set_spacing(choices['semicolon_spacing'], 'LITERAL', ';')
-  set_spacing(choices['semicolon_spacing'], 'IDENTIFIER', ';')
-  set_spacing(choices['semicolon_spacing'], 'UNARY_OP', ';')
-  set_spacing(choices['semicolon_spacing'], 'KEYWORD', ';')
-  set_spacing(choices['semicolon_spacing'], ')', ';')
-  set_spacing(choices['semicolon_spacing'], ']', ';')
-  set_spacing(choices['semicolon_spacing'], '{', ';')
-  set_spacing(choices['semicolon_spacing'], '}', ';')
+  for rtoken in ['LITERAL', 'IDENTIFIER', 'UNARY_OP', 'KEYWORD',
+                 '(', ')', '[', ']', '{', '}']:
+    set_spacing(choices['comma_spacing'], ',', rtoken)
+  for ltoken in ['LITERAL', 'IDENTIFIER', 'UNARY_OP', 'KEYWORD',
+                 ')', ']', '{', '}']:
+    set_spacing(choices['comma_spacing'], ltoken, ';')
 
-  # uniformly formatting some spaces
-  set_spacing(False, '(', 'LITERAL')
-  set_spacing(False, '(', 'IDENTIFIER')
-  set_spacing(False, '(', 'UNARY_OP')
-  set_spacing(False, 'LITERAL', ')')
-  set_spacing(False, 'IDENTIFIER', ')')
-  set_spacing(False, 'UNARY_OP', ')')
-  set_spacing(False, '[', 'LITERAL')
-  set_spacing(False, '[', 'IDENTIFIER')
-  set_spacing(False, '[', 'UNARY_OP')
-  set_spacing(False, 'LITERAL', ']')
-  set_spacing(False, 'IDENTIFIER', ']')
-  set_spacing(False, 'UNARY_OP', ']')
-  set_spacing(False, '{', 'LITERAL')
-  set_spacing(False, '{', 'IDENTIFIER')
-  set_spacing(False, '{', 'UNARY_OP')
-  set_spacing(False, 'LITERAL', '}')
-  set_spacing(False, 'IDENTIFIER', '}')
-  set_spacing(False, 'UNARY_OP', '}')
-  set_spacing(True, 'IDENTIFIER', 'COMMENT')
-  set_spacing(True, 'KEYWORD', 'COMMENT')
-  set_spacing(True, 'COMMENT', 'COMMENT')
-  set_spacing(True, 'LITERAL', 'COMMENT')
-  set_spacing(True, 'UNARY_OP', 'COMMENT')
-  set_spacing(True, 'BIN_OP', 'COMMENT')
-  set_spacing(True, 'QUESTION', 'COMMENT')
-  set_spacing(True, 'COLON', 'COMMENT')
-  set_spacing(True, 'DOT', 'COMMENT')
-  set_spacing(True, 'COLON_COLON', 'COMMENT')
-  set_spacing(True, ',', 'COMMENT')
-  set_spacing(True, ';', 'COMMENT')
-  set_spacing(True, '(', 'COMMENT')
-  set_spacing(True, ')', 'COMMENT')
-  set_spacing(True, '[', 'COMMENT')
-  set_spacing(True, ']', 'COMMENT')
-  set_spacing(True, '{', 'COMMENT')
-  set_spacing(True, '}', 'COMMENT')
+  # enable necessary spacing
+  for ltoken, rtoken in product(*tee(
+    ['IDENTIFIER', 'KEYWORD', 'LITERAL'],
+  )):
+    set_spacing(True, ltoken, rtoken)
+  # enable standard spacing before comments
+  for ltoken in ['IDENTIFIER', 'KEYWORD', 'COMMENT', 'LITERAL', 'UNARY_OP',
+                 'BIN_OP', 'QUESTION', 'COLON', 'DOT', 'COLON_COLON'
+                 ',', ';', '(', ')', '[', ']', '{', '}']:
+    set_spacing(True, ltoken, 'COMMENT')
+  # disable spacing next to parentheses
+  for ltoken, rtoken in chain(product(
+    ['(', '[', '{'],
+    ['LITERAL', 'IDENTIFIER', 'UNARY_OP'],
+  ), product(
+    ['LITERAL', 'IDENTIFIER', 'UNARY_OP'],
+    [')', ']', '}'],
+  )):
+    set_spacing(False, ltoken, rtoken)
   styler.setStyle(style)
 
 
@@ -193,7 +161,7 @@ def _(styler: NewlineStyler, lang: str, choices: Mapping[str, Any]) -> None:
   )):
     set_newline(choices['block_padding'], lnode, l_ast, rnode, r_ast, 1)
   for (lnode, l_ast), (rnode, r_ast) in product(*tee(
-    [('localVariableDeclarationStmt', True)]
+    [('localVariableDeclarationStmt', True)],
   )):
     set_newline(choices['declaration_padding'], lnode, l_ast, rnode, r_ast)
   styler.setStyle(style)
@@ -234,6 +202,8 @@ def _(styler: BodyLayoutStyler, lang: str, choices: Mapping[str, Any]) -> None:
                           has_right_neighbor,
                           has_brace)
     style.addRule(context, prop)
+
+  # enable newline before all bodies without braces
   prop_no_brace = BodyLayoutProperty(True)
   for body_type, body_size, has_left_neighbor, has_right_neighbor, has_brace in product(
     ['STMT_BODY'],
@@ -241,7 +211,7 @@ def _(styler: BodyLayoutStyler, lang: str, choices: Mapping[str, Any]) -> None:
     [True],
     [False, True],
     [False],
-  ):  # uniformly formatting bodies without braces
+  ):
     context = BodyContext(BodyTypeEnum.valueOf(body_type),
                           BodySizeType.valueOf(body_size),
                           has_left_neighbor,
