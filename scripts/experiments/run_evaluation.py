@@ -7,6 +7,7 @@ Assesses the robustness of code task models by the following steps:
 4. Evaluates the space span by the translated code relative to the original source code.
 """
 
+import time
 import json
 import math
 import os
@@ -149,6 +150,7 @@ def _save_variants(
     data[snippet.id].update({
         'id': snippet.id,
         'variants': [variant.code if variant else None for variant in corpus[i]],
+        'time_taken': [variant.args.get('time_taken', None) if variant else None for variant in corpus[i]],
     })
   with jsonlines.open(path, mode='w') as writer:
     for row in sorted(data.values(), key=itemgetter('id')):
@@ -273,8 +275,6 @@ def _evaluate_task_template(
   logger.info('Transforming styles of the code snippets...')
   corpus = _transform_with(transformer, snippets, variants_data, args, ensure_correct=ensure_correct)
   num_styles = len(corpus[0]) if corpus else 0
-  # TODO 0: debug StyleX...
-  # TODO 1: record time consumption for transformation
   _save_variants(args.variants_path, variants_data, snippets, corpus)
   if args.transform_only:
     logger.info('--transform-only is set, skipping performing tasks.')
@@ -288,7 +288,9 @@ def _evaluate_task_template(
     return res_orig, res_span
   outputs_data = _load_data(args.outputs_path)
   logger.info(f'Performing {args.task} with {args.model}...')
+  start_time = time.perf_counter()
   res_orig, res_span = _perform_with(worker, snippets, corpus, outputs_data)
+  perform_time = time.perf_counter() - start_time
   # TODO 2: record token and time consumption for performing tasks
   _save_outputs(args.outputs_path, outputs_data, snippets, res_orig, res_span)
 
@@ -324,6 +326,8 @@ def _evaluate_task_template(
       'fallback_rate': np.mean(fallbacks) / len(indices_filtered),
       'codebleu': codebleu,
       'codebleu_avg': np.mean(codebleu),
+      'token_count': agent.token_count,
+      'time_taken': perform_time,
   })
   _save_result(args.result_path, result)
 
@@ -613,7 +617,7 @@ def main():
   logger.info('Initializing transformer...')
   transformer = transformer_factory()
   logger.info(f'Initializing model {args.model}...')
-  agent = agent_factory(args.model)
+  agent = agent_factory(args.model, args.model_dir)
 
   os.makedirs(args.result_dir, exist_ok=True)
   args.variants_path = args.result_dir /\

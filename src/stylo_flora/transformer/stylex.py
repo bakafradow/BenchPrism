@@ -4,6 +4,7 @@ import math
 import os
 import shutil
 import subprocess
+import time
 from collections import defaultdict
 from collections.abc import Callable, Mapping
 from collections.abc import MutableSequence as MSeq
@@ -107,6 +108,7 @@ class StyleX(BaseTransformer):
     ) -> Snippet | None:
       if seq_idx in snippet.args.get('transformed_seqs', set()):
         return None
+      start_time = time.perf_counter()
       try:
         with self.lock:
           variant_code = self._apply_styles(lang, snippet.code, styler_container)
@@ -124,22 +126,19 @@ class StyleX(BaseTransformer):
         logger.warning(f'Failed to transform snippet {snippet_idx} ({snippet.id}) with sequence {seq_idx} ({seqs[seq_idx]}).')
         return None
       logger.debug(f'Successfully transformed snippet {snippet_idx} ({snippet.id}).')
-      return snippet.replace(code=str(variant_code))
+      variant = snippet.replace(code=str(variant_code))
+      variant.args['time_taken'] = time.perf_counter() - start_time
+      return variant
 
     option_counts = self._count_options()
     seqs = self._generate_seqs(seed, option_counts)
     num_seq = len(seqs)
-
-    styler_containers = []
-    for seq in seqs:
-      choice_dict = self._create_choice_dict(seq)
-      styler_container = self._build_styler_container(lang, choice_dict)
-      styler_containers.append(styler_container)
+    styler_containers = self._seq_to_styler_containers(lang, seqs)
 
     corpus = []
     for i, snippet in tqdm(enumerate(snippets), desc='Spanning', total=len(snippets), leave=False):
       with ThreadPoolExecutor(max_workers=config['max_workers']) as executor:
-        results = list(tqdm(executor.map(track_time(worker), [i] * num_seq, [snippet] * num_seq,
+        results = list(tqdm(executor.map(worker, [i] * num_seq, [snippet] * num_seq,
                                          range(num_seq), styler_containers),
                             desc=f'Spanning snippet {i}', total=num_seq, leave=False))
       corpus.append(results)
@@ -256,6 +255,18 @@ class StyleX(BaseTransformer):
     os.remove(f.name)
     seqs = [[int(num) for num in line.split()] for line in completed.stdout.splitlines()[1:]]
     return seqs
+
+  def _seq_to_styler_containers(
+      self,
+      lang: str,
+      seqs: Seq[Seq[int]],
+  ) -> list[jp.JObject]:
+    styler_containers = []
+    for seq in seqs:
+      choice_dict = self._create_choice_dict(seq)
+      styler_container = self._build_styler_container(lang, choice_dict)
+      styler_containers.append(styler_container)
+    return styler_containers
 
   def _create_choice_dict(
       self,

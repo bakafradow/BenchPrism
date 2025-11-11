@@ -5,7 +5,7 @@ agent:
   ######### settings for remote API #########
   timeout: 120
   sleep: 1
-  retry: 3
+  retries: 3
   retry_interval: 30
   max_workers: 3
 
