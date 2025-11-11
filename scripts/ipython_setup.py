@@ -10,6 +10,7 @@ import json
 from argparse import ArgumentParser
 from pathlib import Path
 
+from stylo_flora import Snippet
 from stylo_flora.benchmarks import benchmark_factory
 from stylo_flora.transformer.stylex import StyleX
 
@@ -31,6 +32,25 @@ def dump_seq_as_dict() -> None:
   print('Dumped choice dict to', CHOICE_DICT_PATH)
 
 
+def _load_benchmark(dataset: str, task: str, src_lang: str, dst_lang: str = '') -> list[Snippet]:
+  benchmark = benchmark_factory(dataset)
+  task_to_dataset = {
+      'code_translation': 'translation',
+      'code_repair': 'repair',
+      'code2tag': 'tagging',
+      'descode2tag': 'tagging',
+      'code_summarization': 'summarization',
+      'input_reasoning': 'io_reasoning',
+      'output_reasoning': 'io_reasoning',
+      'mcq_answering': 'mcq_answering',
+      'test_generation': 'test_generation',
+  }
+  func_name = f'load_for_{task_to_dataset[task]}'
+  if task == 'code_translation':
+    return getattr(benchmark, func_name)(src_lang, dst_lang)
+  return getattr(benchmark, func_name)(src_lang)
+
+
 if __name__ == '__main__':
   parser = ArgumentParser()
   parser.add_argument('-d', '--dataset', type=str, required=True,
@@ -40,6 +60,7 @@ if __name__ == '__main__':
                           'code_translation',
                           'code_repair',
                           'code2tag',
+                          'descode2tag',
                           'code_summarization',
                           'input_reasoning',
                           'output_reasoning',
@@ -49,8 +70,12 @@ if __name__ == '__main__':
                       help='Specify the code task to evaluate on.')
   parser.add_argument('--src-lang', type=str, required=True,
                       help='Specify the source language.')
+  parser.add_argument('--dst-lang', type=str, required=False,
+                      help='Specify the destination language. Only used for code translation task.')
   args = parser.parse_args()
 
   stylex = StyleX()
-  benchmark = benchmark_factory(args.dataset)
-  snippets = getattr(benchmark, f'load_for_{args.task}')(args.src_lang)
+  params = [args.dataset, args.task, args.src_lang]
+  if args.dst_lang:
+    params.append(args.dst_lang)
+  snippets = _load_benchmark(*params)

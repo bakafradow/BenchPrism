@@ -52,6 +52,7 @@ def parse_args() -> Namespace:
                           'code_translation',
                           'code_repair',
                           'code2tag',
+                          'descode2tag',
                           'code_summarization',
                           'input_reasoning',
                           'output_reasoning',
@@ -63,8 +64,6 @@ def parse_args() -> Namespace:
                       help='Specify the source language.')
   parser.add_argument('--dst-lang', type=str, required=False,
                       help='Specify the destination language. Only used for code translation task.')
-  parser.add_argument('--with-desc', action='store_true', default=False,
-                      help='If set, append problem description in prompts. Only used for code2tag task.')
   parser.add_argument('--result-dir', type=Path, required=True,
                       help='Directory to save the results.')
   parser.add_argument('--log-path', type=Path, required=False,
@@ -390,11 +389,12 @@ def evaluate_code_repair(
   )
 
 
-def evaluate_code2tag(
+def _evaluate_tag_classification(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
     args: Namespace,
+    with_desc: bool,
 ) -> None:
   def evaluate_metrics(
           snippets: Seq[Snippet], corpus: Seq[Seq[Snippet]],
@@ -413,10 +413,28 @@ def evaluate_code2tag(
   _evaluate_task_template(
       benchmark, transformer, agent, args,
       load_snippets_func=lambda b, a: b.load_for_tagging(a.src_lang),
-      perform_task_func=lambda ag, sn, a: tag(ag, sn, a.src_lang, args.with_desc),
+      perform_task_func=lambda ag, sn, a: tag(ag, sn, a.src_lang, with_desc),
       evaluate_metrics_func=evaluate_metrics,
       ensure_correct=False,
   )
+
+
+def evaluate_code2tag(
+    benchmark: BaseBenchmark,
+    transformer: BaseTransformer,
+    agent: BaseAgent,
+    args: Namespace,
+) -> None:
+  _evaluate_tag_classification(benchmark, transformer, agent, args, True)
+
+
+def evaluate_descode2tag(
+    benchmark: BaseBenchmark,
+    transformer: BaseTransformer,
+    agent: BaseAgent,
+    args: Namespace,
+) -> None:
+  _evaluate_tag_classification(benchmark, transformer, agent, args, False)
 
 
 def evaluate_code_summarization(
@@ -603,8 +621,6 @@ def main():
   identifier = f'{args.dataset.lower()}_{args.task}_{args.src_lang}'
   if args.task == 'code_translation':
     identifier += f'{"_to_" + args.dst_lang}'
-  elif args.task == 'code2tag' and args.with_desc:
-    identifier += '_with_desc'
   identifier += f'_with_{args.model.replace("/", "-")}_seed{args.seed}'
   args.outputs_path = args.result_dir /\
       f'outputs_{identifier}.jsonl'
