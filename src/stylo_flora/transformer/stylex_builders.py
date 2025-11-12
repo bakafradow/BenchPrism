@@ -107,9 +107,10 @@ def _(styler: SpaceStyler, lang: str, choices: Mapping[str, Any]) -> None:
   for rtoken in ['LITERAL', 'IDENTIFIER', 'UNARY_OP', 'KEYWORD',
                  '(', ')', '[', ']', '{', '}']:
     set_spacing(choices['comma_spacing'], ',', rtoken)
-  for ltoken in ['LITERAL', 'IDENTIFIER', 'UNARY_OP', 'KEYWORD',
+  for token in ['LITERAL', 'IDENTIFIER', 'UNARY_OP', 'KEYWORD',
                  ')', ']', '{', '}']:
-    set_spacing(choices['comma_spacing'], ltoken, ';')
+    set_spacing(choices['comma_spacing'], token, ';')
+    set_spacing(True, ';', token)  # always space after semicolon
 
   # enable necessary spacing
   for ltoken, rtoken in product(*tee(
@@ -121,15 +122,24 @@ def _(styler: SpaceStyler, lang: str, choices: Mapping[str, Any]) -> None:
                  'BIN_OP', 'QUESTION', 'COLON', 'DOT', 'COLON_COLON'
                  ',', ';', '(', ')', '[', ']', '{', '}']:
     set_spacing(True, ltoken, 'COMMENT')
-  # disable spacing next to parentheses
-  for ltoken, rtoken in chain(product(
+  # specify spacing next to parentheses
+  for token1, token2 in chain(product(
     ['(', '[', '{'],
     ['LITERAL', 'IDENTIFIER', 'UNARY_OP'],
   ), product(
     ['LITERAL', 'IDENTIFIER', 'UNARY_OP'],
     [')', ']', '}'],
   )):
-    set_spacing(False, ltoken, rtoken)
+    set_spacing(False, token1, token2)
+    set_spacing(True, token2, token1)
+  for ltoken, rtoken in chain(product(
+    [')'],
+    ['{', 'KEYWORD'],
+  ), product(
+    ['}', 'KEYWORD'],
+    ['('],
+  )):
+    set_spacing(True, ltoken, rtoken)
   styler.setStyle(style)
 
 
@@ -160,10 +170,39 @@ def _(styler: NewlineStyler, lang: str, choices: Mapping[str, Any]) -> None:
     [('BRANCH_STMT', True), ('LOOP_STMT', True), ('block', True)],
   )):
     set_newline(choices['block_padding'], lnode, l_ast, rnode, r_ast, 1)
+  for (node1, ast1), (node2, ast2) in product(
+    [('SINGLE_STMT', True)],
+    [('BRANCH_STMT', True), ('LOOP_STMT', True), ('block', True)],
+  ):
+    set_newline(choices['block_padding'], node1, ast1, node2, ast2, 1)
+    set_newline(choices['block_padding'], node2, ast2, node1, ast1, 1)
+  for (node1, ast1), (node2, ast2) in product(
+    [('localVariableDeclarationStmt', True)],
+    [('BRANCH_STMT', True), ('LOOP_STMT', True), ('block', True)],
+  ):
+    set_newline(choices['block_padding'], node1, ast1, node2, ast2, 1)
+    set_newline(choices['block_padding'], node2, ast2, node1, ast1, 1)
   for (lnode, l_ast), (rnode, r_ast) in product(*tee(
     [('localVariableDeclarationStmt', True)],
   )):
     set_newline(choices['declaration_padding'], lnode, l_ast, rnode, r_ast)
+
+  # enable newlines between single statements and braces
+  for (node1, ast1), (node2, ast2) in product(
+    [('SINGLE_STMT', True), ('localVariableDeclarationStmt', True)],
+    [('LBRACE', False), ('RBRACE', False)],
+  ):
+    set_newline(True, node1, ast1, node2, ast2)
+    set_newline(True, node2, ast2, node1, ast1)
+  # disable newlines between blocks and outer braces
+  for (lnode, l_ast), (rnode, r_ast) in chain(product(
+    [('LBRACE', False)],
+    [('BRANCH_STMT', True), ('LOOP_STMT', True), ('block', True)],
+  ), product(
+    [('BRANCH_STMT', True), ('LOOP_STMT', True), ('block', True)],
+    [('RBRACE', False)],
+  )):
+    set_newline(False, lnode, l_ast, rnode, r_ast)
   styler.setStyle(style)
 
 
@@ -234,6 +273,18 @@ def _(styler: OptionalBraceStyler, lang: str, choices: Mapping[str, Any]) -> Non
                                    BodySizeType.valueOf(body_size),
                                    has_right_neighbor)
     style.addRule(context, prop)
+
+  # enable braces for body with a compound statement
+  prop_with_brace = OptionalBraceProperty(True)
+  for body_type, body_size, has_right_neighbor in product(
+    ['STMT_BODY'],
+    ['ONE_COMPOUND_STMT'],
+    [False, True],
+  ):
+    context = OptionalBraceContext(BodyTypeEnum.valueOf(body_type),
+                                   BodySizeType.valueOf(body_size),
+                                   has_right_neighbor)
+    style.addRule(context, prop_with_brace)
   styler.setStyle(style)
 
 
