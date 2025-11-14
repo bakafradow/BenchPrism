@@ -7,7 +7,7 @@ Usage:
 
 import ast
 import json
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 from pathlib import Path
 
 from stylo_flora import Snippet
@@ -20,7 +20,7 @@ CHOICE_DICT_PATH = Path('~/playground/research/samples/choices.json').expanduser
 
 def dump_code(idx: int) -> None:
   with open(SRC_PATH, 'w') as f:
-    f.write(snippets[idx].code)
+    f.write(snippets[idx].data['code'])
   print('Dumped code to', SRC_PATH)
 
 
@@ -32,8 +32,8 @@ def dump_seq_as_dict() -> None:
   print('Dumped choice dict to', CHOICE_DICT_PATH)
 
 
-def _load_benchmark(dataset: str, task: str, src_lang: str, dst_lang: str = '') -> list[Snippet]:
-  benchmark = benchmark_factory(dataset)
+def _load_benchmark(args: Namespace) -> list[Snippet]:
+  benchmark = benchmark_factory(args.dataset)
   task_to_dataset = {
       'code_translation': 'translation',
       'code_repair': 'repair',
@@ -45,10 +45,10 @@ def _load_benchmark(dataset: str, task: str, src_lang: str, dst_lang: str = '') 
       'mcq_answering': 'mcq_answering',
       'test_generation': 'test_generation',
   }
-  func_name = f'load_for_{task_to_dataset[task]}'
-  if task == 'code_translation':
-    return getattr(benchmark, func_name)(src_lang, dst_lang)
-  return getattr(benchmark, func_name)(src_lang)
+  func_name = f'load_for_{task_to_dataset[args.task]}'
+  if args.task == 'code_translation':
+    return getattr(benchmark, func_name)(args.src_lang, args.dst_lang)
+  return getattr(benchmark, func_name)(args.src_lang)
 
 
 if __name__ == '__main__':
@@ -74,8 +74,5 @@ if __name__ == '__main__':
                       help='Specify the destination language. Only used for code translation task.')
   args = parser.parse_args()
 
-  stylex = StyleX()
-  params = [args.dataset, args.task, args.src_lang]
-  if args.dst_lang:
-    params.append(args.dst_lang)
-  snippets = _load_benchmark(*params)
+  stylex = StyleX(lang=args.src_lang)
+  snippets = _load_benchmark(args)

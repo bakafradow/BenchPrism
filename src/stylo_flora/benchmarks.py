@@ -144,7 +144,8 @@ class XCodeEval(BaseBenchmark):
     src_uids = self._load(src_lang, TASK_NAME, 'src_uid')
     sources = self._load(src_lang, TASK_NAME, 'source_code')
     testcases = self._load_tests(src_uids)
-    return [Snippet(id=src_uid, code=source, args={
+    return [Snippet(id=src_uid, data={
+        'code': source,
         'io_testcases': testcases[i],
     }) for i, (src_uid, source) in enumerate(zip(src_uids, sources))]
 
@@ -161,8 +162,11 @@ class XCodeEval(BaseBenchmark):
         'sample_outputs': obj['sample_outputs'],
       } for obj in reader}
     testcases = self._load_tests(src_uids)
-    return [Snippet(id=src_uid, code=source, args={**args_dict[src_uid], 'io_testcases': testcases[i]})
-            for i, (src_uid, source) in enumerate(zip(src_uids, sources))]
+    return [Snippet(id=src_uid, data={
+        **args_dict[src_uid],
+        'code': source,
+        'io_testcases': testcases[i],
+    }) for i, (src_uid, source) in enumerate(zip(src_uids, sources))]
 
   def load_for_tagging(self, lang: str) -> Seq[Snippet]:
     TASK_NAME = 'tag_classification'
@@ -173,8 +177,11 @@ class XCodeEval(BaseBenchmark):
       args_dict = {obj['src_uid']: {
         'desc': obj['description'],
       } for obj in reader}
-    return [Snippet(id=src_uid, code=source, args={'tags': tags, 'desc': args_dict[src_uid]['desc']})
-            for src_uid, source, tags in zip(src_uids, sources, tags_list)]
+    return [Snippet(id=src_uid, data={
+        'code': source,
+        'tags': tags,
+        'desc': args_dict[src_uid]['desc']
+    }) for src_uid, source, tags in zip(src_uids, sources, tags_list)]
 
 
 @dataclass
@@ -211,15 +218,16 @@ class CodeScope(BaseBenchmark):
   def load_for_translation(self, src_lang: str, dst_lang: str) -> Seq[Snippet]:
     ds = load_dataset('json', data_files='data/CodeScope/data/code_translation_data.jsonl')
     ds = ds.filter(lambda row: row['source_lang_cluster'] == self._lang_to_name[src_lang] and row['target_lang_cluster'] == self._lang_to_name[dst_lang])
-    return [Snippet(id=row['src_uid'], code=row['source_code'], args={
-        'io_testcases': self._normalize_test(row['testcases']),
+    return [Snippet(id=row['src_uid'], data={
+        'code': row['source_code'], 'io_testcases': self._normalize_test(row['testcases']),
     }) for row in ds['train']]
 
   @check_lang_support
   def load_for_repair(self, lang: str) -> Seq[Snippet]:
     ds = load_dataset('json', data_files='data/CodeScope/data/code_repair_data.jsonl')
     ds = ds.filter(lambda row: row['lang_cluster'] == self._lang_to_name[lang])
-    return [Snippet(id=row['src_uid'], code=row['source_code'], args={
+    return [Snippet(id=row['src_uid'], data={
+        'code': row['source_code'],
         'desc': row['description'],
         'input_spec': row['input_specification'],
         'output_spec': row['output_specification'],
@@ -232,7 +240,8 @@ class CodeScope(BaseBenchmark):
   def load_for_summarization(self, lang: str) -> Seq[Snippet]:
     ds = load_dataset('json', data_files='data/CodeScope/data/code_summarization_data.jsonl')
     ds = ds.filter(lambda row: row['lang_cluster'] == self._lang_to_name[lang])
-    return [Snippet(id=row['id'], code=row['source_code'], args={
+    return [Snippet(id=row['id'], data={
+        'code': row['source_code'],
         'human_summarization': row['human_summarization'],
     }) for row in ds['train']]
 
@@ -240,7 +249,8 @@ class CodeScope(BaseBenchmark):
   def load_for_test_generation(self, lang: str) -> Seq[Snippet]:
     ds = load_dataset('json', data_files='data/CodeScope/data/automated_testing_data.jsonl')
     ds = ds.filter(lambda row: row['lang_cluster'] == self._lang_to_name[lang])
-    return [Snippet(id=row['id'], code=row['source_code'], args={
+    return [Snippet(id=row['id'], data={
+        'code': row['source_code'],
         'desc': row['description'],
         'input_spec': row['input_specification'],
         'output_spec': row['output_specification'],
@@ -271,7 +281,8 @@ class CodeMMLU(BaseBenchmark):
         ds = ds.filter(lambda row: 'public class' not in row['question'])
       case _:
         raise TypeError(f'Unsupported language: {lang}')
-    return [Snippet(id=row['task_id'], code=row['question'], args={
+    return [Snippet(id=row['task_id'], data={
+        'code': row['question'],
         'choices': row['choices'],
         'answer': row['answer'],
     }) for row in ds['test']]
@@ -289,8 +300,8 @@ class CoderUJB(BaseBenchmark):
   @check_lang_support
   def load_for_repair(self, lang):
     ds = load_dataset('ZHENGRAN/code_ujb_repair', trust_remote_code=True)
-    # TODO: individual implementation to evaluate
-    return [Snippet(id=row['task_id'], code=self._construct_code(row), args={
+    return [Snippet(id=row['task_id'], data={
+        'code': self._construct_code(row),
         f'api_testcases_{lang}': [APITestCase(file=source['file'], code=self._construct_code(source),
                                              method=source['method'])
                                  for source in row['test_sources']],
@@ -312,7 +323,8 @@ class CruxEvalX(BaseBenchmark):
   @check_lang_support
   def load_for_io_reasoning(self, lang: str) -> Seq[Snippet]:
     ds = load_dataset('xhwl/cruxeval-x', trust_remote_code=True)
-    return [Snippet(id=row['id'], code=row['code'], args={
+    return [Snippet(id=row['id'], data={
+        'code': row['code'],
         'input_reasoning': row['input_reasoning'],
         'output_reasoning': row['output_reasoning'],
         'io_testcases': [IOTestCase(input='', outputs=[''])],  # tests by assertion
@@ -361,7 +373,8 @@ class ClassEvalT(BaseBenchmark):
     src_dir = data_dir / self._lang_to_name[src_lang] / 'solution'
     if not src_dir.exists():
       raise FileNotFoundError(f'Directory {src_dir} does not exist.')
-    snippets = [Snippet(id=file.stem, code=file.read_text(), args={
+    snippets = [Snippet(id=file.stem, data={
+        'code': file.read_text(),
         f'api_testcases_{src_lang}': get_testcase(file.stem, src_lang),
         f'api_testcases_{dst_lang}': get_testcase(file.stem, dst_lang),
     }) for file in src_dir.iterdir() if file.is_file() and file.suffix == f'.{self._lang_to_name[src_lang]}']

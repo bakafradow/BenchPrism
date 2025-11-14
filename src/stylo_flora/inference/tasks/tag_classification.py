@@ -1,40 +1,40 @@
-from collections.abc import MutableSequence as MSeq
-from collections.abc import Sequence as Seq
-
 from ... import Snippet
-from ...logger import logger
-from ..agents import BaseAgent, Prompt
-from ..utils import work
-
-SYSTEM_PROMPT = """
-<task>
-Classify code into one or more categories from the following candidates.
-</task>
-<candidates>
-2-sat,binary search,bitmasks,brute force,combinatorics,constructive algorithms,data structures,dfs and similar,divide and conquer,dp,dsu,expression parsing,fft,flows,games,geometry,graph matchings,graphs,greedy,implementation,interactive,math,matrices,meet-in-the-middle,number theory,probabilities,shortest paths,sortings,strings,trees,two pointers
-</candidates>
-<constraint>
-Your output MUST only contain the exact list of categories separated by commas, not enclosed by any quotes or brackets, without any explanation.
-</constraint>
-"""
-USER_PROMPT = """
-<code>```{lang}
-{code}
-```</code>
-"""
+from .base import BaseTask
 
 
-def tag(agent: BaseAgent, snippets: Seq[Snippet | None], lang: str, with_desc: bool) -> MSeq[Seq[str] | None]:
-  def worker(i: int, snippet: Snippet) -> Seq[str] | None:
-    desc = f'\n<problem_description>{snippet.args["desc"]}</problem_description>\n' if with_desc else ''
-    prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
-                    user=USER_PROMPT.format(lang=lang, code=snippet.code) + desc)
-    response = agent.generate(prompt).strip()
-    if not response:
-      logger.warning(f'Empty tags for snippet {i} ({snippet.id}).')
+class TagClassification(BaseTask):
+  SYSTEM_PROMPT = """
+  <task>
+  Classify code into one or more categories from the following candidates.
+  </task>
+  <candidates>
+  2-sat,binary search,bitmasks,brute force,combinatorics,constructive algorithms,data structures,dfs and similar,divide and conquer,dp,dsu,expression parsing,fft,flows,games,geometry,graph matchings,graphs,greedy,implementation,interactive,math,matrices,meet-in-the-middle,number theory,probabilities,shortest paths,sortings,strings,trees,two pointers
+  </candidates>
+  <constraint>
+  Your output MUST only contain the exact list of categories separated by commas, not enclosed by any quotes or brackets, without any explanation.
+  </constraint>
+  """
+
+  USER_PROMPT = """
+  <code>```{lang}
+  {code}
+  ```</code>
+  """
+
+  def __init__(self, lang: str, with_desc: bool):
+    super().__init__()
+    self.lang = lang
+    self.with_desc = with_desc
+
+  def get_prompt(self, snippet: Snippet) -> tuple[str, str]:
+    desc = f'\n<problem_description>{snippet.data["desc"]}</problem_description>\n' if self.with_desc else ''
+    return self.SYSTEM_PROMPT, self.USER_PROMPT.format(
+        lang=self.lang,
+        code=snippet.data['code'],
+    ) + desc
+
+  def resolve_response(self, res: str) -> list[str] | None:
+    if not res:
       return None
-    tags = [tag.strip() for tag in response.split(',')]
-    logger.debug(f'Tags for snippet {i}: {tags}')
+    tags = [tag.strip() for tag in res.split(',')]
     return tags
-
-  return work(worker=worker, snippets=snippets)

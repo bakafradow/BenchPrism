@@ -7,17 +7,18 @@ Assesses the robustness of code task models by the following steps:
 4. Evaluates the space span by the translated code relative to the original source code.
 """
 
-import time
 import json
 import math
 import os
 import random
+import time
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
 from collections.abc import MutableSequence as MSeq
 from collections.abc import Sequence as Seq
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from itertools import islice
+from itertools import islice, repeat
 from operator import itemgetter
 from pathlib import Path
 from typing import Any
@@ -27,16 +28,22 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from stylo_flora import IOTestCase, Snippet
+from stylo_flora import IOTestCase, Snippet, setting_dict
 from stylo_flora.benchmarks import BaseBenchmark, benchmark_factory
-from stylo_flora.inference import (BaseAgent, agent_factory, answer_to_mcq,
-                                   generate_tests, reason_input, reason_output,
-                                   repair, summarize, tag, translate)
+from stylo_flora.inference import (BaseAgent, BaseTask, CodeRepair,
+                                   CodeSummarization, CodeTranslation,
+                                   IOReasoning, MCQAnswering,
+                                   ReasoningType,
+                                   TagClassification, TestGeneration,
+                                   agent_factory, task_worker)
 from stylo_flora.logger import init_logger, logger
 from stylo_flora.metrics import (calc_bertscore, calc_bleu, calc_codebleu,
                                  calc_correctness, calc_coverage,
                                  calc_macro_f1, calc_meteor, calc_rouge)
 from stylo_flora.transformer.base import BaseTransformer, transformer_factory
+
+_MetricsEvaluator = Callable[[Seq[Any], Seq[Seq[Any]], Seq[Snippet], Namespace],
+                            dict[str, Any]]
 
 
 def parse_args() -> Namespace:
@@ -46,8 +53,10 @@ def parse_args() -> Namespace:
                       help='Specify one dataset to evaluate.')
   parser.add_argument('-m', '--model', type=str, required=True,
                       help='Specify the model to use.')
-  parser.add_argument('--model-dir', type=str, required=False,
-                      help='Specify the root directory of a local model. Only used for local models.')
+  parser.add_argument('--batch-api', action='store_true', default=False,
+                      help='If set, uses batch API and terminates WITHOUT evaluation. Only for proprietary models.')
+  parser.add_argument('--model-path', type=str, required=False,
+                      help='Specify the local/HF path to load model. Only used for open-source models.')
   parser.add_argument('-t', '--task', type=str, required=True,
                       choices=[
                           'code_translation',
@@ -82,7 +91,7 @@ def parse_args() -> Namespace:
   parser.add_argument('--debug', action='store_true', default=False,
                       help='If set, enables debugging level logging.')
   parser.add_argument('--transform-only', action='store_true', default=False,
-                      help='If set, terminates after code transformation without performing tasks.')
+                      help='If set, terminates after code transformation WITHOUT performing tasks.')
   args = parser.parse_args()
   return args
 
@@ -99,7 +108,7 @@ def _pick_snippets(
   def is_valid(snippet: Snippet) -> bool:
     if not ensure_correct:
       return True
-    return math.isclose(calc_correctness([snippet.code], [snippet.args], lang=args.src_lang), 1.0)
+    return math.isclose(calc_correctness([snippet.data['code']], [snippet.data], lang=args.src_lang), 1.0)
 
   indices = list(range(len(snippets)))
   if args.random:
@@ -117,41 +126,47 @@ def _cut_testcases(
     snippets: Seq[Snippet],
     args: Namespace,
 ) -> None:
-  if snippets and not snippets[0].args.get('io_testcases'):
+  if snippets and not snippets[0].data.get('io_testcases'):
     return
   if args.num_tests < 0:
     return
   for snippet in snippets:
-    if snippet.args.get('io_testcases') and len(snippet.args['io_testcases']) > args.num_tests:
-      snippet.args['io_testcases'] = pd.Series(snippet.args['io_testcases']) \
+    if snippet.data.get('io_testcases') and len(snippet.data['io_testcases']) > args.num_tests:
+      snippet.data['io_testcases'] = pd.Series(snippet.data['io_testcases']) \
           .sample(n=args.num_tests, random_state=args.seed).tolist()
 
 
-def _load_data(
+def _load_jsonl(
     path: Path,
-) -> dict[str, Any]:
+) -> dict:
   if not path.exists():
     return {}
-  data = {}
   with jsonlines.open(path, mode='r') as reader:
-    for row in reader:
-      data[row['id']] = row
-  return data
+    data = {row['id']: row for row in reader}
+    return data
+
+
+def _save_json(
+    path: Path,
+    obj: dict,
+) -> None:
+  with open(path, mode='w') as f:
+    json.dump(obj, f, indent=2, ensure_ascii=False)
 
 
 def _save_variants(
     path: Path,
     data: dict[str, Any],
     snippets: Seq[Snippet],
-    corpus: Seq[Seq[Snippet | None]],
+    corpus: Seq[Seq[str | None]],
 ) -> None:
   for i, snippet in enumerate(snippets):
     data.setdefault(snippet.id, {})
     data[snippet.id].update({
         'id': snippet.id,
-        'variants': [variant.code if variant else None for variant in corpus[i]],
-        'time_taken': [variant.args.get('time_taken', None) if variant else None for variant in corpus[i]],
+        'variants': corpus[i],
     })
+
   with jsonlines.open(path, mode='w') as writer:
     for row in sorted(data.values(), key=itemgetter('id')):
       writer.write(row)
@@ -179,120 +194,98 @@ def _save_outputs(
   logger.info(f'Saved outputs to {path} with {len(data)} rows.')
 
 
-def _save_result(
-    path: Path,
-    result: dict[str, Any],
-) -> None:
-  with open(path, mode='w') as f:
-    json.dump(result, f, indent=2, ensure_ascii=False)
-  logger.info(f'Saved results to {path}.')
-
-
 def _transform_with(
     transformer: BaseTransformer,
     snippets: Seq[Snippet],
-    data: dict[str, Any],
     args: Namespace,
     *,
-    ensure_correct: bool = True,
-) -> list[list[Snippet | None]]:
-  # skip transformed snippets that already exist in the result file
-  for snippet in snippets:
-    if snippet.id in data:
-      snippet.args['transformed_seqs'] = {i for i, code in enumerate(data[snippet.id]['variants']) if code}
+    check: bool = True,
+) -> list[list[str | None]]:
+  variant_data = _load_jsonl(args.variants_path)
 
-  corpus = transformer.transform(
-      snippets=snippets,
-      lang=args.src_lang,
-      seed=args.seed,
-      ensure_correct=ensure_correct,
-  )
+  start_time = time.perf_counter()
+  corpus: list[list[str | None]] = []
+  for snippet in tqdm(snippets, desc='Transforming styles', total=len(snippets), leave=False):
+    cached_variants = variant_data.get(snippet.id, {}).get('variants', [])
+    seqs_to_skip = {i for i, code in enumerate(cached_variants) if code}
 
-  # assign the skipped snippets to the corpus
-  for i, snippet in enumerate(snippets):
-    if snippet.id not in data:
-      continue
-    for j, variant_code in enumerate(data[snippet.id]['variants']):
-      if not variant_code:
-        continue
-      corpus[i][j] = snippet.replace(code=variant_code)
+    variants = transformer.transform(snippet, check=check, seqs_to_skip=seqs_to_skip)
+
+    if len(cached_variants) == len(variants):
+      for i in range(len(variants)):
+        variants[i] = variants[i] or cached_variants[i]
+
+    corpus.append(variants)
+  transform_time = time.perf_counter() - start_time
+  logger.info(f'Spanned coding styles in {transform_time:.2f}s.')
+
+  _save_variants(args.variants_path, variant_data, snippets, corpus)
   return corpus
 
 
 def _perform_with(
-    worker: Callable[[], tuple[MSeq[Any], MSeq[MSeq[Any]]]],
+    agent: BaseAgent,
+    task: BaseTask,
     snippets: Seq[Snippet],
-    corpus: Seq[Seq[Snippet | None]],
-    data: dict[str, Any],
+    corpus: Seq[Seq[str | None]],
+    args: Namespace,
 ) -> tuple[MSeq[Any], MSeq[MSeq[Any]]]:
-  # skip snippets that already have outputs in data
-  for i, snippet in enumerate(snippets):
-    if snippet.id not in data:
-      continue
-    if data[snippet.id].get('output'):
-      snippet.args['performed'] = True
-    if not data[snippet.id].get('variant_outputs'):
-      continue
-    for j, variant in enumerate(corpus[i]):
-      if variant and data[snippet.id]['variant_outputs'][j]:
-        variant.args['performed'] = True
+  output_data = _load_jsonl(args.outputs_path)
 
-  res_orig, res_span = worker()
+  start_time = time.perf_counter()
+  res_orig: MSeq[Any] = []
+  res_span: MSeq[MSeq[Any]] = []
+  for i, snippet in tqdm(enumerate(snippets), desc=f'Performing {task.__class__.__name__}', total=len(snippets), leave=False):
+    cached_output = output_data.get(snippet.id, {}).get('output', None)
+    output_orig = cached_output or task_worker(agent, task, snippet)
 
-  # assign outputs in data to the responses
-  for i, snippet in enumerate(snippets):
-    if snippet.id not in data:
-      continue
-    if data[snippet.id].get('output'):
-      res_orig[i] = data[snippet.id]['output']
-    if not data[snippet.id].get('variant_outputs'):
-      continue
-    for j, variant in enumerate(corpus[i]):
-      if data[snippet.id]['variant_outputs'][j]:
-        res_span[i][j] = data[snippet.id]['variant_outputs'][j]
+    cached_variant_outputs = output_data.get(snippet.id, {}).get('variant_outputs', [])
+    seqs_to_skip = {j for j, output in enumerate(cached_variant_outputs) if output}
+    var_snippets = [None if j in seqs_to_skip else snippet.replace(code=code)
+                    for j, code in enumerate(corpus[i])]
+
+    with ThreadPoolExecutor(max_workers=setting_dict['agent']['max_workers']) as executor:
+      output_span = list(tqdm(executor.map(task_worker, repeat(agent), repeat(task), var_snippets),
+                              desc='Inferencing', total=len(var_snippets), leave=False))
+
+    if len(cached_variant_outputs) == len(output_span):
+      for j in range(len(output_span)):
+        output_span[j] = output_span[j] or cached_variant_outputs[j]
+    
+    res_orig.append(output_orig)
+    res_span.append(output_span)
+  inference_time = time.perf_counter() - start_time
+  logger.info(f'Finish inference in {inference_time:.2f}s.')
+
+  _save_outputs(args.outputs_path, output_data, snippets, res_orig, res_span)
   return res_orig, res_span
 
 
 def _evaluate_task_template(
-    benchmark: BaseBenchmark,
+    snippets: Seq[Snippet],
     transformer: BaseTransformer,
     agent: BaseAgent,
+    task: BaseTask,
     args: Namespace,
-    load_snippets_func: Callable[[BaseBenchmark, Namespace], Seq[Snippet]],
-    perform_task_func: Callable[[BaseAgent, Seq[Snippet], Namespace], MSeq[Any]],
-    evaluate_metrics_func: Callable[[Seq[Snippet], Seq[Seq[Snippet]],
-                                     Seq[Any], Seq[Seq[Any]],
-                                     Namespace], dict[str, Any]],
     *,
-    ensure_correct: bool = True,
+    metrics_evaluator: _MetricsEvaluator,
+    check: bool = True,
 ) -> None:
-  logger.info(f'Loading snippets for {args.task} from {args.dataset}...')
-  snippets = load_snippets_func(benchmark, args)
   _cut_testcases(snippets, args)
-  snippets = _pick_snippets(snippets, args, ensure_correct=ensure_correct)
+  snippets = _pick_snippets(snippets, args, ensure_correct=check)
 
-  variants_data = _load_data(args.variants_path)
-  logger.info('Transforming styles of the code snippets...')
-  corpus = _transform_with(transformer, snippets, variants_data, args, ensure_correct=ensure_correct)
+  logger.info(f'Transforming styles of {len(snippets)} code snippets...')
+  corpus = _transform_with(transformer, snippets, args, check=check)
   num_styles = len(corpus[0]) if corpus else 0
-  _save_variants(args.variants_path, variants_data, snippets, corpus)
   if args.transform_only:
     logger.info('--transform-only is set, skipping performing tasks.')
     return
 
-  def worker() -> tuple[MSeq[Any], MSeq[MSeq[Any]]]:
-    res_orig = perform_task_func(agent, snippets, args)
-    res_span = [perform_task_func(agent, variants, args)
-                for variants in tqdm(corpus, desc=args.task.capitalize(),
-                                     total=len(corpus), leave=False)]
-    return res_orig, res_span
-  outputs_data = _load_data(args.outputs_path)
   logger.info(f'Performing {args.task} with {args.model}...')
-  start_time = time.perf_counter()
-  res_orig, res_span = _perform_with(worker, snippets, corpus, outputs_data)
-  perform_time = time.perf_counter() - start_time
-  # TODO 2: record token and time consumption for performing tasks
-  _save_outputs(args.outputs_path, outputs_data, snippets, res_orig, res_span)
+  res_orig, res_span = _perform_with(agent, task, snippets, corpus, args)
+  if args.batch_api:
+    logger.info('--batch-api is set, skipping evaluation.')
+    return
 
   # eliminate `None`s by filtering
   indices_filtered = [i for i, res in enumerate(res_orig) if res]
@@ -302,7 +295,7 @@ def _evaluate_task_template(
   res_span_filtered = [res_span[i] for i in indices_filtered]
   # eliminate `None`s by padding
   fallbacks = [variants.count(None) for variants in zip(*corpus_filtered)]
-  corpus_to_eval = [[variant or snippets_filtered[i] for variant in variants]
+  corpus_to_eval = [[variant or snippets_filtered[i].data['code'] for variant in variants]
                     for i, variants in enumerate(corpus_filtered)]
   res_span_to_eval = [[res or res_orig_filtered[i] for res in responses]
                       for i, responses in enumerate(res_span_filtered)]
@@ -312,9 +305,9 @@ def _evaluate_task_template(
   assert all(res for responses in res_span_to_eval for res in responses)
 
   logger.info('Calculating metrics for the responses...')
-  result = evaluate_metrics_func(snippets_filtered, corpus_to_eval, res_orig_filtered, res_span_to_eval, args)
-  codebleu = [calc_codebleu([snippet.code for snippet in snippets_filtered],
-                            [variant.code for variant in variants], args.src_lang)['codebleu']
+  result = metrics_evaluator(res_orig_filtered, res_span_to_eval, snippets_filtered, args)
+  codebleu = [calc_codebleu([snippet.data['code'] for snippet in snippets_filtered],
+                            variants, args.src_lang)['codebleu']
               for variants in tqdm(zip(*corpus_to_eval), desc='Calculating CodeBLEU',
                                    total=num_styles, leave=False)]
   result.update({
@@ -327,9 +320,9 @@ def _evaluate_task_template(
       'codebleu': codebleu,
       'codebleu_avg': np.mean(codebleu),
       'token_count': agent.token_count,
-      'time_taken': perform_time,
   })
-  _save_result(args.result_path, result)
+  _save_json(args.result_path, result)
+  logger.info(f'Saved results to {args.result_path}.')
 
 
 def evaluate_code_translation(
@@ -342,10 +335,10 @@ def evaluate_code_translation(
     raise ValueError('Destination language must be specified for code translation task.')
 
   def evaluate_metrics(
-          snippets: Seq[Snippet], corpus: Seq[Seq[Snippet]],
-          res_orig: Seq[str], res_span: Seq[Seq[str]],
-          args: Namespace) -> dict[str, Any]:
-    args_list = [snippet.args for snippet in snippets]
+      res_orig: Seq[str], res_span: Seq[Seq[str]],
+      snippets: Seq[Snippet], args: Namespace,
+  ) -> dict[str, Any]:
+    args_list = [snippet.data for snippet in snippets]
     pass_orig = calc_correctness(res_orig, args_list, args.dst_lang)
     pass_span = [calc_correctness(variants, args_list, args.dst_lang)
                  for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
@@ -354,13 +347,12 @@ def evaluate_code_translation(
         'pass_span': pass_span,
         'pass_span_avg': np.mean(pass_span),
     }
-
+  
+  snippets = benchmark.load_for_translation(args.src_lang, args.dst_lang)
+  task = CodeTranslation(args.src_lang, args.dst_lang)
   _evaluate_task_template(
-      benchmark, transformer, agent, args,
-      load_snippets_func=lambda b, a: b.load_for_translation(a.src_lang, a.dst_lang),
-      perform_task_func=lambda ag, sn, a: translate(ag, sn, a.src_lang, args.dst_lang),
-      evaluate_metrics_func=evaluate_metrics,
-      ensure_correct=True,
+      snippets, transformer, agent, task, args,
+      metrics_evaluator=evaluate_metrics, check=True,
   )
 
 
@@ -371,10 +363,10 @@ def evaluate_code_repair(
     args: Namespace,
 ) -> None:
   def evaluate_metrics(
-          snippets: Seq[Snippet], corpus: Seq[Seq[Snippet]],
-          res_orig: Seq[str], res_span: Seq[Seq[str]],
-          args: Namespace) -> dict[str, Any]:
-    args_list = [snippet.args for snippet in snippets]
+      res_orig: Seq[str], res_span: Seq[Seq[str]],
+      snippets: Seq[Snippet], args: Namespace,
+  ) -> dict[str, Any]:
+    args_list = [snippet.data for snippet in snippets]
     pass_orig = calc_correctness(res_orig, args_list, args.src_lang)
     pass_span = [calc_correctness(variants, args_list, args.src_lang)
                  for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
@@ -384,12 +376,12 @@ def evaluate_code_repair(
         'pass_span_avg': np.mean(pass_span),
     }
 
+  snippets = benchmark.load_for_repair(args.src_lang)
+  task = CodeRepair(args.src_lang)
   _evaluate_task_template(
-      benchmark, transformer, agent, args,
-      load_snippets_func=lambda b, a: b.load_for_repair(a.src_lang),
-      perform_task_func=lambda ag, sn, a: repair(ag, sn, a.src_lang),
-      evaluate_metrics_func=evaluate_metrics,
-      ensure_correct=False,
+      snippets, transformer, agent, task, args,
+      metrics_evaluator=evaluate_metrics,
+      check=False,
   )
 
 
@@ -401,10 +393,10 @@ def _evaluate_tag_classification(
     with_desc: bool,
 ) -> None:
   def evaluate_metrics(
-          snippets: Seq[Snippet], corpus: Seq[Seq[Snippet]],
-          res_orig: Seq[Seq[str]], res_span: Seq[Seq[Seq[str]]],
-          args: Namespace) -> dict[str, Any]:
-    gloden_tags = [snippet.args['tags'] for snippet in snippets]
+      res_orig: Seq[Seq[str]], res_span: Seq[Seq[Seq[str]]],
+      snippets: Seq[Snippet], args: Namespace,
+  ) -> dict[str, Any]:
+    gloden_tags = [snippet.data['tags'] for snippet in snippets]
     f1_orig = calc_macro_f1(res_orig, gloden_tags)
     f1_span = [calc_macro_f1(variants, gloden_tags)
                for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
@@ -414,12 +406,12 @@ def _evaluate_tag_classification(
         'f1_span_avg': np.mean(f1_span),
     }
 
+  snippets = benchmark.load_for_tagging(args.src_lang)
+  task = TagClassification(args.src_lang, with_desc)
   _evaluate_task_template(
-      benchmark, transformer, agent, args,
-      load_snippets_func=lambda b, a: b.load_for_tagging(a.src_lang),
-      perform_task_func=lambda ag, sn, a: tag(ag, sn, a.src_lang, with_desc),
-      evaluate_metrics_func=evaluate_metrics,
-      ensure_correct=False,
+      snippets, transformer, agent, task, args,
+      metrics_evaluator=evaluate_metrics,
+      check=False,
   )
 
 
@@ -429,7 +421,7 @@ def evaluate_code2tag(
     agent: BaseAgent,
     args: Namespace,
 ) -> None:
-  _evaluate_tag_classification(benchmark, transformer, agent, args, True)
+  _evaluate_tag_classification(benchmark, transformer, agent, args, with_desc=False)
 
 
 def evaluate_descode2tag(
@@ -438,7 +430,7 @@ def evaluate_descode2tag(
     agent: BaseAgent,
     args: Namespace,
 ) -> None:
-  _evaluate_tag_classification(benchmark, transformer, agent, args, False)
+  _evaluate_tag_classification(benchmark, transformer, agent, args, with_desc=True)
 
 
 def evaluate_code_summarization(
@@ -448,10 +440,10 @@ def evaluate_code_summarization(
     args: Namespace,
 ) -> None:
   def evaluate_metrics(
-          snippets: Seq[Snippet], corpus: Seq[Seq[Snippet]],
-          res_orig: Seq[str], res_span: Seq[Seq[str]],
-          args: Namespace) -> dict[str, Any]:
-    human_summaries = [snippet.args['human_summarization'] for snippet in snippets]
+      res_orig: Seq[str], res_span: Seq[Seq[str]],
+      snippets: Seq[Snippet], args: Namespace,
+  ) -> dict[str, Any]:
+    human_summaries = [snippet.data['human_summarization'] for snippet in snippets]
     bleu_orig = calc_bleu(res_orig, human_summaries)
     meteor_orig = calc_meteor(res_orig, human_summaries)
     rouge_orig = calc_rouge(res_orig, human_summaries)['rougeL']
@@ -484,12 +476,12 @@ def evaluate_code_summarization(
         'overall_span_avg': np.mean(overall_span),
     }
 
+  snippets = benchmark.load_for_summarization(args.src_lang)
+  task = CodeSummarization(args.src_lang)
   _evaluate_task_template(
-      benchmark, transformer, agent, args,
-      load_snippets_func=lambda b, a: b.load_for_summarization(a.src_lang),
-      perform_task_func=lambda ag, sn, a: summarize(ag, sn, a.src_lang),
-      evaluate_metrics_func=evaluate_metrics,
-      ensure_correct=False,
+      snippets, transformer, agent, task, args,
+      metrics_evaluator=evaluate_metrics,
+      check=False,
   )
 
 
@@ -498,28 +490,32 @@ def _evaluate_io_reasoning(
     transformer: BaseTransformer,
     agent: BaseAgent,
     args: Namespace,
-    reason_func: Callable[[BaseAgent, Seq[Snippet | None], str], MSeq[str | None]],
+    type: ReasoningType,
 ) -> None:
   def evaluate_metrics(
-          snippets: Seq[Snippet], corpus: Seq[Seq[Snippet]],
-          res_orig: Seq[str], res_span: Seq[Seq[str]],
-          args: Namespace) -> dict[str, Any]:
-    args_list = [snippet.args for snippet in snippets]
-    pass_orig = calc_correctness(res_orig, args_list, args.src_lang)
+      res_orig: Seq[str], res_span: Seq[Seq[str]],
+      snippets: Seq[Snippet], args: Namespace,
+  ) -> dict[str, Any]:
+    res_code_orig = [snippet.data['code'].replace('????', res)
+                     for snippet, res in zip(snippets, res_orig)]
+    res_code_span = [[snippet.data['code'].replace('????', res) for res in res_list]
+                     for snippet, res_list in zip(snippets, res_span)]
+    args_list = [snippet.data for snippet in snippets]
+    pass_orig = calc_correctness(res_code_orig, args_list, args.src_lang)
     pass_span = [calc_correctness(variants, args_list, args.src_lang)
-                 for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
+                 for variants in tqdm(zip(*res_code_span), desc='Evaluating', total=len(res_code_span[0]), leave=False)]
     return {
         'pass_orig': pass_orig,
         'pass_span': pass_span,
         'pass_span_avg': np.mean(pass_span),
     }
 
+  snippets = benchmark.load_for_io_reasoning(args.src_lang)
+  task = IOReasoning(args.src_lang, type)
   _evaluate_task_template(
-      benchmark, transformer, agent, args,
-      load_snippets_func=lambda b, a: b.load_for_io_reasoning(a.src_lang),
-      perform_task_func=lambda ag, sn, a: reason_func(ag, sn, a.src_lang),
-      evaluate_metrics_func=evaluate_metrics,
-      ensure_correct=True,
+      snippets, transformer, agent, task, args,
+      metrics_evaluator=evaluate_metrics,
+      check=True,
   )
 
 
@@ -529,7 +525,7 @@ def evaluate_input_reasoning(
     agent: BaseAgent,
     args: Namespace,
 ) -> None:
-  _evaluate_io_reasoning(benchmark, transformer, agent, args, reason_input)
+  _evaluate_io_reasoning(benchmark, transformer, agent, args, ReasoningType.INPUT)
 
 
 def evaluate_output_reasoning(
@@ -538,7 +534,7 @@ def evaluate_output_reasoning(
     agent: BaseAgent,
     args: Namespace,
 ) -> None:
-  _evaluate_io_reasoning(benchmark, transformer, agent, args, reason_output)
+  _evaluate_io_reasoning(benchmark, transformer, agent, args, ReasoningType.OUTPUT)
 
 
 def evaluate_mcq_answering(
@@ -548,10 +544,10 @@ def evaluate_mcq_answering(
     args: Namespace,
 ) -> None:
   def evaluate_metrics(
-          snippets: Seq[Snippet], corpus: Seq[Seq[Snippet]],
-          res_orig: Seq[Any], res_span: Seq[Seq[Any]],
-          args: Namespace) -> dict[str, Any]:
-    answers = np.array([snippet.args['answer'] for snippet in snippets])
+      res_orig: Seq[Any], res_span: Seq[Seq[Any]],
+      snippets: Seq[Snippet], args: Namespace,
+  ) -> dict[str, Any]:
+    answers = np.array([snippet.data['answer'] for snippet in snippets])
     acc_orig = np.mean(np.array(res_orig) == answers)
     acc_span = [np.mean(np.array(variants) == answers)
                 for variants in zip(*res_span)]
@@ -561,12 +557,12 @@ def evaluate_mcq_answering(
         'acc_span_avg': np.mean(acc_span),
     }
 
+  snippets = benchmark.load_for_mcq_answering(args.src_lang)
+  task = MCQAnswering(args.src_lang)
   _evaluate_task_template(
-      benchmark, transformer, agent, args,
-      load_snippets_func=lambda b, a: b.load_for_mcq_answering(a.src_lang),
-      perform_task_func=lambda ag, sn, a: answer_to_mcq(ag, sn, a.src_lang),
-      evaluate_metrics_func=evaluate_metrics,
-      ensure_correct=False,
+      snippets, transformer, agent, task, args,
+      metrics_evaluator=evaluate_metrics,
+      check=False,
   )
 
 
@@ -577,10 +573,10 @@ def evaluate_test_generation(
     args: Namespace,
 ) -> None:
   def evaluate_metrics(
-          snippets: Seq[Snippet], corpus: Seq[Seq[Snippet]],
-          res_orig: Seq[Seq[IOTestCase]], res_span: Seq[Seq[Seq[IOTestCase]]],
-          args: Namespace) -> dict[str, Any]:
-    code_list = [snippet.code for snippet in snippets]
+      res_orig: Seq[Seq[IOTestCase]], res_span: Seq[Seq[Seq[IOTestCase]]],
+      snippets: Seq[Snippet], args: Namespace,
+  ) -> dict[str, Any]:
+    code_list = [snippet.data['code'] for snippet in snippets]
     cov_orig = calc_coverage(code_list, res_orig, args.src_lang)
     cov_span = [calc_coverage(code_list, tc_list, args.src_lang)
                 for tc_list in tqdm(zip(*res_span), desc='Evaluating',
@@ -600,12 +596,12 @@ def evaluate_test_generation(
         'branch_cov_span_avg': np.mean(branch_cov_span),
     }
 
+  snippets = benchmark.load_for_test_generation(args.src_lang)
+  task = TestGeneration(args.src_lang)
   _evaluate_task_template(
-      benchmark, transformer, agent, args,
-      load_snippets_func=lambda b, a: b.load_for_test_generation(a.src_lang),
-      perform_task_func=lambda ag, sn, a: generate_tests(ag, sn, a.src_lang),
-      evaluate_metrics_func=evaluate_metrics,
-      ensure_correct=True,
+      snippets, transformer, agent, task, args,
+      metrics_evaluator=evaluate_metrics,
+      check=True,
   )
 
 
@@ -613,11 +609,11 @@ def main():
   args = parse_args()
   init_logger(path=args.log_path, verbose=args.verbose, debug=args.debug)
   logger.info(f'Initializing benchmark {args.dataset}...')
-  benchmark = benchmark_factory(args.dataset)
+  benchmark = benchmark_factory(dataset=args.dataset)
   logger.info('Initializing transformer...')
-  transformer = transformer_factory()
+  transformer = transformer_factory(lang=args.src_lang, seed=args.seed)
   logger.info(f'Initializing model {args.model}...')
-  agent = agent_factory(args.model, args.model_dir)
+  agent = agent_factory(name=args.model, model_path=args.model_path, batch_api=args.batch_api)
 
   os.makedirs(args.result_dir, exist_ok=True)
   args.variants_path = args.result_dir /\

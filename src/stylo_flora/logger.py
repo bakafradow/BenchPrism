@@ -6,7 +6,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, cast
 
-import yaml
+from . import setting_dict
 
 VERBOSE_LEVEL = 15
 logging.addLevelName(VERBOSE_LEVEL, 'VERBOSE')
@@ -40,9 +40,6 @@ logger = cast(VerboseLogger, logging.getLogger('stylo_flora'))
 
 
 def init_logger(path: Path, verbose: bool = False, debug: bool = False) -> None:
-  with open('configs/settings.yaml') as f:
-    logger_config = yaml.safe_load(f)['logger']
-
   logger.setLevel(logging.INFO)
   if verbose:
     logger.setLevel(VERBOSE_LEVEL)
@@ -64,7 +61,8 @@ def init_logger(path: Path, verbose: bool = False, debug: bool = False) -> None:
     except OSError as e:
       if e.errno != errno.EEXIST:
         raise
-  file_handler = RotatingFileHandler(path, mode='a', maxBytes=logger_config['max_bytes'], backupCount=logger_config['backup_count'])
+  file_handler = RotatingFileHandler(path, mode='a', maxBytes=setting_dict['logger']['max_bytes'],
+                                     backupCount=setting_dict['logger']['backup_count'])
   file_handler.setFormatter(logging.Formatter(pattern))
   logger.addHandler(file_handler)
 

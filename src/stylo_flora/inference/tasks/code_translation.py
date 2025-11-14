@@ -1,51 +1,45 @@
 import re
-from collections.abc import MutableSequence as MSeq
-from collections.abc import Sequence as Seq
 
 from ... import Snippet
 from ...logger import logger
-from ..agents import BaseAgent, Prompt
-from ..utils import work
-
-SYSTEM_PROMPT = """
-<task>
-Translate code from one language to another without changing its behavior.
-</task>
-<constraint>
-Your output MUST only contain the translated code WITHOUT any explanation, enclosed by triple back quotes with the language specified.
-Assertion statements, if exist, should also be considered.
-Apply camel case in Java; apply snake case in C++ and Python.
-</constraint>
-"""
-USER_PROMPT = """
-<source_language>{src_lang}</source_language>
-<target_language>{dst_lang}</target_language>
-<source_code>```{src_lang}
-{code}
-```</source_code>
-"""
+from .base import BaseTask
 
 
-def translate(agent: BaseAgent, snippets: Seq[Snippet | None], src_lang: str, dst_lang: str) -> MSeq[str | None]:
+class CodeTranslation(BaseTask):
+  SYSTEM_PROMPT = """
+  <task>
+  Translate code from one language to another without changing its behavior.
+  </task>
+  <constraint>
+  Your output MUST only contain the translated code WITHOUT any explanation, enclosed by triple back quotes with the language specified.
+  Assertion statements, if exist, should also be considered.
+  Apply camel case in Java; apply snake case in C++ and Python.
+  </constraint>
   """
-  Translates snippets in code set with code translation model.
-  :param translator: the translation model
-  :param snippets: the snippets to be translated
-  :param dataset: dataset name
-  :param src_lang: source language
-  :param dst_lang: destination language
-  :return: a sequence of translated code
+
+  USER_PROMPT = """
+  <source_language>{src_lang}</source_language>
+  <target_language>{dst_lang}</target_language>
+  <source_code>```{src_lang}
+  {code}
+  ```</source_code>
   """
-  def worker(i: int, snippet: Snippet) -> str | None:
-    prompt = Prompt(id=snippet.id, system=SYSTEM_PROMPT,
-                    user=USER_PROMPT.format(src_lang=src_lang, dst_lang=dst_lang, code=snippet.code))
-    response = agent.generate(prompt)
-    matched = re.search(r'```(?:\w+)?\n(.+)```', response, re.DOTALL)
+
+  def __init__(self, src_lang: str, dst_lang: str) -> None:
+    super().__init__()
+    self.src_lang = src_lang
+    self.dst_lang = dst_lang
+
+  def get_prompt(self, snippet: Snippet) -> tuple[str, str]:
+    return self.SYSTEM_PROMPT, self.USER_PROMPT.format(
+        src_lang=self.src_lang,
+        dst_lang=self.dst_lang,
+        code=snippet.data['code'],
+    )
+
+  def resolve_response(self, res: str) -> str | None:
+    matched = re.search(r'```(?:\w+)?\n(.+)```', res, re.DOTALL)
     if not matched:
-      logger.warning(f'Translation of {snippet.id} not found.')
-      logger.debug(response)
+      logger.debug(res)
       return None
-    logger.debug(f'Snippet {i}:\n{matched.group(1)}')
     return matched.group(1)
-
-  return work(worker=worker, snippets=snippets)

@@ -1,11 +1,14 @@
 from collections.abc import Sequence as Seq
-from copy import deepcopy
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import NamedTuple
 
+import yaml
 from dotenv import load_dotenv
 
 load_dotenv()
+
+with open('configs/settings.yaml', 'r') as f:
+  setting_dict = yaml.safe_load(f)
 
 
 @dataclass
@@ -18,22 +21,12 @@ class Snippet:
   @param args: Additional arguments for the snippet. Note that the content of `args` will **NOT** be deepcopied.
   """
   id: str
-  code: str
-  args: dict = field(default_factory=dict)
-
-  def __str__(self):
-    return self.code
-
-  def __deepcopy__(self, memo: dict) -> 'Snippet':
-    new_args = self.args.copy()
-    snippet = Snippet(id=self.id, code=self.code, args=new_args)
-    memo[id(self)] = snippet
-    return snippet
+  data: dict = field(default_factory=dict)
 
   def replace(self, **kwargs) -> 'Snippet':
-    snippet_dict = asdict(deepcopy(self))
-    snippet_dict.update(kwargs)
-    return Snippet(**snippet_dict)
+    data_dict = self.data.copy()
+    data_dict.update(kwargs)
+    return Snippet(id=self.id, data=data_dict)
 
 
 class IOTestCase(NamedTuple):

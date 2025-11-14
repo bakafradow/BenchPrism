@@ -1,6 +1,4 @@
 from abc import ABC, abstractmethod
-from collections.abc import MutableSequence as MSeq
-from collections.abc import Sequence as Seq
 
 from .. import Snippet
 
@@ -12,20 +10,23 @@ class BaseTransformer(ABC):
 
   @abstractmethod
   def transform(
-    self,
-    snippets: Seq[Snippet],
-    lang: str,
-    **kwargs,
-  ) -> list[list[Snippet | None]]:
+      self,
+      snippet: Snippet,
+      *,
+      check: bool = False,
+      seqs_to_skip: set[int] = set(),
+  ) -> list[str | None]:
     """
-    Transforms the given code snippet.
-    :param snippets: the code snippets to transform
-    :param lang: the language of the code snippet
-    :return: the transformed code snippets
+    Transforms coding styles of the given code snippet.
+
+    :param snippet: the code snippet to transform
+    :param check: whether to reject incorrectly transformed snippets
+    :param seqs_to_skip: set of sequence indices to skip
+    :return: a series of transformed code snippets
     """
-    return [list(snippets)]
+    raise NotImplementedError
 
 
-def transformer_factory() -> BaseTransformer:
+def transformer_factory(lang: str, seed: int) -> BaseTransformer:
   from .stylex import StyleX
-  return StyleX()
+  return StyleX(lang=lang, seed=seed)

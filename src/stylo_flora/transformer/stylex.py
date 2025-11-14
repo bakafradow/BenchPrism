@@ -1,166 +1,119 @@
 import atexit
-import inspect
 import math
 import os
 import shutil
 import subprocess
-import time
 from collections import defaultdict
-from collections.abc import Callable, Mapping
-from collections.abc import MutableSequence as MSeq
+from collections.abc import Mapping
 from collections.abc import Sequence as Seq
 from concurrent.futures import ThreadPoolExecutor
 from itertools import chain
 from tempfile import NamedTemporaryFile
 from threading import Lock
-from typing import Any, ParamSpec, TypeVar
+from typing import Any
 
 import jpype as jp
 import jpype.imports
 import yaml
 from tqdm import tqdm
 
+jp.startJVM('-ea', '--enable-native-access=ALL-UNNAMED')
+
+from .stylex_builders import build_styler
+from .base import BaseTransformer
+from ..metrics.correctness import calc_correctness
+from ..logger import logger
+from .. import Snippet, setting_dict
+
+from org.example.styler import Stage
+from org.example.style import ProgramStyle, StyleFileIO
+from org.example.parser.java import SpotDetectorListener
+from org.example.parser.common.factory import MyParserFactory
+from org.example.parser.common import MyParseTreeWalker
+from org.example.myException import ApplyException, ExtractException
+from org.example.controller import (Applicator, Extractor, StylerContainer,
+                                    TokenAugmentor)
+from org.example import Configuration
+GlobalInfo = jp.JClass('org.example.global.GlobalInfo')  # cannot import directly due to package name
 
 def shutdown():
   if jp.isJVMStarted():
     jp.shutdownJVM()
     logger.info('JVM shutdown successfully.')
-
-
-jp.startJVM('-ea', '--enable-native-access=ALL-UNNAMED')
 atexit.register(shutdown)
 
-from org.example import Configuration
-from org.example.controller import (Applicator, Extractor, StylerContainer,
-                                    TokenAugmentor)
-from org.example.myException import ApplyException, ExtractException
-from org.example.parser.common import MyParseTreeWalker
-from org.example.parser.common.factory import MyParserFactory
-from org.example.parser.java import SpotDetectorListener
-from org.example.style import ProgramStyle, StyleFileIO
-from org.example.styler import Stage
-GlobalInfo = jp.JClass('org.example.global.GlobalInfo')  # cannot import directly due to package name
-
-from .. import Snippet
-from ..logger import logger
-from ..metrics.correctness import calc_correctness
-from .base import BaseTransformer
-from .stylex_builders import build_styler
-
-with open('configs/settings.yaml', 'r') as f:
-  config = yaml.safe_load(f)['transformer']
 with open('configs/stylex_options.yaml', 'r') as f:
-  option_config = yaml.safe_load(f)
+  option_dict = yaml.safe_load(f)
 
 if not shutil.which('pict'):
   raise ValueError('PICT executable not found.')
 
-P = ParamSpec('P')
-T = TypeVar('T')
-
-
-def set_global_info(func: Callable[P, T]) -> Callable[P, T]:
-  """
-  A decorator to set global configuration and language before executing the function, which is a boilerplate for StyleX.
-  """
-  def wrapper(*args, **kwargs):
-    try:
-      sig = inspect.signature(func)
-      bound_args = sig.bind(*args, **kwargs)
-      bound_args.apply_defaults()
-      lang = bound_args.arguments['lang']
-    except TypeError as e:
-      raise TypeError(f'Failed to bind arguments for {func.__name__}.\n{e}') from e
-    except KeyError as e:
-      raise TypeError(f'Decorator @set_global_info requires {func.__name__} to have a \'lang\' argument.') from e
-    GlobalInfo.setConf(Configuration())
-    GlobalInfo.setLanguage(lang)
-    return func(*args, **kwargs)
-  return wrapper
-
 
 class StyleX(BaseTransformer):
-  lock = Lock()
+  def __init__(self, lang: str, seed: int = 42):
+    super().__init__()
+    self.lang = lang
+    GlobalInfo.setConf(Configuration())
+    GlobalInfo.setLanguage(lang)
 
-  @set_global_info
+    option_counts = self._count_options()
+    seqs = self._generate_seqs(seed, option_counts)
+    self.seqs = seqs
+    self.styler_containers = self._seq_to_styler_containers(lang, seqs)
+
+    self.lock = Lock()
+
   def transform(
       self,
-      snippets: Seq[Snippet],
-      lang: str,
-      **kwargs,
-  ) -> list[list[Snippet | None]]:
-    """
-    Applies transformations to the source code and generates variant sequence.
-    :param snippets: the snippets to be transformed
-    :param lang: the language of the snippets
-    :param seed: the random seed for reproducibility
-    :param ensure_correct: whether to reject incorrectly transformed snippets
-    :return: a series of transformed snippets, each of which is corresponding to a variant sequence
-    """
-    seed = kwargs.get('seed', 42)
-    ensure_correct = kwargs.get('ensure_correct', True)
-
-    def worker(
-        snippet_idx: int,
-        snippet: Snippet,
-        seq_idx: int,
-        styler_container: jp.JObject,
-    ) -> Snippet | None:
-      if seq_idx in snippet.args.get('transformed_seqs', set()):
+      snippet: Snippet,
+      *,
+      check: bool = False,
+      seqs_to_skip: set[int] = set(),
+  ) -> list[str | None]:
+    def worker(seq_idx: int, styler_container: jp.JObject) -> str | None:
+      if seq_idx in seqs_to_skip:
         return None
-      start_time = time.perf_counter()
       try:
         with self.lock:
-          variant_code = self._apply_styles(lang, snippet.code, styler_container)
-        if variant_code and ensure_correct:
-          correctness = calc_correctness([variant_code], [snippet.args], lang)
+          variant = self._apply_styles(self.lang, snippet.data['code'], styler_container)
+        if variant and check:
+          correctness = calc_correctness([variant], [snippet.data], self.lang)
           if not math.isclose(correctness, 1.0):
             logger.warning(f'Correctness check failed: {correctness}')
-            variant_code = None
+            variant = None
       except jp.JVMNotRunning:  # in case of keyboard interrupt
         return None
       except Exception as e:
         logger.error(f'{e.__class__.__name__} occurred while spanning:\n{e}')
-        variant_code = None
-      if not variant_code:
-        logger.warning(f'Failed to transform snippet {snippet_idx} ({snippet.id}) with sequence {seq_idx} ({seqs[seq_idx]}).')
+        variant = None
+      if not variant:
+        logger.warning(f'Failed to transform snippet {snippet.id} with sequence {seq_idx} ({self.seqs[seq_idx]}).')
         return None
-      logger.debug(f'Successfully transformed snippet {snippet_idx} ({snippet.id}).')
-      variant = snippet.replace(code=str(variant_code))
-      variant.args['time_taken'] = time.perf_counter() - start_time
+      logger.debug(f'Successfully transformed snippet {snippet.id}.')
       return variant
 
-    option_counts = self._count_options()
-    seqs = self._generate_seqs(seed, option_counts)
-    num_seq = len(seqs)
-    styler_containers = self._seq_to_styler_containers(lang, seqs)
+    with ThreadPoolExecutor(max_workers=setting_dict['transformer']['max_workers']) as executor:
+      variants = list(tqdm(executor.map(worker, range(len(self.seqs)), self.styler_containers),
+                          desc=f'Spanning {snippet.id}', total=len(self.seqs), leave=False))
+    return variants
 
-    corpus = []
-    for i, snippet in tqdm(enumerate(snippets), desc='Spanning', total=len(snippets), leave=False):
-      with ThreadPoolExecutor(max_workers=config['max_workers']) as executor:
-        results = list(tqdm(executor.map(worker, [i] * num_seq, [snippet] * num_seq,
-                                         range(num_seq), styler_containers),
-                            desc=f'Spanning snippet {i}', total=num_seq, leave=False))
-      corpus.append(results)
-    logger.info(f'Spanned {len(corpus)} variant benchmarks.')
-    return corpus
-
-  @set_global_info
   def count_spots(
       self,
-      snippets: Seq[Snippet],
-      lang: str,
-  ) -> list[int]:
-    counts = []
-    for i, snippet in enumerate(snippets):
-      spots = jp.java.util.HashMap()
-      parser = MyParserFactory.createParser(lang)
-      listener = SpotDetectorListener(spots, parser)
-      tree = parser.parseFromString(snippet.code)
-      walker = MyParseTreeWalker()
-      walker.walk(listener, tree)
-      counts.append(spots.size())
-    return counts
+      snippet: Snippet,
+  ) -> int:
+    """
+    Counts spots applicable for style transformation in the given code snippet.
+
+    :param snippet: the code snippet to analyze
+    :return: the number of spots
+    """
+    spots = jp.java.util.HashMap()
+    parser = MyParserFactory.createParser(self.lang)
+    listener = SpotDetectorListener(spots, parser)
+    tree = parser.parseFromString(snippet.data['code'])
+    walker = MyParseTreeWalker()
+    walker.walk(listener, tree)
+    return spots.size()
 
   def _extract_from_file(
       self,
@@ -224,7 +177,7 @@ class StyleX(BaseTransformer):
       self,
   ) -> list[int]:
     option_counts = []
-    for style in chain(*[list(item.values())[0] for item in option_config]):
+    for style in chain(*[list(item.values())[0] for item in option_dict]):
       option = list(style.values())[0]
       match option.get('option_type'):
         case 'bool':
@@ -274,7 +227,7 @@ class StyleX(BaseTransformer):
   ) -> Mapping[str, Mapping[str, Any]]:
     choice_dict: dict[str, dict[str, Any]] = defaultdict(dict)
     idx = 0
-    for item in option_config:
+    for item in option_dict:
       styler_name = list(item.keys())[0]
       styles = item[styler_name]
       for i in range(len(styles)):

@@ -2,26 +2,15 @@ import os
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from pathlib import Path
-from typing import NamedTuple
 
 import torch
-import yaml
 from google import genai
 from openai import OpenAI  # type: ignore[attr-defined]
 from requests.exceptions import Timeout
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from .. import setting_dict
 from ..logger import logger
-
-with open('configs/settings.yaml') as f:
-  config = yaml.safe_load(f)['agent']
-
-
-class Prompt(NamedTuple):
-  id: str
-  system: str
-  user: str
 
 
 class BaseAgent(ABC):
@@ -33,10 +22,11 @@ class BaseAgent(ABC):
     self.token_count = 0
 
   @abstractmethod
-  def generate(self, prompt: Prompt) -> str:
+  def generate(self, sys_prompt: str, user_prompt: str) -> str:
     """
     Generates a response based on the provided prompt.
-    :param prompt: the input prompt for the model
+    :param sys_prompt: the system prompt
+    :param user_prompt: the user prompt
     :return: the generated response
     """
     pass
@@ -44,21 +34,21 @@ class BaseAgent(ABC):
 
 def retry(retries: int, interval: float) -> Callable:
   def wrapper(func: Callable) -> Callable:
-    def inner(self, prompt: Prompt) -> str:
+    def inner(self, sys_prompt: str, user_prompt: str) -> str:
       for attempt in range(retries):
         try:
-          res = func(self, prompt)
+          res = func(self, sys_prompt, user_prompt)
           return res
         except KeyboardInterrupt:
           logger.warning('Keyboard interrupt.')
           raise
         except Timeout:
-          logger.warning(f'Timeout occurred for snippet {prompt.id}. Retrying {attempt + 1}/{retries}...')
+          logger.warning(f'Timeout. Retrying {attempt + 1}/{retries}...')
           time.sleep(interval)
         except Exception as e:
-          logger.error(f'{e.__class__.__name__} occurred for snippet {prompt.id}: {e}...')
+          logger.error(f'{e.__class__.__name__} occurred: {e}...')
           break
-      logger.warning(f'Failed to generate for snippet {prompt.id} after {retries} attempts.')
+      logger.warning(f'Failed to generate after {retries} attempts.')
       return ''
     return inner
   return wrapper
@@ -71,82 +61,86 @@ def empty_cache(func: Callable) -> Callable:
   return wrapper
 
 
-# TODO 3: support more local models
 class OpenAIAgent(BaseAgent):
-  def __init__(self, name: str):
+  def __init__(self, name: str, *, batch_api: bool):
     super().__init__()
     self.client = OpenAI(base_url=os.getenv('BASE_URL'), api_key=os.getenv('API_KEY'))
     if name not in {model.id for model in self.client.models.list()}:
       raise TypeError(f'{name} is not available from {self.client.base_url}.')
     self.name = name
+    self.batch_api = batch_api
 
-  @retry(retries=config['retries'], interval=config['retry_interval'])
-  def generate(self, prompt: Prompt) -> str:
+  @retry(retries=setting_dict['agent']['retries'],
+         interval=setting_dict['agent']['retry_interval'])
+  def generate(self, sys_prompt: str, user_prompt: str) -> str:
+    # TODO 1: use batch API to save tokens
+    # TODO 2: choose representative hyperparameters
     completion = self.client.chat.completions.create(
         model=self.name,
         messages=[
-            {'role': 'system', 'content': prompt.system},
-            {'role': 'user', 'content': prompt.user}
+            {'role': 'system', 'content': sys_prompt},
+            {'role': 'user', 'content': user_prompt}
         ],
-        timeout=config['timeout'],
+        timeout=setting_dict['agent']['timeout'],
     )
     if completion.usage:
       self.token_count += completion.usage.total_tokens
-    time.sleep(config['sleep'])
+    time.sleep(setting_dict['agent']['sleep'])
     return completion.choices[0].message.content or ''
 
 
 class GeminiAgent(BaseAgent):
-  def __init__(self, name: str):
+  def __init__(self, name: str, *, batch_api: bool):
     super().__init__()
     self.client = genai.Client(
         api_key=os.getenv('API_KEY'),
         http_options=genai.types.HttpOptions(
-            timeout=config['timeout'] * 1000,
+            timeout=setting_dict['agent']['timeout'] * 1000,
         ),
     )
     if 'models/' + name not in {model.name for model in self.client.models.list()}:
       raise TypeError(f'{name} is not available from Google API.')
     self.name = name
+    self.batch_api = batch_api
 
-  @retry(retries=config['retries'], interval=config['retry_interval'])
-  def generate(self, prompt: Prompt) -> str:
+  @retry(retries=setting_dict['agent']['retries'],
+         interval=setting_dict['agent']['retry_interval'])
+  def generate(self, sys_prompt: str, user_prompt: str) -> str:
     res = self.client.models.generate_content(
         model=self.name,
         config=genai.types.GenerateContentConfig(
-            system_instruction=prompt.system,
+            system_instruction=sys_prompt,
         ),
-        contents=prompt.user,
+        contents=user_prompt,
     )
-    time.sleep(config['sleep'])
+    time.sleep(setting_dict['agent']['sleep'])
     if res.usage_metadata:
       self.token_count += res.usage_metadata.total_token_count or 0
     return res.text or ''
 
 
 class Qwen25(BaseAgent):
-  def __init__(self, name: str, model_dir: Path | None):
+  def __init__(self, name: str, *, model_path: str | None):
     super().__init__()
-    if not model_dir:
-      raise ValueError('Please provide path to the Qwen 2.5 model through --model-dir argument.')
+    model_path = model_path or f'Qwen/{name}'
     self.model = AutoModelForCausalLM.from_pretrained(
-        pretrained_model_name_or_path=model_dir,
+        pretrained_model_name_or_path=model_path,
         trust_remote_code=True,
         torch_dtype=torch.bfloat16,
         device_map='auto',
     )
     self.tokenizer = AutoTokenizer.from_pretrained(
-        model_dir,
+        model_path,
         trust_remote_code=True,
     )
     if not self.tokenizer.pad_token_id:
       self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
   @empty_cache
-  def generate(self, prompt: Prompt) -> str:
+  def generate(self, sys_prompt: str, user_prompt: str) -> str:
     messages = [
-        {'role': 'system', 'content': prompt.system},
-        {'role': 'user', 'content': prompt.user}
+        {'role': 'system', 'content': sys_prompt},
+        {'role': 'user', 'content': user_prompt}
     ]
     inputs = self.tokenizer.apply_chat_template(
         messages,
@@ -160,7 +154,7 @@ class Qwen25(BaseAgent):
       outputs = self.model.generate(
           input_ids,
           attention_mask=attention_mask,
-          max_new_tokens=config['max_new_tokens'],
+          max_new_tokens=setting_dict['agent']['max_new_tokens'],
           do_sample=False,
           temperature=None,
           num_return_sequences=1,
@@ -174,37 +168,38 @@ class Qwen25(BaseAgent):
 
 
 class Phi4(BaseAgent):
-  def __init__(self, name: str, model_dir: Path | None):
+  def __init__(self, name: str, *, model_path: str | None):
     super().__init__()
+    model_path = model_path or f'microsoft/{name}'
 
   @empty_cache
-  def generate(self, prompt: Prompt) -> str:
-    return ''
+  def generate(self, sys_prompt: str, user_prompt: str) -> str:
+    return ''  # TODO
 
 
 class CodeGeeX4(BaseAgent):
-  def __init__(self, name: str, model_dir: Path | None):
+  def __init__(self, name: str, *, model_path: str | None):
     super().__init__()
-    path = model_dir if model_dir else f'THUDM/{name}'
+    model_path = model_path or f'THUDM/{name}'
     self.model = AutoModelForCausalLM.from_pretrained(
-        pretrained_model_name_or_path=path,
+        pretrained_model_name_or_path=model_path,
         trust_remote_code=True,
         torch_dtype=torch.bfloat16,
         low_cpu_mem_usage=True,
         device_map='auto',
     ).eval()
     self.tokenizer = AutoTokenizer.from_pretrained(
-        path,
+        model_path,
         trust_remote_code=True,
     )
     if not self.tokenizer.pad_token_id:
       self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
   @empty_cache
-  def generate(self, prompt):
+  def generate(self, sys_prompt: str, user_prompt: str) -> str:
     messages = [
-        {'role': 'system', 'content': prompt.system},
-        {'role': 'user', 'content': prompt.user}
+        {'role': 'system', 'content': sys_prompt},
+        {'role': 'user', 'content': user_prompt}
     ]
     inputs = self.tokenizer.apply_chat_template(
         messages,
@@ -218,7 +213,7 @@ class CodeGeeX4(BaseAgent):
       outputs = self.model.generate(
           input_ids,
           attention_mask=attention_mask,
-          max_new_tokens=config['max_new_tokens'],
+          max_new_tokens=setting_dict['agent']['max_new_tokens'],
           do_sample=False,
           temperature=None,
           num_return_sequences=1,
@@ -232,29 +227,31 @@ class CodeGeeX4(BaseAgent):
 
 
 class CodeLlama(BaseAgent):
-  def __init__(self, name: str, model_dir: Path | None):
+  def __init__(self, name: str, *, model_path: str | None):
     super().__init__()
+    model_path = model_path or f'meta-llama/{name}'
 
   @empty_cache
-  def generate(self, prompt: Prompt) -> str:
-    return ''
+  def generate(self, sys_prompt: str, user_prompt: str) -> str:
+    return ''  # TODO
 
 
-def agent_factory(name: str, model_dir: Path | None) -> BaseAgent:
+def agent_factory(name: str, *, batch_api: bool = False, model_path: str | None = None) -> BaseAgent:
   """
   Load the specified model.
   :param name: name of the model
-  :param model_dir: directory to load the model
+  :param model_path: path to the local model directory, only for open-source models
+  :param batch_api: whether to use batch API to generate, only for proprietary models
   :return: an encapsulated agent instance
   """
   if 'gemini' in name:
-    return GeminiAgent(name)
+    return GeminiAgent(name, batch_api=batch_api)
   if 'qwen2.5' in name:
-    return Qwen25(name, model_dir)
+    return Qwen25(name, model_path=model_path)
   if 'phi-4' in name:
-    return Phi4(name, model_dir)
+    return Phi4(name, model_path=model_path)
   if 'codegeex4' in name:
-    return CodeGeeX4(name, model_dir)
+    return CodeGeeX4(name, model_path=model_path)
   if 'codellama' in name:
-    return CodeLlama(name, model_dir)
-  return OpenAIAgent(name)
+    return CodeLlama(name, model_path=model_path)
+  return OpenAIAgent(name, batch_api=batch_api)  # default to OpenAI-compatible agents

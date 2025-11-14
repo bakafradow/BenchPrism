@@ -71,7 +71,7 @@ def _load_variants(generator: str, transformer: str, snippets: Sequence[Snippet]
       objects = [obj for obj in reader if obj['src']['author_name'] == generator]
   variants = [None] * len(snippets)
   for i, snippet in enumerate(snippets):
-    target = next((obj for obj in objects if obj['src']['problem_id'] == snippet.id and (generator != 'human' or obj['src']['author_name'] == snippet.args['author_name'])), None)
+    target = next((obj for obj in objects if obj['src']['problem_id'] == snippet.id and (generator != 'human' or obj['src']['author_name'] == snippet.data['author_name'])), None)
     if target:
       variants[i] = Snippet(snippet.id, target['result']['file_name'])
   return variants

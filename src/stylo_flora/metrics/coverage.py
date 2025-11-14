@@ -6,15 +6,11 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import yaml
 from tqdm import tqdm
 
-from .. import IOTestCase, Snippet
+from .. import IOTestCase, setting_dict
 from ..logger import logger
 from .utils import extract_classname_java
-
-with open('configs/settings.yaml') as f:
-  config = yaml.safe_load(f)['metrics']
 
 
 def calc_coverage_java(code: str, tc_list: Seq[IOTestCase]) -> dict:
@@ -27,7 +23,7 @@ def calc_coverage_java(code: str, tc_list: Seq[IOTestCase]) -> dict:
       f.write(code)
     compile_cmd = f'javac {temp_dir}/{classname}.java'.split()
     returned = subprocess.run(compile_cmd, cwd=temp_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                              encoding='utf-8', timeout=config['timeout'])
+                              encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
     if returned.returncode != 0:
       logger.warning('Failed to compile snippet.')
       return {}
@@ -39,19 +35,19 @@ def calc_coverage_java(code: str, tc_list: Seq[IOTestCase]) -> dict:
       exec_cmd = f'java -javaagent:{jar_dir}/jacocoagent.jar=destfile={exec_name},append=true {classname}'.split()
       returned = subprocess.run(exec_cmd, cwd=temp_dir, input=testcase.input,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                encoding='utf-8', timeout=config['timeout'])
+                                encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
       if returned.returncode != 0:
         logger.warning(f'Failed to execute snippet with jacocoagent:\n{returned.stdout}')
         return False
       return returned.stdout.strip() in (output.strip() for output in testcase.outputs)
 
-    with ThreadPoolExecutor(max_workers=config['max_workers']) as executor:
+    with ThreadPoolExecutor(max_workers=setting_dict['metrics']['max_workers']) as executor:
       num_pass = sum(tqdm(executor.map(worker, tc_list), total=len(tc_list), leave=False))
     pass_rate = num_pass / len(tc_list)
 
     report_cmd = f'java -jar {jar_dir}/jacococli.jar report {exec_name} --classfiles . --sourcefiles . --csv {csv_name}'.split()
     returned = subprocess.run(report_cmd, cwd=temp_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                              encoding='utf-8', timeout=config['timeout'])
+                              encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
     if returned.returncode != 0:
       logger.warning('Failed to generate coverage report.')
       return {'pass_rate': pass_rate}

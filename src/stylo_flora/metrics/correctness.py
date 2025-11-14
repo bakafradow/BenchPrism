@@ -9,15 +9,11 @@ from collections.abc import Sequence as Seq
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-import yaml
 from tqdm import tqdm
 
-from .. import IOTestCase, Snippet
+from .. import IOTestCase, setting_dict
 from ..logger import logger
 from .utils import extract_classname_java
-
-with open('configs/settings.yaml') as f:
-  config = yaml.safe_load(f)['metrics']
 
 
 class CompilationError(Exception):
@@ -29,7 +25,7 @@ class CompilationError(Exception):
 def _run_with_io(cmd: Seq[str], tests: Seq[IOTestCase]) -> bool:
   for test in tqdm(tests, desc='Running tests', total=len(tests), leave=False):
     try:
-      returned = subprocess.run(cmd, input=test.input, text=True, capture_output=True, encoding='utf-8', timeout=config['timeout'])
+      returned = subprocess.run(cmd, input=test.input, text=True, capture_output=True, encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
     except KeyboardInterrupt:
       logger.warning('Keyboard interrupt.')
       raise
@@ -67,7 +63,7 @@ def test_io_java(code: str, args: dict) -> bool:
       classdir = f'{tmpdir}/target'
       os.makedirs(classdir, exist_ok=True)
       try:
-        returned = subprocess.run(['javac', '-d', classdir, f.name], stderr=subprocess.PIPE, encoding='utf-8', timeout=config['timeout'])
+        returned = subprocess.run(['javac', '-d', classdir, f.name], stderr=subprocess.PIPE, encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
       except subprocess.TimeoutExpired:
         raise CompilationError(f'Compilation of {f.name} timed out.')
       if returned.returncode != 0:
@@ -96,7 +92,7 @@ def test_api_java(code: str, args: dict) -> bool:
       shutil.copy('resources/pom.xml', f'{tmpdir}/pom.xml')
       returned = subprocess.run(['mvn', 'test', f'-Dtest={",".join(test_classes)}'],
                                 cwd=tmpdir, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                encoding='utf-8', timeout=config['timeout'])
+                                encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
   except CompilationError as e:
     logger.warning(e)
     logger.verbose(f'Standard Error:\n{e.stderr}')
@@ -121,7 +117,7 @@ def test_io_cpp(code: str, args: dict) -> bool:
       f.flush()
       executable = re.sub(r'\.cpp$', '', f.name)
       try:
-        returned = subprocess.run(['g++', f.name, '-o', executable], stderr=subprocess.PIPE, encoding='utf-8', timeout=config['timeout'])
+        returned = subprocess.run(['g++', f.name, '-o', executable], stderr=subprocess.PIPE, encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
       except subprocess.TimeoutExpired:
         raise CompilationError(f'Compilation of {f.name} timed out.')
       if returned.returncode != 0:
@@ -145,13 +141,13 @@ def test_api_cpp(code: str, args: dict) -> bool:
         f.write(args['api_testcases_cpp'].code)
       shutil.copy('resources/CMakeLists.txt', f'{tmpdir}/CMakeLists.txt')
       os.makedirs(f'{tmpdir}/build', exist_ok=True)
-      returned = subprocess.run(['cmake', '..'], cwd=f'{tmpdir}/build', stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', timeout=config['timeout'])
+      returned = subprocess.run(['cmake', '..'], cwd=f'{tmpdir}/build', stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
       if returned.returncode != 0:
         raise CompilationError('CMake configuration failed.', returned.stderr)
-      returned = subprocess.run(['cmake', '--build', '.'], cwd=f'{tmpdir}/build', stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', timeout=config['timeout'])
+      returned = subprocess.run(['cmake', '--build', '.'], cwd=f'{tmpdir}/build', stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
       if returned.returncode != 0:
         raise CompilationError('Building failed.', returned.stderr)
-      returned = subprocess.run(['./test'], cwd=f'{tmpdir}/build', stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', timeout=config['timeout'])
+      returned = subprocess.run(['./test'], cwd=f'{tmpdir}/build', stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
   except CompilationError as e:
     logger.warning(e)
     logger.verbose(f'Standard Error:\n{e.stderr}')
@@ -199,7 +195,7 @@ def calc_correctness(code_list: Seq[str], args_list: Seq[dict[str, Any]], lang: 
     except KeyError:
       raise TypeError(f'Unsupported language {lang} for correctness testing.')
 
-  max_workers = max(1, config['max_workers'])
+  max_workers = max(1, setting_dict['metrics']['max_workers'])
   with ThreadPoolExecutor(max_workers=max_workers) as executor:
     results = list(tqdm(executor.map(worker, code_list, args_list),
                         desc='Calculating correctness', total=len(code_list), leave=False))
