@@ -1,8 +1,10 @@
 import os
-import time
 import tempfile
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from io import StringIO
+from uuid import uuid4
 
 import jsonlines
 import torch
@@ -11,7 +13,6 @@ from google.genai import types as gtypes
 from openai import OpenAI  # type: ignore[attr-defined]
 from requests.exceptions import Timeout
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from io import StringIO
 
 from .. import setting_dict
 from ..logger import logger
@@ -46,20 +47,19 @@ class BaseAgent(ABC):
     """
     raise NotImplementedError
 
-  def submit_batch_job(self, display_name: str, requests: list[dict]) -> None:
+  def submit_batch_job(self, requests: list[dict]) -> None:
     """
-    Submits generation requests as a batch job to remote platform.
+    Submits generation requests as a batch to remote platform.
 
-    :param display_name: a name for the created job
     :param requests: a list of generation requests
     """
     raise NotImplementedError
 
-  def retrieve_batch_result(self, job_name: str) -> dict:
+  def retrieve_batch_result(self, batch_id: str) -> dict:
     """
-    Retrieves the result of a batch job.
+    Retrieves the result of a batch.
 
-    :param job_name: the name of the job
+    :param batch_id: the identifier of the batch
     :return: a mapping from custom ids to generated responses
     """
     raise NotImplementedError
@@ -119,6 +119,79 @@ class OpenAIAgent(BaseAgent):
     time.sleep(setting_dict['agent']['sleep'])
     return completion.choices[0].message.content or ''
 
+  def create_batch_request(self, custom_id: str, sys_prompt: str, user_prompt: str) -> dict:
+    return {
+        'custom_id': custom_id,
+        'method': 'POST',
+        'url': '/v1/chat/completions',
+        'body': {
+            'model': self.name,
+            'messages': [
+                {'role': 'system', 'content': sys_prompt},
+                {'role': 'user', 'content': user_prompt},
+            ],
+            'temperature': 1.0,
+        },
+    }
+
+  def submit_batch_job(self, requests: list[dict]) -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+      batch_file = os.path.join(tmpdir, f'batch_{uuid4().hex}.jsonl')
+      with jsonlines.open(batch_file, 'w') as writer:
+        writer.write_all(requests)
+      with open(batch_file, 'rb') as f:
+        try:
+          input_file = self.client.files.create(
+              file=f,
+              purpose='batch',
+          )
+        except Exception as e:
+          logger.error(f'{e.__class__.__name__} occurred while uploading batch file: {e}')
+    logger.info(f'Uploaded {len(requests)} requests from {batch_file}: {input_file.id}')
+
+    try:
+      batch = self.client.batches.create(
+          input_file_id=input_file.id,
+          endpoint='/v1/chat/completions',
+          completion_window='24h',
+      )
+    except Exception as e:
+      logger.error(f'{e.__class__.__name__} occurred while creating batch: {e}')
+    logger.info(f'Created batch: {batch.id}')
+
+  def retrieve_batch_result(self, batch_id: str) -> dict:
+    batch = self.client.batches.retrieve(batch_id)
+    match batch.status:
+      case 'completed':
+        if not batch.output_file_id:
+          logger.warning('Result file id is empty.')
+          if batch.error_file_id:
+            logger.warning(f'Error info:\n{self.client.files.content(batch.error_file_id).text}')
+          return {}
+        logger.info(f'Downloading result file {batch.output_file_id}...')
+        content = self.client.files.content(batch.output_file_id).text
+        result = {}
+        with jsonlines.Reader(StringIO(content)) as reader:
+          for row in reader:
+            try:
+              candidate = row['response']['body']['choices'][0]
+              if candidate['finish_reason'] != 'stop':
+                logger.warning(f'Request {row["id"]} (custom_id: {row["custom_id"]}) finished with reason {candidate["finish_reason"]}.')
+              result[row['custom_id']] = candidate['message']['content']
+              self.token_count += row['response']['body']['usage']['total_tokens']
+            except KeyError:
+              continue
+        return result
+      case 'failed':
+        logger.info(f'Batch {batch.id} failed. Error: {batch.errors}')
+      case 'cancelled':
+        logger.info(f'Batch {batch.id} canceled.')
+      case 'expired':
+        logger.info(f'Batch {batch.id} expired.')
+      case _:
+        logger.info(f'Batch {batch.id} not completed yet. Status: {batch.status}')
+    return {}
+
 
 class GeminiAgent(BaseAgent):
   def __init__(self, name: str):
@@ -155,12 +228,12 @@ class GeminiAgent(BaseAgent):
             'contents': [{'parts': [{'text': user_prompt}]}],
             'system_instruction': {'parts': [{'text': sys_prompt}]},
             'generation_config': {
-                'temperature': 0.7,
+                'temperature': 1.0,
             },
         },
     }
 
-  def submit_batch_job(self, display_name: str, requests: list[dict]) -> None:
+  def submit_batch_job(self, requests: list[dict]) -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
       batch_file = os.path.join(tmpdir, 'batch.jsonl')
       with jsonlines.open(batch_file, 'w') as writer:
@@ -169,9 +242,8 @@ class GeminiAgent(BaseAgent):
         uploaded_file = self.client.files.upload(
             file=batch_file,
             config=gtypes.UploadFileConfig(
-                display_name=f'batch-requests-{display_name}',
                 mime_type='jsonl',
-            )
+            ),
         )
       except Exception as e:
         logger.error(f'{e.__class__.__name__} occurred while uploading batch file: {e}')
@@ -184,16 +256,14 @@ class GeminiAgent(BaseAgent):
       job = self.client.batches.create(
           model=self.name,
           src=uploaded_file.name,
-          config={
-              'display_name': f'batch-job-{display_name}',
-          }
+          config=gtypes.CreateBatchJobConfig(),
       )
     except Exception as e:
       logger.error(f'{e.__class__.__name__} occurred while creating batch job: {e}')
     logger.info(f'Created batch job: {job.name}')
 
-  def retrieve_batch_result(self, job_name: str) -> dict:
-    job = self.client.batches.get(name=job_name)
+  def retrieve_batch_result(self, batch_id: str) -> dict:
+    job = self.client.batches.get(name=batch_id)
     match job.state:
       case gtypes.JobState.JOB_STATE_SUCCEEDED:
         if not job.dest or not job.dest.file_name:

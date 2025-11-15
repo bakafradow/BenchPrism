@@ -5,6 +5,7 @@ from operator import itemgetter
 from pathlib import Path
 
 import jsonlines
+from tqdm import tqdm
 
 from stylo_flora.inference import agent_factory, task_factory
 from stylo_flora.logger import init_logger, logger
@@ -52,8 +53,9 @@ def main():
     if result:
       logger.info(f'Retrieved {len(result)} outputs from {args.job}, {agent.token_count} tokens used in total.')
       break
-    logger.info(f'Retry after {args.retry_interval}s...')
-    time.sleep(args.retry_interval)
+    for _ in tqdm(range(args.retry_interval), desc='Retry after',
+                  leave=False, unit='s', bar_format='{l_bar}{bar}'):
+      time.sleep(1)
 
   with jsonlines.open(args.file, mode='r') as reader:
     data = {row['id']: row for row in reader}

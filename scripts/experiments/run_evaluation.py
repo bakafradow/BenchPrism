@@ -300,7 +300,7 @@ def _batch_with(
       sys_prompt, user_prompt = task.get_prompt(var_snippet)
       req = agent.create_batch_request(f'{snippet.id}_{j}', sys_prompt, user_prompt)
       requests.append(req)
-  agent.submit_batch_job(args.identifier, requests)
+  agent.submit_batch_job(requests)
 
   # save dummy outputs
   res_orig = [None] * len(snippets)
