@@ -11,6 +11,7 @@ import json
 import math
 import os
 import random
+import re
 import time
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
@@ -30,11 +31,7 @@ from tqdm import tqdm
 
 from stylo_flora import IOTestCase, Snippet, setting_dict
 from stylo_flora.benchmarks import BaseBenchmark, benchmark_factory
-from stylo_flora.inference import (BaseAgent, BaseTask, CodeRepair,
-                                   CodeSummarization, CodeTranslation,
-                                   IOReasoning, MCQAnswering,
-                                   ReasoningType,
-                                   TagClassification, TestGeneration,
+from stylo_flora.inference import (BaseAgent, BaseTask, task_factory,
                                    agent_factory, task_worker)
 from stylo_flora.logger import init_logger, logger
 from stylo_flora.metrics import (calc_bertscore, calc_bleu, calc_codebleu,
@@ -42,19 +39,16 @@ from stylo_flora.metrics import (calc_bertscore, calc_bleu, calc_codebleu,
                                  calc_macro_f1, calc_meteor, calc_rouge)
 from stylo_flora.transformer.base import BaseTransformer, transformer_factory
 
-_MetricsEvaluator = Callable[[Seq[Any], Seq[Seq[Any]], Seq[Snippet], Namespace],
+_MetricsEvaluator = Callable[[Seq[str], Seq[Seq[str]], Seq[Snippet], Namespace],
                             dict[str, Any]]
 
 
 def parse_args() -> Namespace:
-  parser = ArgumentParser(description='Code task evaluation tool.'
-                          'All the datasets are evaluated by default.')
+  parser = ArgumentParser()
   parser.add_argument('-d', '--dataset', type=str, required=True,
                       help='Specify one dataset to evaluate.')
   parser.add_argument('-m', '--model', type=str, required=True,
                       help='Specify the model to use.')
-  parser.add_argument('--batch-api', action='store_true', default=False,
-                      help='If set, uses batch API and terminates WITHOUT evaluation. Only for proprietary models.')
   parser.add_argument('--model-path', type=str, required=False,
                       help='Specify the local/HF path to load model. Only used for open-source models.')
   parser.add_argument('-t', '--task', type=str, required=True,
@@ -91,7 +85,11 @@ def parse_args() -> Namespace:
   parser.add_argument('--debug', action='store_true', default=False,
                       help='If set, enables debugging level logging.')
   parser.add_argument('--transform-only', action='store_true', default=False,
-                      help='If set, terminates after code transformation WITHOUT performing tasks.')
+                      help='If set, terminates after code transformation WITHOUT inference.')
+  parser.add_argument('--batch-api', action='store_true', default=False,
+                      help='If set, uses batch API and terminates WITHOUT evaluation. Only for proprietary models.')
+  parser.add_argument('--evaluate-only', action='store_true', default=False,
+                      help='If set, only calculates metrics with existing data without transformation and inference.')
   args = parser.parse_args()
   return args
 
@@ -146,6 +144,20 @@ def _load_jsonl(
     return data
 
 
+def _load_outputs(
+    path: Path,
+    snippets: Seq[Snippet],
+) -> tuple[MSeq[Any], MSeq[MSeq[Any]]]:
+  output_data = _load_jsonl(path)
+
+  res_orig: MSeq[Any] = []
+  res_span: MSeq[MSeq[Any]] = []
+  for snippet in snippets:
+    res_orig.append(output_data.get(snippet.id, {}).get('output', None))
+    res_span.append(output_data.get(snippet.id, {}).get('variant_outputs', []))
+  return res_orig, res_span
+
+
 def _save_json(
     path: Path,
     obj: dict,
@@ -177,8 +189,8 @@ def _save_outputs(
     path: Path,
     data: dict[str, Any],
     snippets: Seq[Snippet],
-    res_orig: MSeq[Any],
-    res_span: MSeq[MSeq[Any]],
+    res_orig: Seq[Any],
+    res_span: Seq[Seq[Any]],
 ) -> None:
   for i, snippet in enumerate(snippets):
     data.setdefault(snippet.id, {})
@@ -261,6 +273,41 @@ def _perform_with(
   return res_orig, res_span
 
 
+def _batch_with(
+    agent: BaseAgent,
+    task: BaseTask,
+    snippets: Seq[Snippet],
+    corpus: Seq[Seq[str | None]],
+    args: Namespace,
+) -> None:
+  output_data = _load_jsonl(args.outputs_path)
+
+  requests = []
+  for i, snippet in enumerate(snippets):
+    cached_output = output_data.get(snippet.id, {}).get('output', None)
+    if not cached_output:
+      sys_prompt, user_prompt = task.get_prompt(snippet)
+      req = agent.create_batch_request(f'{snippet.id}_orig', sys_prompt, user_prompt)
+      requests.append(req)
+
+    cached_variant_outputs = output_data.get(snippet.id, {}).get('variant_outputs', [])
+    seqs_to_skip = {j for j, output in enumerate(cached_variant_outputs) if output}
+
+    for j, code in enumerate(corpus[i]):
+      if j in seqs_to_skip:
+        continue
+      var_snippet = snippet.replace(code=code)
+      sys_prompt, user_prompt = task.get_prompt(var_snippet)
+      req = agent.create_batch_request(f'{snippet.id}_{j}', sys_prompt, user_prompt)
+      requests.append(req)
+  agent.submit_batch_job(args.identifier, requests)
+
+  # save dummy outputs
+  res_orig = [None] * len(snippets)
+  res_span = [[None] * len(variants) for variants in corpus]
+  _save_outputs(args.outputs_path, output_data, snippets, res_orig, res_span)
+
+
 def _evaluate_task_template(
     snippets: Seq[Snippet],
     transformer: BaseTransformer,
@@ -277,15 +324,20 @@ def _evaluate_task_template(
   logger.info(f'Transforming styles of {len(snippets)} code snippets...')
   corpus = _transform_with(transformer, snippets, args, check=check)
   num_styles = len(corpus[0]) if corpus else 0
-  if args.transform_only:
-    logger.info('--transform-only is set, skipping performing tasks.')
-    return
-
-  logger.info(f'Performing {args.task} with {args.model}...')
-  res_orig, res_span = _perform_with(agent, task, snippets, corpus, args)
-  if args.batch_api:
-    logger.info('--batch-api is set, skipping evaluation.')
-    return
+  if args.evaluate_only:
+    logger.info(f'--evaluate-only is set, only evaluating outputs from {args.outputs_path}...')
+    res_orig, res_span = _load_outputs(args.outputs_path, snippets)
+  else:
+    if args.transform_only:
+      logger.info('--transform-only is set, skipping inference.')
+      return
+    if args.batch_api:
+      logger.info('Submitting code tasks via batch API...')
+      _batch_with(agent, task, snippets, corpus, args)
+      logger.info('--batch-api is set, skipping evaluation.')
+      return
+    logger.info(f'Performing {args.task} with {args.model}...')
+    res_orig, res_span = _perform_with(agent, task, snippets, corpus, args)
 
   # eliminate `None`s by filtering
   indices_filtered = [i for i, res in enumerate(res_orig) if res]
@@ -329,6 +381,7 @@ def evaluate_code_translation(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
+    task: BaseTask,
     args: Namespace,
 ) -> None:
   if not args.dst_lang:
@@ -349,7 +402,6 @@ def evaluate_code_translation(
     }
   
   snippets = benchmark.load_for_translation(args.src_lang, args.dst_lang)
-  task = CodeTranslation(args.src_lang, args.dst_lang)
   _evaluate_task_template(
       snippets, transformer, agent, task, args,
       metrics_evaluator=evaluate_metrics, check=True,
@@ -360,6 +412,7 @@ def evaluate_code_repair(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
+    task: BaseTask,
     args: Namespace,
 ) -> None:
   def evaluate_metrics(
@@ -377,7 +430,6 @@ def evaluate_code_repair(
     }
 
   snippets = benchmark.load_for_repair(args.src_lang)
-  task = CodeRepair(args.src_lang)
   _evaluate_task_template(
       snippets, transformer, agent, task, args,
       metrics_evaluator=evaluate_metrics,
@@ -389,8 +441,8 @@ def _evaluate_tag_classification(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
+    task: BaseTask,
     args: Namespace,
-    with_desc: bool,
 ) -> None:
   def evaluate_metrics(
       res_orig: Seq[Seq[str]], res_span: Seq[Seq[Seq[str]]],
@@ -407,7 +459,6 @@ def _evaluate_tag_classification(
     }
 
   snippets = benchmark.load_for_tagging(args.src_lang)
-  task = TagClassification(args.src_lang, with_desc)
   _evaluate_task_template(
       snippets, transformer, agent, task, args,
       metrics_evaluator=evaluate_metrics,
@@ -419,24 +470,27 @@ def evaluate_code2tag(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
+    task: BaseTask,
     args: Namespace,
 ) -> None:
-  _evaluate_tag_classification(benchmark, transformer, agent, args, with_desc=False)
+  _evaluate_tag_classification(benchmark, transformer, agent, task, args)
 
 
 def evaluate_descode2tag(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
+    task: BaseTask,
     args: Namespace,
 ) -> None:
-  _evaluate_tag_classification(benchmark, transformer, agent, args, with_desc=True)
+  _evaluate_tag_classification(benchmark, transformer, agent, task, args)
 
 
 def evaluate_code_summarization(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
+    task: BaseTask,
     args: Namespace,
 ) -> None:
   def evaluate_metrics(
@@ -477,7 +531,6 @@ def evaluate_code_summarization(
     }
 
   snippets = benchmark.load_for_summarization(args.src_lang)
-  task = CodeSummarization(args.src_lang)
   _evaluate_task_template(
       snippets, transformer, agent, task, args,
       metrics_evaluator=evaluate_metrics,
@@ -489,8 +542,8 @@ def _evaluate_io_reasoning(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
+    task: BaseTask,
     args: Namespace,
-    type: ReasoningType,
 ) -> None:
   def evaluate_metrics(
       res_orig: Seq[str], res_span: Seq[Seq[str]],
@@ -511,7 +564,6 @@ def _evaluate_io_reasoning(
     }
 
   snippets = benchmark.load_for_io_reasoning(args.src_lang)
-  task = IOReasoning(args.src_lang, type)
   _evaluate_task_template(
       snippets, transformer, agent, task, args,
       metrics_evaluator=evaluate_metrics,
@@ -523,28 +575,31 @@ def evaluate_input_reasoning(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
+    task: BaseTask,
     args: Namespace,
 ) -> None:
-  _evaluate_io_reasoning(benchmark, transformer, agent, args, ReasoningType.INPUT)
+  _evaluate_io_reasoning(benchmark, transformer, agent, task, args)
 
 
 def evaluate_output_reasoning(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
+    task: BaseTask,
     args: Namespace,
 ) -> None:
-  _evaluate_io_reasoning(benchmark, transformer, agent, args, ReasoningType.OUTPUT)
+  _evaluate_io_reasoning(benchmark, transformer, agent, task, args)
 
 
 def evaluate_mcq_answering(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
+    task: BaseTask,
     args: Namespace,
 ) -> None:
   def evaluate_metrics(
-      res_orig: Seq[Any], res_span: Seq[Seq[Any]],
+      res_orig: Seq[str], res_span: Seq[Seq[str]],
       snippets: Seq[Snippet], args: Namespace,
   ) -> dict[str, Any]:
     answers = np.array([snippet.data['answer'] for snippet in snippets])
@@ -558,7 +613,6 @@ def evaluate_mcq_answering(
     }
 
   snippets = benchmark.load_for_mcq_answering(args.src_lang)
-  task = MCQAnswering(args.src_lang)
   _evaluate_task_template(
       snippets, transformer, agent, task, args,
       metrics_evaluator=evaluate_metrics,
@@ -570,16 +624,22 @@ def evaluate_test_generation(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
+    task: BaseTask,
     args: Namespace,
 ) -> None:
   def evaluate_metrics(
-      res_orig: Seq[Seq[IOTestCase]], res_span: Seq[Seq[Seq[IOTestCase]]],
+      res_orig: Seq[Seq[Any]], res_span: Seq[Seq[Seq[Any]]],
       snippets: Seq[Snippet], args: Namespace,
   ) -> dict[str, Any]:
     code_list = [snippet.data['code'] for snippet in snippets]
-    cov_orig = calc_coverage(code_list, res_orig, args.src_lang)
+    tc_list_orig = [[IOTestCase.from_list(l) for l in res]
+                    for res in res_orig]
+    tc_lists_span = [[[IOTestCase.from_list(l) for l in res]
+                      for res in res_list]
+                     for res_list in res_span]
+    cov_orig = calc_coverage(code_list, tc_list_orig, args.src_lang)
     cov_span = [calc_coverage(code_list, tc_list, args.src_lang)
-                for tc_list in tqdm(zip(*res_span), desc='Evaluating',
+                for tc_list in tqdm(zip(*tc_lists_span), desc='Evaluating',
                                     total=len(res_span[0]), leave=False)]
     pass_span = [cov['pass_rate'] for cov in cov_span]
     line_cov_span = [cov['line_cov_rate'] for cov in cov_span]
@@ -597,7 +657,6 @@ def evaluate_test_generation(
     }
 
   snippets = benchmark.load_for_test_generation(args.src_lang)
-  task = TestGeneration(args.src_lang)
   _evaluate_task_template(
       snippets, transformer, agent, task, args,
       metrics_evaluator=evaluate_metrics,
@@ -613,24 +672,26 @@ def main():
   logger.info('Initializing transformer...')
   transformer = transformer_factory(lang=args.src_lang, seed=args.seed)
   logger.info(f'Initializing model {args.model}...')
-  agent = agent_factory(name=args.model, model_path=args.model_path, batch_api=args.batch_api)
+  agent = agent_factory(name=args.model, model_path=args.model_path)
+  logger.info(f'Initializing task {args.task}...')
+  task = task_factory(args.task, **dict(args._get_kwargs()))
 
   os.makedirs(args.result_dir, exist_ok=True)
   args.variants_path = args.result_dir /\
       f'variants_{args.dataset.lower()}_{args.task}_{args.src_lang}_seed{args.seed}.jsonl'
-  identifier = f'{args.dataset.lower()}_{args.task}_{args.src_lang}'
+  args.identifier = f'{args.dataset.lower()}_{args.task}_{args.src_lang}'
   if args.task == 'code_translation':
-    identifier += f'{"_to_" + args.dst_lang}'
-  identifier += f'_with_{args.model.replace("/", "-")}_seed{args.seed}'
+    args.identifier += f'{"_to_" + args.dst_lang}'
+  args.identifier += f'_with_{re.sub(r"[/: ]+", "-", args.model)}_seed{args.seed}'
   args.outputs_path = args.result_dir /\
-      f'outputs_{identifier}.jsonl'
+      f'outputs_{args.identifier}.jsonl'
   args.result_path = args.result_dir /\
-      f'results_{identifier}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+      f'results_{args.identifier}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
 
   evaluator = globals().get(f'evaluate_{args.task}')
   if not evaluator:
     raise ValueError(f'Unsupported task {args.task} for evaluation.')
-  evaluator(benchmark, transformer, agent, args)
+  evaluator(benchmark, transformer, agent, task, args)
 
 
 if __name__ == '__main__':

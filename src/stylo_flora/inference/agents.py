@@ -1,13 +1,17 @@
 import os
 import time
+import tempfile
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 
+import jsonlines
 import torch
 from google import genai
+from google.genai import types as gtypes
 from openai import OpenAI  # type: ignore[attr-defined]
 from requests.exceptions import Timeout
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from io import StringIO
 
 from .. import setting_dict
 from ..logger import logger
@@ -25,11 +29,40 @@ class BaseAgent(ABC):
   def generate(self, sys_prompt: str, user_prompt: str) -> str:
     """
     Generates a response based on the provided prompt.
+
     :param sys_prompt: the system prompt
     :param user_prompt: the user prompt
     :return: the generated response
     """
     pass
+
+  def create_batch_request(self, custom_id: str, sys_prompt: str, user_prompt: str) -> dict:
+    """
+    Creates a generation request that is compatible with batch API.
+
+    :param custom_id: an unique identifier for the request
+    :param sys_prompt: the system prompt
+    :param user_prompt: the user prompt
+    """
+    raise NotImplementedError
+
+  def submit_batch_job(self, display_name: str, requests: list[dict]) -> None:
+    """
+    Submits generation requests as a batch job to remote platform.
+
+    :param display_name: a name for the created job
+    :param requests: a list of generation requests
+    """
+    raise NotImplementedError
+
+  def retrieve_batch_result(self, job_name: str) -> dict:
+    """
+    Retrieves the result of a batch job.
+
+    :param job_name: the name of the job
+    :return: a mapping from custom ids to generated responses
+    """
+    raise NotImplementedError
 
 
 def retry(retries: int, interval: float) -> Callable:
@@ -62,18 +95,16 @@ def empty_cache(func: Callable) -> Callable:
 
 
 class OpenAIAgent(BaseAgent):
-  def __init__(self, name: str, *, batch_api: bool):
+  def __init__(self, name: str):
     super().__init__()
     self.client = OpenAI(base_url=os.getenv('BASE_URL'), api_key=os.getenv('API_KEY'))
     if name not in {model.id for model in self.client.models.list()}:
       raise TypeError(f'{name} is not available from {self.client.base_url}.')
     self.name = name
-    self.batch_api = batch_api
 
   @retry(retries=setting_dict['agent']['retries'],
          interval=setting_dict['agent']['retry_interval'])
   def generate(self, sys_prompt: str, user_prompt: str) -> str:
-    # TODO 1: use batch API to save tokens
     # TODO 2: choose representative hyperparameters
     completion = self.client.chat.completions.create(
         model=self.name,
@@ -90,25 +121,24 @@ class OpenAIAgent(BaseAgent):
 
 
 class GeminiAgent(BaseAgent):
-  def __init__(self, name: str, *, batch_api: bool):
+  def __init__(self, name: str):
     super().__init__()
     self.client = genai.Client(
         api_key=os.getenv('API_KEY'),
-        http_options=genai.types.HttpOptions(
+        http_options=gtypes.HttpOptions(
             timeout=setting_dict['agent']['timeout'] * 1000,
         ),
     )
     if 'models/' + name not in {model.name for model in self.client.models.list()}:
       raise TypeError(f'{name} is not available from Google API.')
     self.name = name
-    self.batch_api = batch_api
 
   @retry(retries=setting_dict['agent']['retries'],
          interval=setting_dict['agent']['retry_interval'])
   def generate(self, sys_prompt: str, user_prompt: str) -> str:
     res = self.client.models.generate_content(
         model=self.name,
-        config=genai.types.GenerateContentConfig(
+        config=gtypes.GenerateContentConfig(
             system_instruction=sys_prompt,
         ),
         contents=user_prompt,
@@ -117,6 +147,80 @@ class GeminiAgent(BaseAgent):
     if res.usage_metadata:
       self.token_count += res.usage_metadata.total_token_count or 0
     return res.text or ''
+
+  def create_batch_request(self, custom_id: str, sys_prompt: str, user_prompt: str) -> dict:
+    return {
+        'key': custom_id,
+        'request': {
+            'contents': [{'parts': [{'text': user_prompt}]}],
+            'system_instruction': {'parts': [{'text': sys_prompt}]},
+            'generation_config': {
+                'temperature': 0.7,
+            },
+        },
+    }
+
+  def submit_batch_job(self, display_name: str, requests: list[dict]) -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+      batch_file = os.path.join(tmpdir, 'batch.jsonl')
+      with jsonlines.open(batch_file, 'w') as writer:
+        writer.write_all(requests)
+      try:
+        uploaded_file = self.client.files.upload(
+            file=batch_file,
+            config=gtypes.UploadFileConfig(
+                display_name=f'batch-requests-{display_name}',
+                mime_type='jsonl',
+            )
+        )
+      except Exception as e:
+        logger.error(f'{e.__class__.__name__} occurred while uploading batch file: {e}')
+    if not uploaded_file.name:
+      logger.warning('Name of uploaded file is empty, maybe due to internal error of Google API.')
+      return
+    logger.info(f'Uploaded {len(requests)} requests from {batch_file}: {uploaded_file.name}')
+
+    try:
+      job = self.client.batches.create(
+          model=self.name,
+          src=uploaded_file.name,
+          config={
+              'display_name': f'batch-job-{display_name}',
+          }
+      )
+    except Exception as e:
+      logger.error(f'{e.__class__.__name__} occurred while creating batch job: {e}')
+    logger.info(f'Created batch job: {job.name}')
+
+  def retrieve_batch_result(self, job_name: str) -> dict:
+    job = self.client.batches.get(name=job_name)
+    match job.state:
+      case gtypes.JobState.JOB_STATE_SUCCEEDED:
+        if not job.dest or not job.dest.file_name:
+          logger.warning('Result file name is empty, maybe due to internal error of Google API.')
+          return {}
+        result_file_name = job.dest.file_name
+        logger.info(f'Downloading result file {result_file_name}...')
+        content = self.client.files.download(file=result_file_name).decode('utf-8')
+        result = {}
+        with jsonlines.Reader(StringIO(content)) as reader:
+          for row in reader:
+            try:
+              candidate = row['response']['candidates'][0]
+              if candidate['finishReason'] != 'STOP':
+                logger.warning(f'Request {row["key"]} finished with reason {candidate["finishReason"]}.')
+              result[row['key']] = candidate['content']['parts'][0]['text']
+              self.token_count += row['response']['usageMetadata']['totalTokenCount']
+            except KeyError:
+              continue
+        return result
+      case gtypes.JobState.JOB_STATE_FAILED:
+        logger.info(f'Batch job {job.name} failed. Error: {job.error}')
+      case gtypes.JobState.JOB_STATE_CANCELLED:
+        logger.info(f'Batch job {job.name} canceled.')
+      case _:
+        logger.info(f'Batch job {job.name} not completed yet. State: {job.state}')
+    return {}
 
 
 class Qwen25(BaseAgent):
@@ -174,7 +278,7 @@ class Phi4(BaseAgent):
 
   @empty_cache
   def generate(self, sys_prompt: str, user_prompt: str) -> str:
-    return ''  # TODO
+    return ''
 
 
 class CodeGeeX4(BaseAgent):
@@ -233,25 +337,4 @@ class CodeLlama(BaseAgent):
 
   @empty_cache
   def generate(self, sys_prompt: str, user_prompt: str) -> str:
-    return ''  # TODO
-
-
-def agent_factory(name: str, *, batch_api: bool = False, model_path: str | None = None) -> BaseAgent:
-  """
-  Load the specified model.
-  :param name: name of the model
-  :param model_path: path to the local model directory, only for open-source models
-  :param batch_api: whether to use batch API to generate, only for proprietary models
-  :return: an encapsulated agent instance
-  """
-  if 'gemini' in name:
-    return GeminiAgent(name, batch_api=batch_api)
-  if 'qwen2.5' in name:
-    return Qwen25(name, model_path=model_path)
-  if 'phi-4' in name:
-    return Phi4(name, model_path=model_path)
-  if 'codegeex4' in name:
-    return CodeGeeX4(name, model_path=model_path)
-  if 'codellama' in name:
-    return CodeLlama(name, model_path=model_path)
-  return OpenAIAgent(name, batch_api=batch_api)  # default to OpenAI-compatible agents
+    return ''

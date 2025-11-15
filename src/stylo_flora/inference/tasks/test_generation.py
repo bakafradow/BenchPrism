@@ -61,13 +61,9 @@ class TestGeneration(BaseTask):
       return None
     json_str = matched.group(0)
     try:
-      testcases = json.loads(json_str, strict=False)
+      tc_list = json.loads(json_str, strict=False)
       logger.debug(f'Test cases:\n{json_str}')
-      return [IOTestCase(input=testcase['input'][0] if isinstance(testcase['input'], list) \
-                         else testcase['input'],
-                         outputs=testcase['output'] if isinstance(testcase['output'], list) \
-                         else [testcase['output']])
-              for testcase in testcases]
+      return [IOTestCase.from_dict(tc) for tc in tc_list]
     except Exception as e:
       logger.warning(f'Failed to parse test cases:\n{e}')
       logger.debug(res)

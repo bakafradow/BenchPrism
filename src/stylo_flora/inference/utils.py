@@ -5,8 +5,16 @@ import torch
 
 from .. import Snippet
 from ..logger import logger
-from .agents import BaseAgent
+from .agents import (BaseAgent, CodeGeeX4, CodeLlama, GeminiAgent, OpenAIAgent,
+                     Phi4, Qwen25)
 from .tasks.base import BaseTask
+from .tasks.code_repair import CodeRepair
+from .tasks.code_summarization import CodeSummarization
+from .tasks.code_translation import CodeTranslation
+from .tasks.io_reasoning import IOReasoning, ReasoningType
+from .tasks.mcq_answering import MCQAnswering
+from .tasks.tag_classification import TagClassification
+from .tasks.test_generation import TestGeneration
 
 
 def get_freest_gpu() -> str:
@@ -28,6 +36,50 @@ def get_freest_gpu() -> str:
   gpu = max(range(gpu_count), key=lambda i: free_memories[i])
   logger.info(f'Using GPU {gpu} with {free_memories[gpu]} MB free memory.')
   return f'cuda:{gpu}'
+
+
+def agent_factory(name: str, *, model_path: str | None = None) -> BaseAgent:
+  """
+  Load the specified model.
+  :param name: name of the model
+  :param model_path: path to the local model directory, only for open-source models
+  :return: an encapsulated agent instance
+  """
+  if 'gemini' in name:
+    return GeminiAgent(name)
+  if 'qwen2.5' in name:
+    return Qwen25(name, model_path=model_path)
+  if 'phi-4' in name:
+    return Phi4(name, model_path=model_path)
+  if 'codegeex4' in name:
+    return CodeGeeX4(name, model_path=model_path)
+  if 'codellama' in name:
+    return CodeLlama(name, model_path=model_path)
+  return OpenAIAgent(name)  # default to OpenAI-compatible agents
+
+
+def task_factory(name: str, **kwargs) -> BaseTask:
+  match name:
+    case 'code_translation':
+      return CodeTranslation(kwargs['src_lang'], kwargs['dst_lang'])
+    case 'code_repair':
+      return CodeRepair(kwargs['src_lang'])
+    case 'code2tag':
+      return TagClassification(kwargs['src_lang'], with_desc=False)
+    case 'descode2tag':
+      return TagClassification(kwargs['src_lang'], with_desc=True)
+    case 'code_summarization':
+      return CodeSummarization(kwargs['src_lang'])
+    case 'input_reasoning':
+      return IOReasoning(kwargs['src_lang'], type=ReasoningType.INPUT)
+    case 'output_reasoning':
+      return IOReasoning(kwargs['src_lang'], type=ReasoningType.OUTPUT)
+    case 'mcq_answering':
+      return MCQAnswering(kwargs['src_lang'])
+    case 'test_generation':
+      return TestGeneration(kwargs['src_lang'])
+    case _:
+      raise ValueError(f'Unknown task: {name}')
 
 
 def task_worker(

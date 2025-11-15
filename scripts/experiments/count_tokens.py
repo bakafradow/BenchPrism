@@ -1,5 +1,5 @@
 import os
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser
 from functools import cache
 from typing import Callable
 
@@ -9,10 +9,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 
 from scripts.ipython_setup import _load_benchmark
-from stylo_flora.inference import (BaseTask, CodeRepair, CodeSummarization,
-                                   CodeTranslation, IOReasoning, MCQAnswering,
-                                   ReasoningType, TagClassification,
-                                   TestGeneration)
+from stylo_flora.inference import task_factory
 
 
 def count_tokens_gpt5mini(sys_prompt: str, user_prompt: str) -> int:
@@ -75,30 +72,6 @@ def _count_tokens_local(tokenizer, sys_prompt: str, user_prompt: str) -> int:
   return len(input_ids[0])
 
 
-def _task_factory(args: Namespace) -> BaseTask:
-  match args.task:
-    case 'code_translation':
-      return CodeTranslation(args.src_lang, 'python')
-    case 'code_repair':
-      return CodeRepair(args.src_lang)
-    case 'code2tag':
-      return TagClassification(args.src_lang, False)
-    case 'descode2tag':
-      return TagClassification(args.src_lang, True)
-    case 'code_summarization':
-      return CodeSummarization(args.src_lang)
-    case 'input_reasoning':
-      return IOReasoning(args.src_lang, ReasoningType.INPUT)
-    case 'output_reasoning':
-      return IOReasoning(args.src_lang, ReasoningType.OUTPUT)
-    case 'mcq_answering':
-      return MCQAnswering(args.src_lang)
-    case 'test_generation':
-      return TestGeneration(args.src_lang)
-    case _:
-      raise ValueError(f'Unknown task: {args.task}')
-
-
 def main() -> None:
   parser = ArgumentParser()
   parser.add_argument('-d', '--dataset', type=str, required=True,
@@ -139,7 +112,7 @@ def main() -> None:
     except NotImplementedError:
       print(f'Skipping {task_name}.')
       continue
-    task = _task_factory(args)
+    task = task_factory(task_name, **dict(args._get_kwargs()))
     total_tokens = 0
     for snippet in tqdm(snippets, desc=f'Counting on {task_name}', leave=False):
       sys_prompt, user_prompt = task.get_prompt(snippet)
