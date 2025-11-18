@@ -146,7 +146,7 @@ class XCodeEval(BaseBenchmark):
     testcases = self._load_tests(src_uids)
     return [Snippet(id=src_uid, data={
         'code': source,
-        'io_testcases': testcases[i],
+        'io_tests': testcases[i],
     }) for i, (src_uid, source) in enumerate(zip(src_uids, sources))]
 
   def load_for_repair(self, lang):
@@ -165,7 +165,7 @@ class XCodeEval(BaseBenchmark):
     return [Snippet(id=src_uid, data={
         **args_dict[src_uid],
         'code': source,
-        'io_testcases': testcases[i],
+        'io_tests': testcases[i],
     }) for i, (src_uid, source) in enumerate(zip(src_uids, sources))]
 
   def load_for_tagging(self, lang: str) -> Seq[Snippet]:
@@ -219,7 +219,7 @@ class CodeScope(BaseBenchmark):
     ds = load_dataset('json', data_files='data/CodeScope/data/code_translation_data.jsonl')
     ds = ds.filter(lambda row: row['source_lang_cluster'] == self._lang_to_name[src_lang] and row['target_lang_cluster'] == self._lang_to_name[dst_lang])
     return [Snippet(id=row['src_uid'], data={
-        'code': row['source_code'], 'io_testcases': self._normalize_test(row['testcases']),
+        'code': row['source_code'], 'io_tests': self._normalize_test(row['testcases']),
     }) for row in ds['train']]
 
   @check_lang_support
@@ -233,7 +233,7 @@ class CodeScope(BaseBenchmark):
         'output_spec': row['output_specification'],
         'sample_inputs': row['sample_inputs'],
         'sample_outputs': row['sample_outputs'],
-        'io_testcases': self._normalize_test(row['testcases']),
+        'io_tests': self._normalize_test(row['testcases']),
     }) for row in ds['train']]
 
   @check_lang_support
@@ -257,7 +257,7 @@ class CodeScope(BaseBenchmark):
         'sample_inputs': row['sample_inputs'],
         'sample_outputs': row['sample_outputs'],
         'notes': row['notes'],
-        'io_testcases': self._normalize_test(row['human_testcases']),  # for ensuring correct transformation
+        'io_tests': self._normalize_test(row['human_testcases']),  # for ensuring correct transformation
     }) for row in ds['train']]
 
 
@@ -327,7 +327,7 @@ class CruxEvalX(BaseBenchmark):
         'code': row['code'],
         'input_reasoning': row['input_reasoning'],
         'output_reasoning': row['output_reasoning'],
-        'io_testcases': [IOTestCase(input='', outputs=[''])],  # tests by assertion
+        'io_tests': [IOTestCase(input='', outputs=[''])],  # tests by assertion
     }) for row in ds[self._lang_to_name[lang]]]
 
 

@@ -7,7 +7,6 @@ import types
 import unittest
 from collections.abc import Sequence as Seq
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
 
 from tqdm import tqdm
 
@@ -22,10 +21,10 @@ class CompilationError(Exception):
     super().__init__(message)
 
 
-def _run_with_io(cmd: Seq[str], tests: Seq[IOTestCase]) -> bool:
-  for test in tqdm(tests, desc='Running tests', total=len(tests), leave=False):
+def _run_with_io(cmd: Seq[str], tc_list: Seq[IOTestCase]) -> bool:
+  def worker(test: IOTestCase) -> bool:
     try:
-      returned = subprocess.run(cmd, input=test.input, text=True, capture_output=True, encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
+      completed = subprocess.run(cmd, input=test.input, text=True, capture_output=True, encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
     except KeyboardInterrupt:
       logger.warning('Keyboard interrupt.')
       raise
@@ -38,21 +37,24 @@ def _run_with_io(cmd: Seq[str], tests: Seq[IOTestCase]) -> bool:
                      f'Input:\n{test.input.strip()}\n'
                      f'Exception:\n{e}')
       return False
-    if returned.returncode != 0:
-      logger.verbose(f'{returned.returncode} was returned.\n'
+    if completed.returncode != 0:
+      logger.verbose(f'{completed.returncode} was returned.\n'
                      f'Input:\n{test.input.strip()}\n'
-                     f'Standard Error:\n{returned.stderr}')
+                     f'Standard Error:\n{completed.stderr}')
       return False
-    if returned.stdout.strip() not in (output.strip() for output in test.outputs):
+    if completed.stdout.strip() not in (output.strip() for output in test.outputs):
       logger.verbose(f'Wrong answer.\n'
                      f'Input:\n{test.input.strip()}\n'
                      f'Expected:\n{test.outputs[0]}\n'
-                     f'Actual:\n{returned.stdout}')
+                     f'Actual:\n{completed.stdout}')
       return False
-  return True
+    return True
+
+  with ThreadPoolExecutor(max_workers=setting_dict['metrics']['max_workers']) as executor:
+    return all(tqdm(executor.map(worker, tc_list), total=len(tc_list), leave=False))
 
 
-def test_io_java(code: str, args: dict) -> bool:
+def test_io_java(code: str, tc_list: Seq[IOTestCase]) -> bool:
   classname = extract_classname_java(code)
   if not classname:
     raise CompilationError('Failed to extract class name from Java code.', f'Generated code:\n{code}')
@@ -69,11 +71,48 @@ def test_io_java(code: str, args: dict) -> bool:
       if returned.returncode != 0:
         raise CompilationError(f'Failed to compile {f.name}.', returned.stderr)
       cmd = ['java', '-classpath', classdir, classname]
-      return _run_with_io(cmd, args['io_testcases'])
+      return _run_with_io(cmd, tc_list)
   except CompilationError as e:
     logger.warning(e)
     logger.verbose(f'Standard Error:\n{e.stderr}')
   return False
+
+
+def test_io_cpp(code: str, tc_list: Seq[IOTestCase]) -> bool:
+  try:
+    with tempfile.NamedTemporaryFile(suffix='.cpp') as f:
+      f.write(code.encode())
+      f.flush()
+      executable = re.sub(r'\.cpp$', '', f.name)
+      try:
+        returned = subprocess.run(['g++', f.name, '-o', executable], stderr=subprocess.PIPE, encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
+      except subprocess.TimeoutExpired:
+        raise CompilationError(f'Compilation of {f.name} timed out.')
+      if returned.returncode != 0:
+        raise CompilationError(f'Failed to compile {f.name}.', returned.stderr)
+  except CompilationError as e:
+    logger.warning(e)
+    logger.verbose(f'Standard Error:\n{e.stderr}')
+    return False
+  cmd = [executable]
+  result = _run_with_io(cmd, tc_list)
+  os.remove(executable)
+  return result
+
+
+def test_io_python(code: str, tc_list: Seq[IOTestCase]) -> bool:
+  cmd = ['python', '-c', code]
+  return _run_with_io(cmd, tc_list)
+
+
+def pass_at_1(code_list: Seq[str], tc_lists: Seq[Seq[IOTestCase]], lang: str) -> float:
+  tester = globals().get(f'test_io_{lang}')
+  if not tester:
+    raise ValueError(f'Unsupported language: {lang}')
+  return sum(tester(code, tc_list)
+             for code, tc_list in tqdm(zip(code_list, tc_lists),
+                                       desc='Calculating Pass@1', total=len(code_list),
+                                       leave=False)) / len(code_list)
 
 
 def test_api_java(code: str, args: dict) -> bool:
@@ -110,28 +149,6 @@ def test_api_java(code: str, args: dict) -> bool:
   return True
 
 
-def test_io_cpp(code: str, args: dict) -> bool:
-  try:
-    with tempfile.NamedTemporaryFile(suffix='.cpp') as f:
-      f.write(code.encode())
-      f.flush()
-      executable = re.sub(r'\.cpp$', '', f.name)
-      try:
-        returned = subprocess.run(['g++', f.name, '-o', executable], stderr=subprocess.PIPE, encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
-      except subprocess.TimeoutExpired:
-        raise CompilationError(f'Compilation of {f.name} timed out.')
-      if returned.returncode != 0:
-        raise CompilationError(f'Failed to compile {f.name}.', returned.stderr)
-  except CompilationError as e:
-    logger.warning(e)
-    logger.verbose(f'Standard Error:\n{e.stderr}')
-    return False
-  cmd = [executable]
-  result = _run_with_io(cmd, args['io_testcases'])
-  os.remove(executable)
-  return result
-
-
 def test_api_cpp(code: str, args: dict) -> bool:
   try:
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -165,11 +182,6 @@ def test_api_cpp(code: str, args: dict) -> bool:
   return True
 
 
-def test_io_python(code: str, args: dict) -> bool:
-  cmd = ['python', '-c', code]
-  return _run_with_io(cmd, args['io_testcases'])
-
-
 def test_api_python(code: str, args: dict) -> bool:
   module = types.ModuleType('focal_module')
   exec(code, module.__dict__)
@@ -179,24 +191,3 @@ def test_api_python(code: str, args: dict) -> bool:
   runner = unittest.TextTestRunner(verbosity=0, failfast=True)
   result = runner.run(suite)
   return result.wasSuccessful()
-
-
-def calc_correctness(code_list: Seq[str], args_list: Seq[dict[str, Any]], lang: str) -> float:
-  """
-  Checks the correctness of the translated code with the tests.
-  :param snippets: the translated code snippets
-  :param lang: the language of the code snippets
-  """
-  def worker(code: str, args: dict) -> bool:
-    try:
-      if args.get(f'api_testcases_{lang}'):
-        return globals()[f'test_api_{lang}'](code, args)
-      return globals()[f'test_io_{lang}'](code, args)
-    except KeyError:
-      raise TypeError(f'Unsupported language {lang} for correctness testing.')
-
-  max_workers = max(1, setting_dict['metrics']['max_workers'])
-  with ThreadPoolExecutor(max_workers=max_workers) as executor:
-    results = list(tqdm(executor.map(worker, code_list, args_list),
-                        desc='Calculating correctness', total=len(code_list), leave=False))
-  return sum(results) / len(code_list)

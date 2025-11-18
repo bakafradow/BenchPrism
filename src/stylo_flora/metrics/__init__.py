@@ -1,4 +1,4 @@
-from .correctness import calc_correctness
+from .correctness import pass_at_1
 from .coverage import calc_coverage
 from .f1_score import calc_macro_f1
 from .similarity import (
@@ -10,7 +10,6 @@ from .similarity import (
 )
 
 __all__ = [
-    'calc_correctness',
     'calc_coverage',
     'calc_macro_f1',
     'calc_bertscore',
@@ -18,4 +17,5 @@ __all__ = [
     'calc_codebleu',
     'calc_meteor',
     'calc_rouge',
+    'pass_at_1',
 ]

@@ -1,11 +1,10 @@
 from collections.abc import Mapping
-from functools import lru_cache, singledispatch
+from functools import cache, singledispatch
 from itertools import chain, product, tee
 from typing import Any
 
 import jpype as jp
 import jpype.imports
-
 from org.example.parser.common.factory import MyParserFactory
 from org.example.styler import Styler
 from org.example.styler.arrangement.modifier import ModifierOrderStyler
@@ -147,7 +146,7 @@ def _(styler: SpaceStyler, lang: str, choices: Mapping[str, Any]) -> None:
 def _(styler: NewlineStyler, lang: str, choices: Mapping[str, Any]) -> None:
   style = NewlineStyle()
 
-  @lru_cache(maxsize=None)
+  @cache
   def get_prop(num_newlines: int) -> NewlineProperty:
     return NewlineProperty(num_newlines, 1)
 

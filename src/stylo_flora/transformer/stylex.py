@@ -21,7 +21,7 @@ jp.startJVM('-ea', '--enable-native-access=ALL-UNNAMED')
 
 from .stylex_builders import build_styler
 from .base import BaseTransformer
-from ..metrics.correctness import calc_correctness
+from ..metrics.correctness import pass_at_1
 from ..logger import logger
 from .. import Snippet, setting_dict
 
@@ -77,7 +77,7 @@ class StyleX(BaseTransformer):
         with self.lock:
           variant = self._apply_styles(self.lang, snippet.data['code'], styler_container)
         if variant and check:
-          correctness = calc_correctness([variant], [snippet.data], self.lang)
+          correctness = pass_at_1([variant], [snippet.data['io_tests']], self.lang)
           if not math.isclose(correctness, 1.0):
             logger.warning(f'Correctness check failed: {correctness}')
             variant = None

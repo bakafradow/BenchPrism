@@ -31,12 +31,12 @@ from tqdm import tqdm
 
 from stylo_flora import IOTestCase, Snippet, setting_dict
 from stylo_flora.benchmarks import BaseBenchmark, benchmark_factory
-from stylo_flora.inference import (BaseAgent, BaseTask, task_factory,
-                                   agent_factory, task_worker)
+from stylo_flora.inference import (BaseAgent, BaseTask, agent_factory,
+                                   task_factory, task_worker)
 from stylo_flora.logger import init_logger, logger
 from stylo_flora.metrics import (calc_bertscore, calc_bleu, calc_codebleu,
-                                 calc_correctness, calc_coverage,
-                                 calc_macro_f1, calc_meteor, calc_rouge)
+                                 calc_coverage, calc_macro_f1, calc_meteor,
+                                 calc_rouge, pass_at_1)
 from stylo_flora.transformer.base import BaseTransformer, transformer_factory
 
 _MetricsEvaluator = Callable[[Seq[str], Seq[Seq[str]], Seq[Snippet], Namespace],
@@ -91,6 +91,8 @@ def parse_args() -> Namespace:
   parser.add_argument('--evaluate-only', action='store_true', default=False,
                       help='If set, only calculates metrics with existing data without transformation and inference.')
   args = parser.parse_args()
+  args.dataset = args.dataset.lower()
+  args.task = args.task.lower()
   return args
 
 
@@ -109,7 +111,8 @@ def _pick_snippets(
       return False
     if not ensure_correct:
       return True
-    return math.isclose(calc_correctness([snippet.data['code']], [snippet.data], lang=args.src_lang), 1.0)
+    return math.isclose(pass_at_1([snippet.data['code']], [snippet.data['io_tests']],
+                                  lang=args.src_lang), 1.0)
 
   indices = list(range(len(snippets)))
   if args.random:
@@ -127,13 +130,14 @@ def _cut_testcases(
     snippets: Seq[Snippet],
     args: Namespace,
 ) -> None:
-  if snippets and not snippets[0].data.get('io_testcases'):
-    return
   if args.num_tests < 0:
     return
   for snippet in snippets:
-    if snippet.data.get('io_testcases') and len(snippet.data['io_testcases']) > args.num_tests:
-      snippet.data['io_testcases'] = pd.Series(snippet.data['io_testcases']) \
+    if not snippet.data.get('io_tests'):
+      logger.warning(f'Snippet {snippet.id} has no IO test cases. Skipping.')
+      continue
+    if len(snippet.data['io_tests']) > args.num_tests:
+      snippet.data['io_tests'] = pd.Series(snippet.data['io_tests']) \
           .sample(n=args.num_tests, random_state=args.seed).tolist()
 
 
@@ -328,16 +332,16 @@ def _evaluate_task_template(
   corpus = _transform_with(transformer, snippets, args, check=check)
   num_styles = len(corpus[0]) if corpus else 0
   if args.evaluate_only:
-    logger.info(f'--evaluate-only is set, only evaluating outputs from {args.outputs_path}...')
+    logger.info(f'--evaluate-only set, only evaluating outputs from {args.outputs_path}...')
     res_orig, res_span = _load_outputs(args.outputs_path, snippets)
   else:
     if args.transform_only:
-      logger.info('--transform-only is set, skipping inference.')
+      logger.info('--transform-only set, skipping inference.')
       return
     if args.batch_api:
       logger.info('Submitting code tasks via batch API...')
       _batch_with(agent, task, snippets, corpus, args)
-      logger.info('--batch-api is set, skipping evaluation.')
+      logger.info('--batch-api set, skipping evaluation.')
       return
     logger.info(f'Performing {args.task} with {args.model}...')
     res_orig, res_span = _perform_with(agent, task, snippets, corpus, args)
@@ -394,10 +398,11 @@ def evaluate_code_translation(
       res_orig: Seq[str], res_span: Seq[Seq[str]],
       snippets: Seq[Snippet], args: Namespace,
   ) -> dict[str, Any]:
-    args_list = [snippet.data for snippet in snippets]
-    pass_orig = calc_correctness(res_orig, args_list, args.dst_lang)
-    pass_span = [calc_correctness(variants, args_list, args.dst_lang)
-                 for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
+    tc_lists = [snippet.data['io_tests'] for snippet in snippets]
+    pass_orig = pass_at_1(res_orig, tc_lists, args.dst_lang)
+    pass_span = [pass_at_1(variants, tc_lists, args.dst_lang)
+                 for variants in tqdm(zip(*res_span), desc='Evaluating',
+                                      total=len(res_span[0]), leave=False)]
     return {
         'pass_orig': pass_orig,
         'pass_span': pass_span,
@@ -422,9 +427,9 @@ def evaluate_code_repair(
       res_orig: Seq[str], res_span: Seq[Seq[str]],
       snippets: Seq[Snippet], args: Namespace,
   ) -> dict[str, Any]:
-    args_list = [snippet.data for snippet in snippets]
-    pass_orig = calc_correctness(res_orig, args_list, args.src_lang)
-    pass_span = [calc_correctness(variants, args_list, args.src_lang)
+    tc_lists = [snippet.data['io_tests'] for snippet in snippets]
+    pass_orig = pass_at_1(res_orig, tc_lists, args.src_lang)
+    pass_span = [pass_at_1(variants, tc_lists, args.src_lang)
                  for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
     return {
         'pass_orig': pass_orig,
@@ -556,9 +561,9 @@ def _evaluate_io_reasoning(
                      for snippet, res in zip(snippets, res_orig)]
     res_code_span = [[snippet.data['code'].replace('????', res) for res in res_list]
                      for snippet, res_list in zip(snippets, res_span)]
-    args_list = [snippet.data for snippet in snippets]
-    pass_orig = calc_correctness(res_code_orig, args_list, args.src_lang)
-    pass_span = [calc_correctness(variants, args_list, args.src_lang)
+    tc_lists = [snippet.data['io_tests'] for snippet in snippets]
+    pass_orig = pass_at_1(res_code_orig, tc_lists, args.src_lang)
+    pass_span = [pass_at_1(variants, tc_lists, args.src_lang)
                  for variants in tqdm(zip(*res_code_span), desc='Evaluating', total=len(res_code_span[0]), leave=False)]
     return {
         'pass_orig': pass_orig,
@@ -681,8 +686,8 @@ def main():
 
   os.makedirs(args.result_dir, exist_ok=True)
   args.variants_path = args.result_dir /\
-      f'variants_{args.dataset.lower()}_{args.task}_{args.src_lang}_seed{args.seed}.jsonl'
-  args.identifier = f'{args.dataset.lower()}_{args.task}_{args.src_lang}'
+      f'variants_{args.dataset}_{args.task}_{args.src_lang}_seed{args.seed}.jsonl'
+  args.identifier = f'{args.dataset}_{args.task}_{args.src_lang}'
   if args.task == 'code_translation':
     args.identifier += f'{"_to_" + args.dst_lang}'
   args.identifier += f'_with_{re.sub(r"[/: ]+", "-", args.model)}_seed{args.seed}'
