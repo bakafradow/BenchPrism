@@ -101,7 +101,7 @@ def _pick_snippets(
     ensure_correct: bool = True,
 ) -> Seq[Snippet]:
   if args.num_snippets < 0:
-    return snippets
+    args.num_snippets = len(snippets)
 
   def is_valid(snippet: Snippet) -> bool:
     if not ensure_correct:

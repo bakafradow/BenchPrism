@@ -7,8 +7,13 @@ Usage:
 
 import ast
 import json
+import os
 from argparse import ArgumentParser, Namespace
+from datetime import datetime
 from pathlib import Path
+
+from google import genai
+from openai import OpenAI
 
 from stylo_flora import Snippet
 from stylo_flora.benchmarks import benchmark_factory
@@ -30,6 +35,13 @@ def dump_seq_as_dict() -> None:
     choice_dict = stylex._create_choice_dict(seq)
     json.dump(choice_dict, f)
   print('Dumped choice dict to', CHOICE_DICT_PATH)
+
+
+def format_timestamp(d: dict) -> dict:
+  for k, v in d.items():
+      if isinstance(v, int) and datetime.fromtimestamp(v).year == 2025:
+          d[k] = datetime.fromtimestamp(v).strftime('%Y-%m-%d %H:%M:%S')
+  return d
 
 
 def _load_benchmark(args: Namespace) -> list[Snippet]:

@@ -1,4 +1,7 @@
 import re
+import os
+import shutil
+import subprocess
 import time
 from argparse import ArgumentParser, Namespace
 from operator import itemgetter
@@ -7,7 +10,7 @@ from pathlib import Path
 import jsonlines
 from tqdm import tqdm
 
-from stylo_flora.inference import agent_factory, task_factory
+from stylo_flora.inference import BaseAgent, agent_factory, task_factory
 from stylo_flora.logger import init_logger, logger
 
 
@@ -30,6 +33,8 @@ def parse_args() -> Namespace:
                       help='Specify the code task to evaluate on.')
   parser.add_argument('--src-lang', type=str, required=True,
                       help='Specify the source language.')
+  parser.add_argument('--dst-lang', type=str, required=False,
+                      help='Specify the destination language. Only used for code translation task.')
   parser.add_argument('-j', '--job', type=str, required=True,
                       help='Specify the job name returned by the API platform.')
   parser.add_argument('-f', '--file', type=Path, required=True,
@@ -40,6 +45,29 @@ def parse_args() -> Namespace:
   return args
 
 
+def _retrieve(agent: BaseAgent, args: Namespace) -> dict:
+  while True:
+    result = agent.retrieve_batch_result(args.job)
+    if result:
+      info = f'Retrieved {len(result)} outputs from {args.job}, {agent.token_count} tokens used in total.'
+      logger.info(info)
+      _message(info)
+      return result
+    try:
+      for _ in tqdm(range(args.retry_interval), desc='Retry after',
+                    leave=False, unit='s', bar_format='{l_bar}{bar}'):
+        time.sleep(1)
+    except KeyboardInterrupt:
+      exit(0)
+
+
+def _message(text: str) -> None:
+  if not shutil.which('powershell.exe'):
+    return
+  cmd = f'Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show("{text}", "{os.path.basename(__file__)}")'
+  subprocess.run(['powershell.exe', '-Command', cmd], capture_output=True)
+
+
 def main():
   args = parse_args()
   init_logger(path=None, verbose=False, debug=False)
@@ -48,14 +76,7 @@ def main():
   logger.info(f'Initializing task {args.task}...')
   task = task_factory(args.task, **dict(args._get_kwargs()))
 
-  while True:
-    result = agent.retrieve_batch_result(args.job)
-    if result:
-      logger.info(f'Retrieved {len(result)} outputs from {args.job}, {agent.token_count} tokens used in total.')
-      break
-    for _ in tqdm(range(args.retry_interval), desc='Retry after',
-                  leave=False, unit='s', bar_format='{l_bar}{bar}'):
-      time.sleep(1)
+  result = _retrieve(agent, args)
 
   with jsonlines.open(args.file, mode='r') as reader:
     data = {row['id']: row for row in reader}

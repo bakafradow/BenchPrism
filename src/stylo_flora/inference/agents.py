@@ -105,7 +105,6 @@ class OpenAIAgent(BaseAgent):
   @retry(retries=setting_dict['agent']['retries'],
          interval=setting_dict['agent']['retry_interval'])
   def generate(self, sys_prompt: str, user_prompt: str) -> str:
-    # TODO 2: choose representative hyperparameters
     completion = self.client.chat.completions.create(
         model=self.name,
         messages=[
@@ -130,7 +129,6 @@ class OpenAIAgent(BaseAgent):
                 {'role': 'system', 'content': sys_prompt},
                 {'role': 'user', 'content': user_prompt},
             ],
-            'temperature': 1.0,
         },
     }
 
@@ -155,9 +153,9 @@ class OpenAIAgent(BaseAgent):
           endpoint='/v1/chat/completions',
           completion_window='24h',
       )
+      logger.info(f'Created batch: {batch.id}')
     except Exception as e:
       logger.error(f'{e.__class__.__name__} occurred while creating batch: {e}')
-    logger.info(f'Created batch: {batch.id}')
 
   def retrieve_batch_result(self, batch_id: str) -> dict:
     batch = self.client.batches.retrieve(batch_id)
@@ -227,9 +225,6 @@ class GeminiAgent(BaseAgent):
         'request': {
             'contents': [{'parts': [{'text': user_prompt}]}],
             'system_instruction': {'parts': [{'text': sys_prompt}]},
-            'generation_config': {
-                'temperature': 1.0,
-            },
         },
     }
 
@@ -258,9 +253,9 @@ class GeminiAgent(BaseAgent):
           src=uploaded_file.name,
           config=gtypes.CreateBatchJobConfig(),
       )
+      logger.info(f'Created batch job: {job.name}')
     except Exception as e:
       logger.error(f'{e.__class__.__name__} occurred while creating batch job: {e}')
-    logger.info(f'Created batch job: {job.name}')
 
   def retrieve_batch_result(self, batch_id: str) -> dict:
     job = self.client.batches.get(name=batch_id)
