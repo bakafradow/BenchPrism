@@ -26,6 +26,19 @@ class BaseTransformer(ABC):
     """
     raise NotImplementedError
 
+  @abstractmethod
+  def is_processable(
+      self,
+      snippet: Snippet,
+  ) -> bool:
+    """
+    Checks whether the given code snippet is processable by the coding style transformer.
+
+    :param snippet: the code snippet to check
+    :return: whether the snippet is processable
+    """
+    raise NotImplementedError
+
 
 def transformer_factory(lang: str, seed: int) -> BaseTransformer:
   from .stylex import StyleX

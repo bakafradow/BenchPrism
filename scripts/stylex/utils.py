@@ -10,7 +10,7 @@ from stylo_flora.transformer.stylex import StyleX
 load_dotenv()
 
 
-stylex = StyleX()
+stylex = StyleX(lang='java')
 GlobalInfo = jp.JClass('org.example.global.GlobalInfo')
 Configuration = jp.JClass('org.example.Configuration')
 

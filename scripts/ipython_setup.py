@@ -14,6 +14,7 @@ from pathlib import Path
 
 from google import genai
 from openai import OpenAI
+from tqdm import tqdm
 
 from stylo_flora import Snippet
 from stylo_flora.benchmarks import benchmark_factory
@@ -42,6 +43,10 @@ def format_timestamp(d: dict) -> dict:
       if isinstance(v, int) and datetime.fromtimestamp(v).year == 2025:
           d[k] = datetime.fromtimestamp(v).strftime('%Y-%m-%d %H:%M:%S')
   return d
+
+
+def count_processable() -> tuple[int, int]:
+  return sum(tqdm(map(stylex.is_processable, snippets), desc='Counting', total=len(snippets), leave=False)), len(snippets)
 
 
 def _load_benchmark(args: Namespace) -> list[Snippet]:

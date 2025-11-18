@@ -97,6 +97,10 @@ class StyleX(BaseTransformer):
                           desc=f'Spanning {snippet.id}', total=len(self.seqs), leave=False))
     return variants
 
+  def is_processable(self, snippet: Snippet) -> bool:
+    parser = MyParserFactory.createParser(self.lang)
+    return parser.parseFromString(snippet.data['code']) is not None
+
   def count_spots(
       self,
       snippet: Snippet,

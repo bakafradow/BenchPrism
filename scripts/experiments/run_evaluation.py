@@ -96,6 +96,7 @@ def parse_args() -> Namespace:
 
 def _pick_snippets(
     snippets: Seq[Snippet],
+    transformer: BaseTransformer,
     args: Namespace,
     *,
     ensure_correct: bool = True,
@@ -104,6 +105,8 @@ def _pick_snippets(
     args.num_snippets = len(snippets)
 
   def is_valid(snippet: Snippet) -> bool:
+    if not transformer.is_processable(snippet):
+      return False
     if not ensure_correct:
       return True
     return math.isclose(calc_correctness([snippet.data['code']], [snippet.data], lang=args.src_lang), 1.0)
@@ -319,7 +322,7 @@ def _evaluate_task_template(
     check: bool = True,
 ) -> None:
   _cut_testcases(snippets, args)
-  snippets = _pick_snippets(snippets, args, ensure_correct=check)
+  snippets = _pick_snippets(snippets, transformer, args, ensure_correct=check)
 
   logger.info(f'Transforming styles of {len(snippets)} code snippets...')
   corpus = _transform_with(transformer, snippets, args, check=check)
