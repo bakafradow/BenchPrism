@@ -4,6 +4,7 @@ import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from io import StringIO
+from typing import ParamSpec
 from uuid import uuid4
 
 import jsonlines
@@ -22,6 +23,8 @@ class BaseAgent(ABC):
   """
   Abstract base class for LLM-based agents.
   """
+
+  supports_concurrency: bool = True
 
   def __init__(self):
     self.token_count = 0
@@ -65,12 +68,15 @@ class BaseAgent(ABC):
     raise NotImplementedError
 
 
-def retry(retries: int, interval: float) -> Callable:
-  def wrapper(func: Callable) -> Callable:
-    def inner(self, sys_prompt: str, user_prompt: str) -> str:
+P = ParamSpec('P')
+
+
+def retry(retries: int = 3, interval: float = 30) -> Callable[[Callable[P, str]], Callable[P, str]]:
+  def wrapper(func: Callable[P, str]) -> Callable[P, str]:
+    def inner(*args: P.args, **kwargs: P.kwargs) -> str:
       for attempt in range(retries):
         try:
-          res = func(self, sys_prompt, user_prompt)
+          res = func(*args, **kwargs)
           return res
         except KeyboardInterrupt:
           logger.warning('Keyboard interrupt.')
@@ -87,14 +93,9 @@ def retry(retries: int, interval: float) -> Callable:
   return wrapper
 
 
-def empty_cache(func: Callable) -> Callable:
-  def wrapper(*args, **kwargs):
-    torch.cuda.empty_cache()
-    return func(*args, **kwargs)
-  return wrapper
-
-
 class OpenAIAgent(BaseAgent):
+  supports_concurrency = False
+
   def __init__(self, name: str):
     super().__init__()
     self.client = OpenAI(base_url=os.getenv('BASE_URL'), api_key=os.getenv('API_KEY'))
@@ -192,6 +193,8 @@ class OpenAIAgent(BaseAgent):
 
 
 class GeminiAgent(BaseAgent):
+  supports_concurrency = False
+
   def __init__(self, name: str):
     super().__init__()
     self.client = genai.Client(
@@ -296,6 +299,7 @@ class Qwen25(BaseAgent):
         pretrained_model_name_or_path=model_path,
         trust_remote_code=True,
         torch_dtype=torch.bfloat16,
+        low_cpu_mem_usage=True,
         device_map='auto',
     )
     self.tokenizer = AutoTokenizer.from_pretrained(
@@ -305,34 +309,33 @@ class Qwen25(BaseAgent):
     if not self.tokenizer.pad_token_id:
       self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
-  @empty_cache
+  @retry(retries=1)
   def generate(self, sys_prompt: str, user_prompt: str) -> str:
     messages = [
         {'role': 'system', 'content': sys_prompt},
-        {'role': 'user', 'content': user_prompt}
+        {'role': 'user', 'content': user_prompt},
     ]
     inputs = self.tokenizer.apply_chat_template(
         messages,
         add_generation_prompt=True,
         return_tensors='pt',
         return_dict=True,
-    )
-    input_ids = inputs['input_ids'].to(self.model.device)
-    attention_mask = inputs['attention_mask'].to(self.model.device)
+    ).to(self.model.device)
     with torch.no_grad():
       outputs = self.model.generate(
-          input_ids,
-          attention_mask=attention_mask,
+          **inputs,
           max_new_tokens=setting_dict['agent']['max_new_tokens'],
           do_sample=False,
           temperature=None,
+          top_k=None,
+          top_p=None,
           num_return_sequences=1,
           eos_token_id=self.tokenizer.eos_token_id,
           pad_token_id=self.tokenizer.pad_token_id,
           use_cache=True,
-      )
-    response = self.tokenizer.decode(outputs[0][len(inputs[0]):], skip_special_tokens=True)
-    del inputs, input_ids, attention_mask, outputs
+      ).to('cpu')
+    response = self.tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
+    del inputs, outputs
     return response
 
 
@@ -340,10 +343,48 @@ class Phi4(BaseAgent):
   def __init__(self, name: str, *, model_path: str | None):
     super().__init__()
     model_path = model_path or f'microsoft/{name}'
+    self.model = AutoModelForCausalLM.from_pretrained(
+        model_path,
+        trust_remote_code=True,
+        torch_dtype=torch.bfloat16,
+        low_cpu_mem_usage=True,
+        device_map='auto',
+    )
+    self.tokenizer = AutoTokenizer.from_pretrained(
+        model_path,
+        trust_remote_code=True,
+    )
+    if not self.tokenizer.pad_token_id:
+      self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
-  @empty_cache
+  @retry(retries=1)
   def generate(self, sys_prompt: str, user_prompt: str) -> str:
-    return ''
+    messages = [
+        {'role': 'system', 'content': sys_prompt},
+        {'role': 'user', 'content': user_prompt},
+    ]
+    inputs = self.tokenizer.apply_chat_template(
+        messages,
+        add_generation_prompt=True,
+        tokenize=True,
+        return_tensors='pt',
+    ).to(self.model.device)
+    with torch.no_grad():
+      outputs = self.model.generate(
+          inputs,
+          max_new_tokens=setting_dict['agent']['max_new_tokens'],
+          do_sample=True,
+          temperature=.8,
+          top_k=50,
+          top_p=.95,
+          num_return_sequences=1,
+          eos_token_id=self.tokenizer.eos_token_id,
+          pad_token_id=self.tokenizer.pad_token_id,
+          use_cache=True,
+      ).to('cpu')
+    response = self.tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
+    del inputs, outputs
+    return response
 
 
 class CodeGeeX4(BaseAgent):
@@ -364,42 +405,79 @@ class CodeGeeX4(BaseAgent):
     if not self.tokenizer.pad_token_id:
       self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
-  @empty_cache
+  @retry(retries=1)
   def generate(self, sys_prompt: str, user_prompt: str) -> str:
     messages = [
         {'role': 'system', 'content': sys_prompt},
-        {'role': 'user', 'content': user_prompt}
+        {'role': 'user', 'content': user_prompt},
     ]
     inputs = self.tokenizer.apply_chat_template(
         messages,
         add_generation_prompt=True,
         return_tensors='pt',
         return_dict=True,
-    )
-    input_ids = inputs['input_ids'].to(self.model.device)
-    attention_mask = inputs['attention_mask'].to(self.model.device)
+    ).to(self.model.device)
     with torch.no_grad():
       outputs = self.model.generate(
-          input_ids,
-          attention_mask=attention_mask,
+          **inputs,
           max_new_tokens=setting_dict['agent']['max_new_tokens'],
           do_sample=False,
           temperature=None,
+          top_k=None,
+          top_p=None,
           num_return_sequences=1,
           eos_token_id=self.tokenizer.eos_token_id,
           pad_token_id=self.tokenizer.pad_token_id,
           use_cache=True,
-      )
-    response = self.tokenizer.decode(outputs[:, input_ids.shape[1]:][0], skip_special_tokens=True)
-    del inputs, input_ids, attention_mask, outputs
+      ).to('cpu')
+    response = self.tokenizer.decode(outputs[:, inputs['input_ids'].shape[1]:][0], skip_special_tokens=True)
+    del inputs, outputs
     return response
 
 
 class CodeLlama(BaseAgent):
   def __init__(self, name: str, *, model_path: str | None):
     super().__init__()
-    model_path = model_path or f'meta-llama/{name}'
+    model_path = model_path or f'codellama/{name}'
+    self.model = AutoModelForCausalLM.from_pretrained(
+        pretrained_model_name_or_path=model_path,
+        trust_remote_code=True,
+        torch_dtype=torch.bfloat16,
+        low_cpu_mem_usage=True,
+        device_map='auto',
+    )
+    self.tokenizer = AutoTokenizer.from_pretrained(
+        model_path,
+        trust_remote_code=True,
+    )
+    if not self.tokenizer.pad_token_id:
+      self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
-  @empty_cache
+  @retry(retries=1)
   def generate(self, sys_prompt: str, user_prompt: str) -> str:
-    return ''
+    messages = [
+        {'role': 'system', 'content': sys_prompt},
+        {'role': 'user', 'content': user_prompt},
+    ]
+    inputs = self.tokenizer.apply_chat_template(
+        messages,
+        add_generation_prompt=True,
+        return_tensors='pt',
+        return_dict=True,
+    ).to(self.model.device)
+    with torch.no_grad():
+      outputs = self.model.generate(
+          **inputs,
+          max_new_tokens=setting_dict['agent']['max_new_tokens'],
+          do_sample=False,
+          temperature=None,
+          top_k=None,
+          top_p=None,
+          num_return_sequences=1,
+          eos_token_id=self.tokenizer.eos_token_id,
+          pad_token_id=self.tokenizer.pad_token_id,
+          use_cache=True,
+      ).to('cpu')
+    response = self.tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
+    del inputs, outputs
+    return response

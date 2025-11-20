@@ -5,7 +5,6 @@ from typing import Any
 
 import jpype as jp
 import jpype.imports
-from org.example.parser.common.factory import MyParserFactory
 from org.example.styler import Styler
 from org.example.styler.arrangement.modifier import ModifierOrderStyler
 from org.example.styler.arrangement.modifier.style import (
@@ -46,12 +45,7 @@ from org.example.styler.optionalbrace import OptionalBraceStyler
 from org.example.styler.optionalbrace.style import (OptionalBraceContext,
                                                     OptionalBraceProperty,
                                                     OptionalBraceStyle)
-from org.example.styler.structure import (EquivalentStructure,
-                                          EquivalentStructureManager,
-                                          StructureStyler)
-from org.example.styler.structure.style import (StructPreferenceContext,
-                                                StructPreferenceProperty,
-                                                StructureStyle)
+from org.example.styler.structure import StructureStyler
 
 
 @singledispatch

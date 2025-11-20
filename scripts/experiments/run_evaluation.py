@@ -263,7 +263,8 @@ def _perform_with(
     var_snippets = [None if j in seqs_to_skip else snippet.replace(code=code)
                     for j, code in enumerate(corpus[i])]
 
-    with ThreadPoolExecutor(max_workers=setting_dict['agent']['max_workers']) as executor:
+    max_workers = setting_dict['agent']['max_workers'] if agent.supports_concurrency else 1
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
       output_span = list(tqdm(executor.map(task_worker, repeat(agent), repeat(task), var_snippets),
                               desc='Inferencing', total=len(var_snippets), leave=False))
 
