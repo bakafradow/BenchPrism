@@ -5,8 +5,7 @@ import torch
 
 from .. import Snippet
 from ..logger import logger
-from .agents import (BaseAgent, CodeGeeX4, CodeLlama, GeminiAgent, OpenAIAgent,
-                     Phi4, Qwen25)
+from .agents import BaseAgent, GeminiAgent, LocalAgent, OpenAIAgent
 from .tasks.base import BaseTask
 from .tasks.code_repair import CodeRepair
 from .tasks.code_summarization import CodeSummarization
@@ -38,24 +37,24 @@ def get_freest_gpu() -> str:
   return f'cuda:{gpu}'
 
 
-def agent_factory(name: str, *, model_path: str | None = None) -> BaseAgent:
+def agent_factory(name: str) -> BaseAgent:
   """
   Load the specified model.
   :param name: name of the model
   :param model_path: path to the local model directory, only for open-source models
   :return: an encapsulated agent instance
   """
-  if 'gemini' in name:
-    return GeminiAgent(name)
-  if 'qwen2.5' in name:
-    return Qwen25(name, model_path=model_path)
-  if 'phi-4' in name:
-    return Phi4(name, model_path=model_path)
-  if 'codegeex4' in name:
-    return CodeGeeX4(name, model_path=model_path)
-  if 'codellama' in name:
-    return CodeLlama(name, model_path=model_path)
-  return OpenAIAgent(name)  # default to OpenAI-compatible agents
+  parts = name.split(':', 1)
+  if len(parts) == 1:
+    return LocalAgent(name)
+  platform, model = parts
+  match platform.lower():
+    case 'openai':
+      return OpenAIAgent(model)
+    case 'gemini':
+      return GeminiAgent(model)
+    case _:
+      raise ValueError(f'Unsupported platform {platform}.')
 
 
 def task_factory(name: str, **kwargs) -> BaseTask:

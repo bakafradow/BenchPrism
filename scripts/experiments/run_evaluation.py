@@ -17,9 +17,8 @@ from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
 from collections.abc import MutableSequence as MSeq
 from collections.abc import Sequence as Seq
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from itertools import islice, repeat
+from itertools import islice
 from operator import itemgetter
 from pathlib import Path
 from typing import Any
@@ -48,9 +47,7 @@ def parse_args() -> Namespace:
   parser.add_argument('-d', '--dataset', type=str, required=True,
                       help='Specify one dataset to evaluate.')
   parser.add_argument('-m', '--model', type=str, required=True,
-                      help='Specify the model to use.')
-  parser.add_argument('--model-path', type=str, required=False,
-                      help='Specify the local/HF path to load model. Only used for open-source models.')
+                      help='Specify the model to use. For proprietary models, API platform should be specified; for open source model, HF/local path should be provided. Format: <openai|gemini>:model_name|model_path')
   parser.add_argument('-t', '--task', type=str, required=True,
                       choices=[
                           'code_translation',
@@ -260,18 +257,16 @@ def _perform_with(
 
     cached_variant_outputs = output_data.get(snippet.id, {}).get('variant_outputs', [])
     seqs_to_skip = {j for j, output in enumerate(cached_variant_outputs) if output}
-    var_snippets = [None if j in seqs_to_skip else snippet.replace(code=code)
+    var_snippets = [None if j in seqs_to_skip or not code else snippet.replace(code=code)
                     for j, code in enumerate(corpus[i])]
-
-    max_workers = setting_dict['agent']['max_workers'] if agent.supports_concurrency else 1
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-      output_span = list(tqdm(executor.map(task_worker, repeat(agent), repeat(task), var_snippets),
-                              desc='Inferencing', total=len(var_snippets), leave=False))
+    output_span = [task_worker(agent, task, var_snippet)
+                   for var_snippet in tqdm(var_snippets, desc='Inferencing',
+                                           total=len(var_snippets), leave=False)]
 
     if len(cached_variant_outputs) == len(output_span):
       for j in range(len(output_span)):
         output_span[j] = output_span[j] or cached_variant_outputs[j]
-    
+
     res_orig.append(output_orig)
     res_span.append(output_span)
   inference_time = time.perf_counter() - start_time
@@ -302,7 +297,7 @@ def _batch_with(
     seqs_to_skip = {j for j, output in enumerate(cached_variant_outputs) if output}
 
     for j, code in enumerate(corpus[i]):
-      if j in seqs_to_skip:
+      if j in seqs_to_skip or not code:
         continue
       var_snippet = snippet.replace(code=code)
       sys_prompt, user_prompt = task.get_prompt(var_snippet)
@@ -409,7 +404,7 @@ def evaluate_code_translation(
         'pass_span': pass_span,
         'pass_span_avg': np.mean(pass_span),
     }
-  
+
   snippets = benchmark.load_for_translation(args.src_lang, args.dst_lang)
   _evaluate_task_template(
       snippets, transformer, agent, task, args,
@@ -681,7 +676,7 @@ def main():
   logger.info('Initializing transformer...')
   transformer = transformer_factory(lang=args.src_lang, seed=args.seed)
   logger.info(f'Initializing model {args.model}...')
-  agent = agent_factory(name=args.model, model_path=args.model_path)
+  agent = agent_factory(name=args.model)
   logger.info(f'Initializing task {args.task}...')
   task = task_factory(args.task, **dict(args._get_kwargs()))
 
@@ -691,7 +686,7 @@ def main():
   args.identifier = f'{args.dataset}_{args.task}_{args.src_lang}'
   if args.task == 'code_translation':
     args.identifier += f'{"_to_" + args.dst_lang}'
-  args.identifier += f'_with_{re.sub(r"[/: ]+", "-", args.model)}_seed{args.seed}'
+  args.identifier += f'_with_{re.sub(r"[/: ]+", "-", args.model.split(":", 1)[-1])}_seed{args.seed}'
   args.outputs_path = args.result_dir /\
       f'outputs_{args.identifier}.jsonl'
   args.result_path = args.result_dir /\

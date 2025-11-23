@@ -2,15 +2,13 @@ transformer:
   max_workers: 8
 
 agent:
+  max_new_tokens: 32768
+
   ######### settings for remote API #########
   timeout: 120
   sleep: 1
   retries: 3
   retry_interval: 30
-  max_workers: 3
-
-  ######## settings for local models ########
-  max_new_tokens: 2048
 
 logger:
   max_bytes: 5242880 # 5MB
