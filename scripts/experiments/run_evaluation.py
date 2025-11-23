@@ -112,13 +112,19 @@ def _pick_snippets(
                                   lang=args.src_lang), 1.0)
 
   indices = list(range(len(snippets)))
+  if args.candidates_path.exists():
+    with open(args.candidates_path, 'r') as f:
+      candidates = json.loads(f.read())
+  else:
+    candidates = list(tqdm((i for i in indices if is_valid(snippets[i])),
+                          desc='Picking snippets', total=len(snippets), leave=False))
+    with open(args.candidates_path, 'w') as f:
+      f.write(json.dumps(candidates))
+
   if args.random:
     random.seed(args.seed)
-    random.shuffle(indices)
-
-  candidates = (i for i in indices if is_valid(snippets[i]))
-  picked_indices = list(tqdm(islice(candidates, args.num_snippets),
-                             desc='Picking snippets', total=args.num_snippets))
+    random.shuffle(candidates)
+  picked_indices = candidates[:args.num_snippets]
   logger.verbose(f'Picked {len(picked_indices)} snippet indices: {picked_indices}')
   return [snippets[i] for i in picked_indices]
 
@@ -262,8 +268,7 @@ def _perform_with(
     output_span = [task_worker(agent, task, var_snippet)
                    for var_snippet in tqdm(var_snippets, desc='Inferencing',
                                            total=len(var_snippets), leave=False)]
-
-    if len(cached_variant_outputs) == len(output_span):
+    if cached_variant_outputs:
       for j in range(len(output_span)):
         output_span[j] = output_span[j] or cached_variant_outputs[j]
 
@@ -681,16 +686,17 @@ def main():
   task = task_factory(args.task, **dict(args._get_kwargs()))
 
   os.makedirs(args.result_dir, exist_ok=True)
-  args.variants_path = args.result_dir /\
-      f'variants_{args.dataset}_{args.task}_{args.src_lang}_seed{args.seed}.jsonl'
-  args.identifier = f'{args.dataset}_{args.task}_{args.src_lang}'
+  data_id = f'{args.dataset}_{args.task}_{args.src_lang}_seed{args.seed}'
+  args.candidates_path = args.result_dir / f'candidates_{data_id}.json'
+  args.variants_path = args.result_dir / f'variants_{data_id}.jsonl'
+  eval_id = f'{args.dataset}_{args.task}_{args.src_lang}'
   if args.task == 'code_translation':
-    args.identifier += f'{"_to_" + args.dst_lang}'
-  args.identifier += f'_with_{re.sub(r"[/: ]+", "-", args.model.split(":", 1)[-1])}_seed{args.seed}'
+    eval_id += f'{"_to_" + args.dst_lang}'
+  eval_id += f'_with_{re.sub(r"[/: ]+", "-", args.model.split(":", 1)[-1])}_seed{args.seed}'
   args.outputs_path = args.result_dir /\
-      f'outputs_{args.identifier}.jsonl'
+      f'outputs_{eval_id}.jsonl'
   args.result_path = args.result_dir /\
-      f'results_{args.identifier}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+      f'results_{eval_id}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
 
   evaluator = globals().get(f'evaluate_{args.task}')
   if not evaluator:
