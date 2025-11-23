@@ -14,7 +14,7 @@ from google import genai
 from google.genai import types as gtypes
 from openai import OpenAI  # type: ignore[attr-defined]
 from requests.exceptions import Timeout
-from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig, StoppingCriteria
 
 from .. import setting_dict
 from ..logger import logger
@@ -298,6 +298,17 @@ class GeminiAgent(BaseAgent):
     return {}
 
 
+class TimeoutCriteria(StoppingCriteria):
+  def __init__(self, timeout: float):
+    self.start_time = time.perf_counter()
+    self.timeout = timeout
+
+  def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs) -> bool:
+    if time.perf_counter() - self.start_time > self.timeout:
+      raise TimeoutError
+    return False
+
+
 class LocalAgent(BaseAgent):
   def __init__(self, name: str):
     super().__init__(name)
@@ -327,7 +338,6 @@ class LocalAgent(BaseAgent):
   def _get_generation_config(self) -> GenerationConfig:
     config = GenerationConfig(
         max_new_tokens=setting_dict['agent']['max_new_tokens'],
-        max_time=setting_dict['agent']['timeout'],
         do_sample=False,
         temperature=None,
         top_k=None,
@@ -361,11 +371,13 @@ class LocalAgent(BaseAgent):
     )
     input_ids = inputs['input_ids'].to(self.model.device)
     attention_mask = inputs['attention_mask'].to(self.model.device)
+    stopping_criteria = TimeoutCriteria(setting_dict['agent']['timeout'])
     with torch.no_grad():
       outputs = self.model.generate(
           input_ids,
           attention_mask=attention_mask,
           generation_config=self._get_generation_config(),
+          stopping_criteria=[stopping_criteria],
       ).to('cpu')
     response = self.tokenizer.decode(outputs[0][input_ids.shape[1]:], skip_special_tokens=True)
     del input_ids, attention_mask
