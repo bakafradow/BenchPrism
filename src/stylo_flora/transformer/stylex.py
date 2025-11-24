@@ -62,6 +62,7 @@ class StyleX(BaseTransformer):
     self.styler_containers = self._seq_to_styler_containers(lang, seqs)
 
     self.lock = Lock()
+    self.executor = ThreadPoolExecutor(max_workers=setting_dict['transformer']['max_workers'])
 
   def transform(
       self,
@@ -90,9 +91,8 @@ class StyleX(BaseTransformer):
       logger.debug(f'Successfully transformed snippet {snippet.id}.')
       return variant
 
-    with ThreadPoolExecutor(max_workers=setting_dict['transformer']['max_workers']) as executor:
-      variants = list(tqdm(executor.map(worker, range(len(self.seqs)), self.styler_containers),
-                          desc=f'Spanning {snippet.id}', total=len(self.seqs), leave=False))
+    variants = list(tqdm(self.executor.map(worker, range(len(self.seqs)), self.styler_containers),
+                        desc=f'Spanning {snippet.id}', total=len(self.seqs), leave=False))
     return variants
 
   def is_processable(self, snippet: Snippet) -> bool:
@@ -160,20 +160,30 @@ class StyleX(BaseTransformer):
       code: str,
       styler_container: jp.JObject,
   ) -> str | None:
-    try:
-      parser = MyParserFactory.createParser(lang)
-      if not parser.parseFromString(code):
-        logger.warning('Compilation error.')
-        return None
-      token_augmentor = TokenAugmentor()
-      tokens = Applicator.applyRules(parser, styler_container, token_augmentor)
-      if tokens[-1].getType() == parser.getEOF():
-        tokens.remove(tokens.size() - 1)  # remove EOF token
-      token_augmentor.restoreState(tokens, parser)
-      return ''.join([str(token.getText()) for token in tokens])
-    except ApplyException as e:
-      logger.warning(f'Failed to apply rules.\n{e}')
+    parser = MyParserFactory.createParser(lang)
+    if not parser.parseFromString(code):
+      logger.warning('Compilation error.')
+      parser = None
+      del parser
       return None
+    token_augmentor = TokenAugmentor()
+    try:
+      tokens = Applicator.applyRules(parser, styler_container, token_augmentor)
+    except ApplyException as e:
+      logger.warning(f'Failed to apply rules:\n{e}')
+      parser = None
+      token_augmentor = None
+      del parser, token_augmentor
+      return None
+    if tokens[-1].getType() == parser.getEOF():
+      tokens.remove(tokens.size() - 1)  # remove EOF token
+    token_augmentor.restoreState(tokens, parser)
+    variant = ''.join([str(token.getText()) for token in tokens])
+    parser = None
+    token_augmentor = None
+    tokens = None
+    del parser, token_augmentor, tokens
+    return variant
 
   def _count_options(
       self,

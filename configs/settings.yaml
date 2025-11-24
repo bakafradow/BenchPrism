@@ -1,5 +1,5 @@
 transformer:
-  max_workers: 8
+  max_workers: 4
 
 agent:
   max_new_tokens: 32768
@@ -16,4 +16,4 @@ logger:
 
 metrics:
   timeout: 30 # unit: seconds
-  max_workers: 8
+  max_workers: 4

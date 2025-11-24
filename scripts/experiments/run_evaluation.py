@@ -7,6 +7,7 @@ Assesses the robustness of code task models by the following steps:
 4. Evaluates the space span by the translated code relative to the original source code.
 """
 
+import gc
 import json
 import os
 import random
@@ -219,19 +220,27 @@ def _transform_with(
 ) -> list[list[str | None]]:
   variant_data = _load_jsonl(args.variants_path)
 
+  import jpype as jp
+  System = jp.JClass('java.lang.System')
   start_time = time.perf_counter()
   corpus: list[list[str | None]] = []
-  for snippet in tqdm(snippets, desc='Transforming styles', total=len(snippets), leave=False):
+  for i, snippet in tqdm(enumerate(snippets), desc='Transforming styles',
+                         total=len(snippets), leave=False):
     cached_variants = variant_data.get(snippet.id, {}).get('variants', [])
-    seqs_to_skip = {i for i, code in enumerate(cached_variants) if code}
+    seqs_to_skip = {idx for idx, code in enumerate(cached_variants) if code}
 
     variants = transformer.transform(snippet, seqs_to_skip=seqs_to_skip)
 
     if len(cached_variants) == len(variants):
-      for i in range(len(variants)):
-        variants[i] = variants[i] or cached_variants[i]
+      for j in range(len(variants)):
+        variants[j] = variants[j] or cached_variants[j]
 
     corpus.append(variants)
+
+    if i and i % 50 == 0:
+      gc.collect()
+      System.gc()
+
   transform_time = time.perf_counter() - start_time
   logger.info(f'Spanned coding styles in {transform_time:.2f}s.')
 
