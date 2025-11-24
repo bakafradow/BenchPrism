@@ -2,6 +2,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import types
 import unittest
@@ -106,7 +107,7 @@ def test_io_python(code: str, tc_list: Seq[IOTestCase]) -> bool:
 
 
 def pass_at_1(code_list: Seq[str], tc_lists: Seq[Seq[IOTestCase]], lang: str) -> float:
-  tester = globals().get(f'test_io_{lang}')
+  tester = getattr(sys.modules[__name__], f'test_io_{lang}', None)
   if not tester:
     raise ValueError(f'Unsupported language: {lang}')
   return sum(tester(code, tc_list)

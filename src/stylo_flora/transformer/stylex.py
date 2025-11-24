@@ -67,7 +67,6 @@ class StyleX(BaseTransformer):
       self,
       snippet: Snippet,
       *,
-      check: bool = False,
       seqs_to_skip: set[int] = set(),
   ) -> list[str | None]:
     def worker(seq_idx: int, styler_container: jp.JObject) -> str | None:
@@ -76,10 +75,9 @@ class StyleX(BaseTransformer):
       try:
         with self.lock:
           variant = self._apply_styles(self.lang, snippet.data['code'], styler_container)
-        if variant and check:
-          correctness = pass_at_1([variant], [snippet.data['io_tests']], self.lang)
-          if not math.isclose(correctness, 1.0):
-            logger.warning(f'Correctness check failed: {correctness}')
+        if variant:
+          checker = snippet.data.get('checker')
+          if checker and not checker(snippet.replace(code=variant), self.lang):
             variant = None
       except jp.JVMNotRunning:  # in case of keyboard interrupt
         return None

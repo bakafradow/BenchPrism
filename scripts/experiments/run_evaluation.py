@@ -8,10 +8,10 @@ Assesses the robustness of code task models by the following steps:
 """
 
 import json
-import math
 import os
 import random
 import re
+import sys
 import time
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
@@ -31,7 +31,7 @@ from stylo_flora import IOTestCase, Snippet
 from stylo_flora.benchmarks import BaseBenchmark, benchmark_factory
 from stylo_flora.inference import agent_factory, task_factory, task_worker
 from stylo_flora.inference.agents import BaseAgent
-from stylo_flora.inference.tasks import BaseTask, IOReasoning, MASK
+from stylo_flora.inference.tasks import MASK, BaseTask, IOReasoning
 from stylo_flora.logger import init_logger, logger
 from stylo_flora.metrics import (calc_bertscore, calc_bleu, calc_codebleu,
                                  calc_coverage, calc_macro_f1, calc_meteor,
@@ -39,7 +39,7 @@ from stylo_flora.metrics import (calc_bertscore, calc_bleu, calc_codebleu,
 from stylo_flora.transformer.base import BaseTransformer, transformer_factory
 
 _MetricsEvaluator = Callable[[Seq[str], Seq[Seq[str]], Seq[Snippet], Namespace],
-                            dict[str, Any]]
+                             dict[str, Any]]
 
 
 def parse_args() -> Namespace:
@@ -97,8 +97,6 @@ def _pick_snippets(
     snippets: Seq[Snippet],
     transformer: BaseTransformer,
     args: Namespace,
-    *,
-    ensure_correct: bool = True,
 ) -> Seq[Snippet]:
   if args.num_snippets < 0:
     args.num_snippets = len(snippets)
@@ -106,10 +104,8 @@ def _pick_snippets(
   def is_valid(snippet: Snippet) -> bool:
     if not transformer.is_processable(snippet):
       return False
-    if not ensure_correct:
-      return True
-    return math.isclose(pass_at_1([snippet.data['code']], [snippet.data['io_tests']],
-                                  lang=args.src_lang), 1.0)
+    checker = snippet.data.get('checker')
+    return not checker or checker(snippet, args.src_lang)
 
   indices = list(range(len(snippets)))
   if args.candidates_path.exists():
@@ -117,7 +113,7 @@ def _pick_snippets(
       candidates = json.loads(f.read())
   else:
     candidates = list(tqdm((i for i in indices if is_valid(snippets[i])),
-                          desc='Picking snippets', total=len(snippets), leave=False))
+                           desc='Picking snippets', total=len(snippets), leave=False))
     with open(args.candidates_path, 'w') as f:
       f.write(json.dumps(candidates))
 
@@ -220,8 +216,6 @@ def _transform_with(
     transformer: BaseTransformer,
     snippets: Seq[Snippet],
     args: Namespace,
-    *,
-    check: bool = True,
 ) -> list[list[str | None]]:
   variant_data = _load_jsonl(args.variants_path)
 
@@ -231,7 +225,7 @@ def _transform_with(
     cached_variants = variant_data.get(snippet.id, {}).get('variants', [])
     seqs_to_skip = {i for i, code in enumerate(cached_variants) if code}
 
-    variants = transformer.transform(snippet, check=check, seqs_to_skip=seqs_to_skip)
+    variants = transformer.transform(snippet, seqs_to_skip=seqs_to_skip)
 
     if len(cached_variants) == len(variants):
       for i in range(len(variants)):
@@ -324,13 +318,12 @@ def _evaluate_task_template(
     args: Namespace,
     *,
     metrics_evaluator: _MetricsEvaluator,
-    check: bool = True,
 ) -> None:
   _cut_testcases(snippets, args)
-  snippets = _pick_snippets(snippets, transformer, args, ensure_correct=check)
+  snippets = _pick_snippets(snippets, transformer, args)
 
   logger.info(f'Transforming styles of {len(snippets)} code snippets...')
-  corpus = _transform_with(transformer, snippets, args, check=check)
+  corpus = _transform_with(transformer, snippets, args)
   num_styles = len(corpus[0]) if corpus else 0
   if args.evaluate_only:
     logger.info(f'--evaluate-only set, only evaluating outputs from {args.outputs_path}...')
@@ -413,7 +406,7 @@ def evaluate_code_translation(
   snippets = benchmark.load_for_translation(args.src_lang, args.dst_lang)
   _evaluate_task_template(
       snippets, transformer, agent, task, args,
-      metrics_evaluator=evaluate_metrics, check=True,
+      metrics_evaluator=evaluate_metrics,
   )
 
 
@@ -442,7 +435,6 @@ def evaluate_code_repair(
   _evaluate_task_template(
       snippets, transformer, agent, task, args,
       metrics_evaluator=evaluate_metrics,
-      check=False,
   )
 
 
@@ -471,7 +463,6 @@ def _evaluate_tag_classification(
   _evaluate_task_template(
       snippets, transformer, agent, task, args,
       metrics_evaluator=evaluate_metrics,
-      check=False,
   )
 
 
@@ -543,7 +534,6 @@ def evaluate_code_summarization(
   _evaluate_task_template(
       snippets, transformer, agent, task, args,
       metrics_evaluator=evaluate_metrics,
-      check=False,
   )
 
 
@@ -577,7 +567,6 @@ def _evaluate_io_reasoning(
   _evaluate_task_template(
       snippets, transformer, agent, task, args,
       metrics_evaluator=evaluate_metrics,
-      check=True,
   )
 
 
@@ -626,7 +615,6 @@ def evaluate_mcq_answering(
   _evaluate_task_template(
       snippets, transformer, agent, task, args,
       metrics_evaluator=evaluate_metrics,
-      check=False,
   )
 
 
@@ -670,7 +658,6 @@ def evaluate_test_generation(
   _evaluate_task_template(
       snippets, transformer, agent, task, args,
       metrics_evaluator=evaluate_metrics,
-      check=True,
   )
 
 

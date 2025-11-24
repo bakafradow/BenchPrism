@@ -1,4 +1,5 @@
 import subprocess
+import sys
 import tempfile
 from collections.abc import Sequence as Seq
 from concurrent.futures import ThreadPoolExecutor
@@ -56,7 +57,7 @@ def calc_coverage_java(code: str, tc_list: Seq[IOTestCase]) -> dict:
 
 
 def calc_coverage(code_list: Seq[str], tc_lists: Seq[Seq[IOTestCase]], lang: str) -> dict:
-  coverage_func = globals().get(f'calc_coverage_{lang}')
+  coverage_func = getattr(sys.modules[__name__], f'calc_coverage_{lang}', None)
   if not coverage_func:
     raise TypeError(f'Unsupported language: {lang}')
   coverages = list(tqdm((coverage_func(code, tc_list)

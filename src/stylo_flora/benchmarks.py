@@ -1,9 +1,9 @@
 import json
+import math
 import re
 from abc import ABC
 from collections.abc import Callable, Iterable, Mapping
 from collections.abc import Sequence as Seq
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +11,7 @@ import jsonlines
 from datasets import load_dataset
 
 from . import APITestCase, IOTestCase, Snippet
+from .metrics.correctness import pass_at_1
 
 
 def check_lang_support(func: Callable) -> Callable:
@@ -21,24 +22,19 @@ def check_lang_support(func: Callable) -> Callable:
   return wrapper
 
 
-@dataclass
+def _io_checker(snippet: Snippet, lang: str) -> bool:
+  return math.isclose(pass_at_1([snippet.data['code']], [snippet.data['io_tests']], lang=lang), 1.)
+
+
 class BaseBenchmark(ABC):
   """
   Abstract base class for benchmarks.
   """
 
-  _supported_langs: frozenset[str] = field(default_factory=frozenset)
+  supported_langs: frozenset[str] = frozenset()
   """Supported languages in the dataset to evaluate."""
-  _lang_to_name: dict[str, str] = field(default_factory=dict)
+  lang_to_name: dict[str, str] = {}
   """Mapping language name from unified one to the one in dataset."""
-
-  @property
-  def supported_langs(self) -> frozenset[str]:
-    return self._supported_langs
-
-  @supported_langs.setter
-  def supported_langs(self, langs: frozenset[str]):
-    self._supported_langs = langs
 
   def load_for_translation(self, src_lang: str, dst_lang: str) -> Seq[Snippet]:
     """
@@ -105,12 +101,11 @@ class BaseBenchmark(ABC):
     raise NotImplementedError('MCQ answering unsupported for current benchmark.')
 
 
-@dataclass
 class XCodeEval(BaseBenchmark):
-  _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
+  supported_langs = frozenset({
       'c', 'cpp', 'cs', 'go', 'java', 'js', 'kotlin', 'php', 'python', 'ruby', 'rust',
-  ]))
-  _lang_to_name: dict[str, str] = field(default_factory=lambda: {
+  })
+  lang_to_name = {
       'c': 'C',
       'cpp': 'C++',
       'cs': 'C#',
@@ -122,22 +117,7 @@ class XCodeEval(BaseBenchmark):
       'python': 'Python',
       'ruby': 'Ruby',
       'rust': 'Rust',
-  })
-
-  @check_lang_support
-  def _load(self, lang: str, task: str, column: str) -> Seq[str]:
-    lang_name = self._lang_to_name[lang]
-    ds = load_dataset('json', data_dir=f'data/xCodeEval/{task}/test')  # there's an issue in loading from HF when the version of datasets != 2.16.1
-    ds = ds.filter(lambda row: row['lang_cluster'] == lang_name)
-    return ds['train'][column]
-
-  def _load_tests(self, ids: Iterable[str]) -> Seq[Seq[IOTestCase]]:
-    with open('data/xCodeEval/unittest_db.json', 'r') as f:
-      unittests = json.load(f)
-    return [[IOTestCase(input=pair['input'].replace('\r\n', '\n'),
-                        outputs=[output.replace('\r\n', '\n') for output in pair['output']])
-             for pair in batch]
-            for batch in (unittests[uid] for uid in ids)]
+  }
 
   def load_for_translation(self, src_lang: str, dst_lang: str) -> Seq[Snippet]:
     TASK_NAME = 'code_translation'
@@ -147,6 +127,7 @@ class XCodeEval(BaseBenchmark):
     return [Snippet(id=src_uid, data={
         'code': source,
         'io_tests': testcases[i],
+        'checker': _io_checker,
     }) for i, (src_uid, source) in enumerate(zip(src_uids, sources))]
 
   def load_for_repair(self, lang):
@@ -166,6 +147,7 @@ class XCodeEval(BaseBenchmark):
         **args_dict[src_uid],
         'code': source,
         'io_tests': testcases[i],
+        'checker': _io_checker,
     }) for i, (src_uid, source) in enumerate(zip(src_uids, sources))]
 
   def load_for_tagging(self, lang: str) -> Seq[Snippet]:
@@ -183,13 +165,27 @@ class XCodeEval(BaseBenchmark):
         'desc': args_dict[src_uid]['desc']
     }) for src_uid, source, tags in zip(src_uids, sources, tags_list)]
 
+  @check_lang_support
+  def _load(self, lang: str, task: str, column: str) -> Seq[str]:
+    lang_name = self.lang_to_name[lang]
+    ds = load_dataset('json', data_dir=f'data/xCodeEval/{task}/test')  # there's an issue in loading from HF when the version of datasets != 2.16.1
+    ds = ds.filter(lambda row: row['lang_cluster'] == lang_name)
+    return ds['train'][column]
 
-@dataclass
+  def _load_tests(self, ids: Iterable[str]) -> Seq[Seq[IOTestCase]]:
+    with open('data/xCodeEval/unittest_db.json', 'r') as f:
+      unittests = json.load(f)
+    return [[IOTestCase(input=pair['input'].replace('\r\n', '\n'),
+                        outputs=[output.replace('\r\n', '\n') for output in pair['output']])
+             for pair in batch]
+            for batch in (unittests[uid] for uid in ids)]
+
+
 class CodeScope(BaseBenchmark):
-  _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
+  supported_langs = frozenset({
       'c', 'cpp', 'cs', 'delphi', 'go', 'java', 'js', 'kotlin', 'php', 'perl', 'python', 'ruby', 'rust',
-  ]))
-  _lang_to_name: dict[str, str] = field(default_factory=lambda: {
+  })
+  lang_to_name = {
       'c': 'C',
       'cpp': 'C++',
       'cs': 'C#',
@@ -203,29 +199,28 @@ class CodeScope(BaseBenchmark):
       'python': 'Python',
       'ruby': 'Ruby',
       'rust': 'Rust',
-  })
+  }
+  _data_dir = Path('data/CodeScope')
 
-  @classmethod
-  def _normalize_test(cls, testcases: str) -> Seq[IOTestCase]:
-    if any(not isinstance(testcase['input'], str) and len(testcase['input']) != 1 for testcase in eval(testcases)):
-      raise ValueError('Input of testcases must be a string or a sequence with length 1.')
-    return [IOTestCase(input=testcase['input'].replace('\r\n', '\n') if isinstance(testcase['input'], str) \
-                       else testcase['input'][0].replace('\r\n', '\n'),
-                       outputs=[output.replace('\r\n', '\n') for output in testcase['output']])
-            for testcase in eval(testcases)]
+  def __init__(self):
+    super().__init__()
+    if not self._data_dir.exists():
+      raise FileNotFoundError(f'Please clone CodeScope repo manually from https://github.com/WeixiangYAN/CodeScope and place it to {self._data_dir}')
 
   @check_lang_support
   def load_for_translation(self, src_lang: str, dst_lang: str) -> Seq[Snippet]:
-    ds = load_dataset('json', data_files='data/CodeScope/data/code_translation_data.jsonl')
-    ds = ds.filter(lambda row: row['source_lang_cluster'] == self._lang_to_name[src_lang] and row['target_lang_cluster'] == self._lang_to_name[dst_lang])
+    ds = load_dataset('json', data_files=self._data_dir / 'data/code_translation_data.jsonl')
+    ds = ds.filter(lambda row: row['source_lang_cluster'] == self.lang_to_name[src_lang] and row['target_lang_cluster'] == self.lang_to_name[dst_lang])
     return [Snippet(id=row['src_uid'], data={
-        'code': row['source_code'], 'io_tests': self._normalize_test(row['testcases']),
+        'code': row['source_code'],
+        'io_tests': self._normalize_test(row['testcases']),
+        'checker': _io_checker,
     }) for row in ds['train']]
 
   @check_lang_support
   def load_for_repair(self, lang: str) -> Seq[Snippet]:
-    ds = load_dataset('json', data_files='data/CodeScope/data/code_repair_data.jsonl')
-    ds = ds.filter(lambda row: row['lang_cluster'] == self._lang_to_name[lang])
+    ds = load_dataset('json', data_files=self._data_dir / 'data/code_repair_data.jsonl')
+    ds = ds.filter(lambda row: row['lang_cluster'] == self.lang_to_name[lang])
     return [Snippet(id=row['src_uid'], data={
         'code': row['source_code'],
         'desc': row['description'],
@@ -234,12 +229,13 @@ class CodeScope(BaseBenchmark):
         'sample_inputs': row['sample_inputs'],
         'sample_outputs': row['sample_outputs'],
         'io_tests': self._normalize_test(row['testcases']),
+        'checker': _io_checker,
     }) for row in ds['train']]
 
   @check_lang_support
   def load_for_summarization(self, lang: str) -> Seq[Snippet]:
-    ds = load_dataset('json', data_files='data/CodeScope/data/code_summarization_data.jsonl')
-    ds = ds.filter(lambda row: row['lang_cluster'] == self._lang_to_name[lang])
+    ds = load_dataset('json', data_files=self._data_dir / 'data/code_summarization_data.jsonl')
+    ds = ds.filter(lambda row: row['lang_cluster'] == self.lang_to_name[lang])
     return [Snippet(id=row['id'], data={
         'code': row['source_code'],
         'human_summarization': row['human_summarization'],
@@ -247,8 +243,8 @@ class CodeScope(BaseBenchmark):
 
   @check_lang_support
   def load_for_test_generation(self, lang: str) -> Seq[Snippet]:
-    ds = load_dataset('json', data_files='data/CodeScope/data/automated_testing_data.jsonl')
-    ds = ds.filter(lambda row: row['lang_cluster'] == self._lang_to_name[lang])
+    ds = load_dataset('json', data_files=self._data_dir / 'data/automated_testing_data.jsonl')
+    ds = ds.filter(lambda row: row['lang_cluster'] == self.lang_to_name[lang])
     return [Snippet(id=row['id'], data={
         'code': row['source_code'],
         'desc': row['description'],
@@ -258,18 +254,27 @@ class CodeScope(BaseBenchmark):
         'sample_outputs': row['sample_outputs'],
         'notes': row['notes'],
         'io_tests': self._normalize_test(row['human_testcases']),  # for ensuring correct transformation
+        'checker': _io_checker,
     }) for row in ds['train']]
 
+  @staticmethod
+  def _normalize_test(testcases: str) -> Seq[IOTestCase]:
+    if any(not isinstance(testcase['input'], str) and len(testcase['input']) != 1 for testcase in eval(testcases)):
+      raise ValueError('Input of testcases must be a string or a sequence with length 1.')
+    return [IOTestCase(input=testcase['input'].replace('\r\n', '\n') if isinstance(testcase['input'], str) \
+                       else testcase['input'][0].replace('\r\n', '\n'),
+                       outputs=[output.replace('\r\n', '\n') for output in testcase['output']])
+            for testcase in eval(testcases)]
 
-@dataclass
+
 class CodeMMLU(BaseBenchmark):
-  _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
+  supported_langs = frozenset({
       'java', 'python',
-  ]))
-  _lang_to_name: dict[str, str] = field(default_factory=lambda: {
+  })
+  lang_to_name = {
       'java': 'java',
       'python': 'python',
-  })
+  }
 
   @check_lang_support
   def load_for_mcq_answering(self, lang):
@@ -288,11 +293,10 @@ class CodeMMLU(BaseBenchmark):
     }) for row in ds['test']]
 
 
-@dataclass
 class CoderUJB(BaseBenchmark):
-  _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
+  supported_langs: frozenset[str] = frozenset({
       'java',
-  ]))
+  })
 
   def _construct_code(self, row: Mapping[str, Any]) -> str:
     return f'{row["import_context"]}\n\n{row["class_signature"]} {{\n{row["class_field_context"]}\n\n{row["class_function_signature_context"]}\n\n{row["buggy"]}\n}}'
@@ -311,14 +315,13 @@ class CoderUJB(BaseBenchmark):
     }) for row in ds['train']]
 
 
-@dataclass
 class CruxEvalX(BaseBenchmark):
-  _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
+  supported_langs = frozenset({
       'java',
-  ]))
-  _lang_to_name: dict[str, str] = field(default_factory=lambda: {
-      'java': 'Java',
   })
+  _lang_to_name = {
+      'java': 'Java',
+  }
 
   @check_lang_support
   def load_for_io_reasoning(self, lang: str) -> Seq[Snippet]:
@@ -328,57 +331,66 @@ class CruxEvalX(BaseBenchmark):
         'input_reasoning': row['input_reasoning'],
         'output_reasoning': row['output_reasoning'],
         'io_tests': [IOTestCase(input='', outputs=[''])],  # tests by assertion
+        'checker': _io_checker,
     }) for row in ds[self._lang_to_name[lang]]]
 
 
-@dataclass
 class ClassEvalT(BaseBenchmark):
-  _supported_langs: frozenset[str] = field(default_factory=lambda: frozenset([
+  supported_langs: frozenset[str] = frozenset({
       'cpp', 'java', 'python',
-  ]))
-  _lang_to_name: dict[str, str] = field(default_factory=lambda: {
+  })
+  lang_to_name: dict[str, str] = {
       'cpp': 'cpp',
       'java': 'java',
       'python': 'py',
-  })
+  }
+  _data_dir: Path = Path('data/ClassEval-T')
+
+  def __init__(self):
+    super().__init__()
+    if not self._data_dir.exists():
+      raise FileNotFoundError(f'Please clone ClassEval-T repo manually from https://github.com/wLinHoo/ClassEval-T and place it to {self._data_dir} (and run the amending script).')
 
   @check_lang_support
   def load_for_translation(self, src_lang: str, dst_lang: str) -> Seq[Snippet]:
-    data_dir = Path('data/ClassEval-T/ClassEval_T')
-
-    def get_testcase(name: str, lang: str) -> APITestCase:
-      match src_lang:
-        case 'cpp':
-          name = name.replace('test_', '')
-        case 'java':
-          name = name.replace('Test', '')
-        case 'python':
-          ...
-        case _:
-          raise TypeError(f'Unsupported target language: {src_lang}')
-      match lang:
-        case 'cpp':
-          filename = f'test_{name}.cpp'
-        case 'java':
-          filename = f'{name}Test.java'
-        case 'python':
-          filename = f'{name}.py'
-        case _:
-          raise TypeError(f'Unsupported language: {lang}')
-      test_code_path = data_dir / self._lang_to_name[lang] / 'test' / filename
-      if not test_code_path.exists():
-        raise FileNotFoundError(f'Test file {test_code_path} does not exist.')
-      return APITestCase(file=filename, code=test_code_path.read_text())
-
-    src_dir = data_dir / self._lang_to_name[src_lang] / 'solution'
+    src_dir = self._data_dir / 'ClassEval_T' / self.lang_to_name[src_lang] / 'solution'
     if not src_dir.exists():
       raise FileNotFoundError(f'Directory {src_dir} does not exist.')
     snippets = [Snippet(id=file.stem, data={
         'code': file.read_text(),
-        f'api_testcases_{src_lang}': get_testcase(file.stem, src_lang),
-        f'api_testcases_{dst_lang}': get_testcase(file.stem, dst_lang),
-    }) for file in src_dir.iterdir() if file.is_file() and file.suffix == f'.{self._lang_to_name[src_lang]}']
+        f'test_code_{src_lang}': self._load_test(file.stem, src_lang),
+        f'test_code_{dst_lang}': self._load_test(file.stem, dst_lang),
+    }) for file in src_dir.iterdir()
+       if file.is_file() and file.suffix == f'.{self.lang_to_name[src_lang]}']
     return snippets
+
+  def _load_test(self, name: str, lang: str) -> str:
+    soln_name = self._normalize_name(name, lang)
+    match lang:
+      case 'cpp':
+        test_name = f'test_{soln_name}.cpp'
+      case 'java':
+        test_name = f'{soln_name}Test.java'
+      case 'python':
+        test_name = f'{soln_name}.py'
+      case _:
+        raise TypeError(f'Unsupported language: {lang}')
+    test_code_path = self._data_dir / self.lang_to_name[lang] / 'test' / test_name
+    if not test_code_path.exists():
+      raise FileNotFoundError(f'Test file {test_code_path} does not exist.')
+    return test_code_path.read_text()
+
+  @staticmethod
+  def _normalize_name(name: str, lang: str) -> str:
+    match lang:
+      case 'cpp':
+        return name.replace('test_', '')
+      case 'java':
+        return name.replace('Test', '')
+      case 'python':
+        return name
+      case _:
+        raise TypeError(f'Unsupported language: {lang}')
 
 
 def benchmark_factory(dataset: str) -> BaseBenchmark:
