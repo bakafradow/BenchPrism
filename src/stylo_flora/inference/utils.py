@@ -6,14 +6,9 @@ import torch
 from .. import Snippet
 from ..logger import logger
 from .agents import BaseAgent, GeminiAgent, LocalAgent, OpenAIAgent
-from .tasks.base import BaseTask
-from .tasks.code_repair import CodeRepair
-from .tasks.code_summarization import CodeSummarization
-from .tasks.code_translation import CodeTranslation
-from .tasks.io_reasoning import IOReasoning, ReasoningType
-from .tasks.mcq_answering import MCQAnswering
-from .tasks.tag_classification import TagClassification
-from .tasks.test_generation import TestGeneration
+from .tasks import (BaseTask, CodeRepair, CodeSummarization, CodeTranslation,
+                    IOReasoning, MCQAnswering, ReasoningType,
+                    TagClassification, TestGeneration)
 
 
 def get_freest_gpu() -> str:
@@ -70,9 +65,9 @@ def task_factory(name: str, **kwargs) -> BaseTask:
     case 'code_summarization':
       return CodeSummarization(kwargs['src_lang'])
     case 'input_reasoning':
-      return IOReasoning(kwargs['src_lang'], type=ReasoningType.INPUT)
+      return IOReasoning(kwargs['src_lang'], reasoning_type=ReasoningType.INPUT)
     case 'output_reasoning':
-      return IOReasoning(kwargs['src_lang'], type=ReasoningType.OUTPUT)
+      return IOReasoning(kwargs['src_lang'], reasoning_type=ReasoningType.OUTPUT)
     case 'mcq_answering':
       return MCQAnswering(kwargs['src_lang'])
     case 'test_generation':

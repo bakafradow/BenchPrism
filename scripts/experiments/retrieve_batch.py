@@ -1,5 +1,5 @@
-import re
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -10,7 +10,8 @@ from pathlib import Path
 import jsonlines
 from tqdm import tqdm
 
-from stylo_flora.inference import BaseAgent, agent_factory, task_factory
+from stylo_flora.inference import agent_factory, task_factory
+from stylo_flora.inference.agents import BaseAgent
 from stylo_flora.logger import init_logger, logger
 
 

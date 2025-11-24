@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 from google import genai
-from openai import OpenAI
+from openai import OpenAI  # type: ignore[attr-defined]
 from tqdm import tqdm
 
 from stylo_flora import Snippet

@@ -18,7 +18,6 @@ from collections.abc import Callable
 from collections.abc import MutableSequence as MSeq
 from collections.abc import Sequence as Seq
 from datetime import datetime
-from itertools import islice
 from operator import itemgetter
 from pathlib import Path
 from typing import Any
@@ -28,10 +27,11 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from stylo_flora import IOTestCase, Snippet, setting_dict
+from stylo_flora import IOTestCase, Snippet
 from stylo_flora.benchmarks import BaseBenchmark, benchmark_factory
-from stylo_flora.inference import (BaseAgent, BaseTask, agent_factory,
-                                   task_factory, task_worker)
+from stylo_flora.inference import agent_factory, task_factory, task_worker
+from stylo_flora.inference.agents import BaseAgent
+from stylo_flora.inference.tasks import BaseTask, IOReasoning, MASK
 from stylo_flora.logger import init_logger, logger
 from stylo_flora.metrics import (calc_bertscore, calc_bleu, calc_codebleu,
                                  calc_coverage, calc_macro_f1, calc_meteor,
@@ -551,21 +551,22 @@ def _evaluate_io_reasoning(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
-    task: BaseTask,
+    task: IOReasoning,
     args: Namespace,
 ) -> None:
   def evaluate_metrics(
       res_orig: Seq[str], res_span: Seq[Seq[str]],
       snippets: Seq[Snippet], args: Namespace,
   ) -> dict[str, Any]:
-    res_code_orig = [snippet.data['code'].replace('????', res)
+    res_code_orig = [task.mask_func(snippet.data['code']).replace(MASK, res)
                      for snippet, res in zip(snippets, res_orig)]
-    res_code_span = [[snippet.data['code'].replace('????', res) for res in res_list]
+    res_code_span = [[task.mask_func(snippet.data['code']).replace(MASK, res) for res in res_list]
                      for snippet, res_list in zip(snippets, res_span)]
     tc_lists = [snippet.data['io_tests'] for snippet in snippets]
     pass_orig = pass_at_1(res_code_orig, tc_lists, args.src_lang)
     pass_span = [pass_at_1(variants, tc_lists, args.src_lang)
-                 for variants in tqdm(zip(*res_code_span), desc='Evaluating', total=len(res_code_span[0]), leave=False)]
+                 for variants in tqdm(zip(*res_code_span), desc='Evaluating',
+                                      total=len(res_code_span[0]), leave=False)]
     return {
         'pass_orig': pass_orig,
         'pass_span': pass_span,
@@ -584,7 +585,7 @@ def evaluate_input_reasoning(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
-    task: BaseTask,
+    task: IOReasoning,
     args: Namespace,
 ) -> None:
   _evaluate_io_reasoning(benchmark, transformer, agent, task, args)
@@ -594,7 +595,7 @@ def evaluate_output_reasoning(
     benchmark: BaseBenchmark,
     transformer: BaseTransformer,
     agent: BaseAgent,
-    task: BaseTask,
+    task: IOReasoning,
     args: Namespace,
 ) -> None:
   _evaluate_io_reasoning(benchmark, transformer, agent, task, args)
