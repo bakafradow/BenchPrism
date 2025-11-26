@@ -35,8 +35,8 @@ def reduce_seq(lang: str, snippet: str, seq: list[int]) -> None:
       temp_file = Path(temp_dir) / f'{class_name}.java'
       with open(temp_file, 'w', encoding='utf-8') as f:
         f.write(mutant_str)
-      returned = subprocess.run(['javac', str(temp_file)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8')
-      if returned.returncode == 0:
+      completed = subprocess.run(['javac', str(temp_file)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8')
+      if completed.returncode == 0:
         seq[idx] = selection
 
   with ThreadPoolExecutor() as executor:

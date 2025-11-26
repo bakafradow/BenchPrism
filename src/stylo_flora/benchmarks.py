@@ -1,6 +1,6 @@
 import json
 import math
-import re
+import shutil
 from abc import ABC
 from collections.abc import Callable, Iterable, Mapping
 from collections.abc import Sequence as Seq
@@ -11,7 +11,7 @@ import jsonlines
 from datasets import load_dataset
 
 from . import APITestCase, IOTestCase, Snippet
-from .metrics.correctness import pass_at_1
+from .metrics import pass_at_1
 
 
 def check_lang_support(func: Callable) -> Callable:
@@ -23,7 +23,7 @@ def check_lang_support(func: Callable) -> Callable:
 
 
 def _io_checker(snippet: Snippet, lang: str) -> bool:
-  return math.isclose(pass_at_1([snippet.data['code']], [snippet.data['io_tests']], lang=lang), 1.)
+  return bool(pass_at_1([snippet.data['code']], [snippet.data['io_tests']], lang=lang))
 
 
 class BaseBenchmark(ABC):
@@ -136,11 +136,11 @@ class XCodeEval(BaseBenchmark):
     sources = self._load(lang, TASK_NAME, 'bug_source_code')
     with jsonlines.open('data/xCodeEval/problem_descriptions.jsonl', 'r') as reader:
       args_dict = {obj['src_uid']: {
-        'desc': obj['description'],
-        'input_spec': obj['input_spec'],
-        'output_spec': obj['output_spec'],
-        'sample_inputs': obj['sample_inputs'],
-        'sample_outputs': obj['sample_outputs'],
+          'desc': obj['description'],
+          'input_spec': obj['input_spec'],
+          'output_spec': obj['output_spec'],
+          'sample_inputs': obj['sample_inputs'],
+          'sample_outputs': obj['sample_outputs'],
       } for obj in reader}
     testcases = self._load_tests(src_uids)
     return [Snippet(id=src_uid, data={
@@ -157,7 +157,7 @@ class XCodeEval(BaseBenchmark):
     tags_list = self._load(lang, TASK_NAME, 'tags')
     with jsonlines.open('data/xCodeEval/problem_descriptions.jsonl', 'r') as reader:
       args_dict = {obj['src_uid']: {
-        'desc': obj['description'],
+          'desc': obj['description'],
       } for obj in reader}
     return [Snippet(id=src_uid, data={
         'code': source,
@@ -261,7 +261,7 @@ class CodeScope(BaseBenchmark):
   def _normalize_test(testcases: str) -> Seq[IOTestCase]:
     if any(not isinstance(testcase['input'], str) and len(testcase['input']) != 1 for testcase in eval(testcases)):
       raise ValueError('Input of testcases must be a string or a sequence with length 1.')
-    return [IOTestCase(input=testcase['input'].replace('\r\n', '\n') if isinstance(testcase['input'], str) \
+    return [IOTestCase(input=testcase['input'].replace('\r\n', '\n') if isinstance(testcase['input'], str)
                        else testcase['input'][0].replace('\r\n', '\n'),
                        outputs=[output.replace('\r\n', '\n') for output in testcase['output']])
             for testcase in eval(testcases)]
@@ -307,8 +307,8 @@ class CoderUJB(BaseBenchmark):
     return [Snippet(id=row['task_id'], data={
         'code': self._construct_code(row),
         f'api_testcases_{lang}': [APITestCase(file=source['file'], code=self._construct_code(source),
-                                             method=source['method'])
-                                 for source in row['test_sources']],
+                                              method=source['method'])
+                                  for source in row['test_sources']],
         'oracle': row['source'],
         'start': row['start'],
         'end': row['end'],
@@ -356,12 +356,15 @@ class ClassEvalT(BaseBenchmark):
     src_dir = self._data_dir / 'ClassEval_T' / self.lang_to_name[src_lang] / 'solution'
     if not src_dir.exists():
       raise FileNotFoundError(f'Directory {src_dir} does not exist.')
+    from .metrics.correctness_classeval_t import pass_at_1_classeval
     snippets = [Snippet(id=file.stem, data={
         'code': file.read_text(),
-        f'test_code_{src_lang}': self._load_test(file.stem, src_lang),
-        f'test_code_{dst_lang}': self._load_test(file.stem, dst_lang),
+        f'test_{src_lang}': self._load_test(file.stem, src_lang),
+        f'test_{dst_lang}': self._load_test(file.stem, dst_lang),
+        'checker': lambda s, l: bool(pass_at_1_classeval([s.data['code']],
+                                                         [s.data[f'test_{l}']], l)),
     }) for file in src_dir.iterdir()
-       if file.is_file() and file.suffix == f'.{self.lang_to_name[src_lang]}']
+        if file.is_file() and file.suffix == f'.{self.lang_to_name[src_lang]}']
     return snippets
 
   def _load_test(self, name: str, lang: str) -> str:
@@ -375,7 +378,7 @@ class ClassEvalT(BaseBenchmark):
         test_name = f'{soln_name}.py'
       case _:
         raise TypeError(f'Unsupported language: {lang}')
-    test_code_path = self._data_dir / self.lang_to_name[lang] / 'test' / test_name
+    test_code_path = self._data_dir / 'ClassEval_T' / self.lang_to_name[lang] / 'test' / test_name
     if not test_code_path.exists():
       raise FileNotFoundError(f'Test file {test_code_path} does not exist.')
     return test_code_path.read_text()

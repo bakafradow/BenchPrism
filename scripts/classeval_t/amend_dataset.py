@@ -39,6 +39,15 @@ def main():
     pass
 
   try:
+    with open(dataset_dir / 'java' / 'test' / 'IpUtilTest.java', 'r', encoding='utf-8') as f:
+      content = f.read()
+    content = content.replace('IPUtil', 'IpUtil')
+    with open(dataset_dir / 'java' / 'test' / 'IpUtilTest.java', 'w', encoding='utf-8') as f:
+      f.write(content)
+  except FileNotFoundError:
+    pass
+
+  try:
     with open(dataset_dir / 'py' / 'test' / 'AccessGatewayFilter.py', 'r', encoding='utf-8') as f:
       content = f.read()
     content = content.replace('meigimport', 'import')

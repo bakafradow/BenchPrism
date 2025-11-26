@@ -18,6 +18,7 @@ from tqdm import tqdm
 
 from stylo_flora import Snippet
 from stylo_flora.benchmarks import benchmark_factory
+from stylo_flora.logger import init_logger
 from stylo_flora.transformer.stylex import StyleX
 
 SRC_PATH = Path('~/playground/research/samples/src.java').expanduser()
@@ -91,5 +92,6 @@ if __name__ == '__main__':
                       help='Specify the destination language. Only used for code translation task.')
   args = parser.parse_args()
 
+  init_logger(verbose=True)
   stylex = StyleX(lang=args.src_lang)
   snippets = _load_benchmark(args)

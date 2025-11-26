@@ -15,5 +15,5 @@ logger:
   backup_count: 5
 
 metrics:
-  timeout: 30 # unit: seconds
+  timeout: 120 # unit: seconds
   max_workers: 4

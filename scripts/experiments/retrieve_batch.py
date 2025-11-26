@@ -71,7 +71,7 @@ def _message(text: str) -> None:
 
 def main():
   args = parse_args()
-  init_logger(path=None, verbose=False, debug=False)
+  init_logger()
   logger.info(f'Initializing model {args.model}...')
   agent = agent_factory(name=args.model)
   logger.info(f'Initializing task {args.task}...')

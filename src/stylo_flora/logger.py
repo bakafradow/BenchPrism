@@ -3,7 +3,6 @@ import logging
 import os
 import sys
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 from typing import Any, cast
 
 from . import setting_dict
@@ -39,7 +38,15 @@ class ColorFormatter(logging.Formatter):
 logger = cast(VerboseLogger, logging.getLogger('stylo_flora'))
 
 
-def init_logger(path: Path, verbose: bool = False, debug: bool = False) -> None:
+def init_logger(
+    path: os.PathLike | None = None,
+    *,
+    verbose: bool = False,
+    debug: bool = False
+) -> None:
+  for handler in logger.handlers:
+    logger.removeHandler(handler)
+
   logger.setLevel(logging.INFO)
   if verbose:
     logger.setLevel(VERBOSE_LEVEL)
@@ -53,7 +60,7 @@ def init_logger(path: Path, verbose: bool = False, debug: bool = False) -> None:
   logger.addHandler(stream_handler)
 
   if not path:
-    logger.warning('LOG_FILE environment variable is not set, logging to stdout only.')
+    logger.info('Log path not set, logging to stdout only.')
     return
   if not os.path.exists(os.path.dirname(path)):
     try:

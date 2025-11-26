@@ -34,9 +34,8 @@ from stylo_flora.inference import agent_factory, task_factory, task_worker
 from stylo_flora.inference.agents import BaseAgent
 from stylo_flora.inference.tasks import MASK, BaseTask, IOReasoning
 from stylo_flora.logger import init_logger, logger
-from stylo_flora.metrics import (calc_bertscore, calc_bleu, calc_codebleu,
-                                 calc_coverage, calc_macro_f1, calc_meteor,
-                                 calc_rouge, pass_at_1)
+from stylo_flora.metrics import (calc_codebleu, calc_coverage, calc_macro_f1,
+                                 pass_at_1)
 from stylo_flora.transformer.base import BaseTransformer, transformer_factory
 
 _MetricsEvaluator = Callable[[Seq[str], Seq[Seq[str]], Seq[Snippet], Namespace],
@@ -502,6 +501,8 @@ def evaluate_code_summarization(
     task: BaseTask,
     args: Namespace,
 ) -> None:
+  from stylo_flora.metrics import (calc_bertscore, calc_bleu, calc_meteor,
+                                   calc_rouge)
   def evaluate_metrics(
       res_orig: Seq[str], res_span: Seq[Seq[str]],
       snippets: Seq[Snippet], args: Namespace,
@@ -670,6 +671,39 @@ def evaluate_test_generation(
   )
 
 
+def evaluate_code_translation_classeval_t(
+    benchmark: BaseBenchmark,
+    transformer: BaseTransformer,
+    agent: BaseAgent,
+    task: BaseTask,
+    args: Namespace,
+) -> None:
+  if not args.dst_lang:
+    raise ValueError('Destination language must be specified for code translation task.')
+  from stylo_flora.metrics.correctness_classeval_t import pass_at_1_classeval
+
+  def evaluate_metrics(
+      res_orig: Seq[str], res_span: Seq[Seq[str]],
+      snippets: Seq[Snippet], args: Namespace,
+  ) -> dict[str, Any]:
+    tests = [snippet.data[f'test_{args.dst_lang}'] for snippet in snippets]
+    pass_orig = pass_at_1_classeval(res_orig, tests, args.dst_lang)
+    pass_span = [pass_at_1_classeval(variants, tests, args.dst_lang)
+                 for variants in tqdm(zip(*res_span), desc='Evaluating',
+                                      total=len(res_span[0]), leave=False)]
+    return {
+        'pass_orig': pass_orig,
+        'pass_span': pass_span,
+        'pass_span_avg': np.mean(pass_span),
+    }
+
+  snippets = benchmark.load_for_translation(args.src_lang, args.dst_lang)
+  _evaluate_task_template(
+      snippets, transformer, agent, task, args,
+      metrics_evaluator=evaluate_metrics,
+  )
+
+
 def main():
   args = parse_args()
   init_logger(path=args.log_path, verbose=args.verbose, debug=args.debug)
@@ -695,9 +729,12 @@ def main():
   args.result_path = args.result_dir /\
       f'results_{eval_id}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
 
-  evaluator = globals().get(f'evaluate_{args.task}')
+  # prioritize dataset-specific evaluator
+  evaluator = getattr(sys.modules[__name__],
+                      f'evaluate_{args.task}_{args.dataset.replace("-", "_")}', None) or \
+      getattr(sys.modules[__name__], f'evaluate_{args.task}', None)
   if not evaluator:
-    raise ValueError(f'Unsupported task {args.task} for evaluation.')
+    raise ValueError(f'Unable to evaluate {args.task} on {args.dataset}.')
   evaluator(benchmark, transformer, agent, task, args)
 
 
