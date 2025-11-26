@@ -31,5 +31,4 @@ You MUST only return the letter of the correct option (A, B, C, or D).
     )
 
   def resolve_response(self, res: str) -> str | None:
-    res = res.strip()
-    return res[0] if res else None
+    return res.strip() or None
