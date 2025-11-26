@@ -312,10 +312,11 @@ def _batch_with(
       requests.append(req)
   agent.submit_batch_job(requests)
 
-  # save dummy outputs
-  res_orig = [None] * len(snippets)
-  res_span = [[None] * len(variants) for variants in corpus]
-  _save_outputs(args.outputs_path, output_data, snippets, res_orig, res_span)
+  if not args.outputs_path.exists():
+    # save dummy outputs
+    res_orig = [None] * len(snippets)
+    res_span = [[None] * len(variants) for variants in corpus]
+    _save_outputs(args.outputs_path, output_data, snippets, res_orig, res_span)
 
 
 def _evaluate_task_template(
@@ -380,8 +381,9 @@ def _evaluate_task_template(
       'fallback_rate': np.mean(fallbacks) / len(indices_filtered),
       'codebleu': codebleu,
       'codebleu_avg': np.mean(codebleu),
-      'token_count': agent.token_count,
   })
+  if not args.evaluate_only:
+    result.update(token_count=agent.token_count)
   _save_json(args.result_path, result)
   logger.info(f'Saved results to {args.result_path}.')
 
