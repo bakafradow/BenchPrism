@@ -8,35 +8,33 @@ from .base import BaseTask
 
 
 class TestGeneration(BaseTask):
-  SYSTEM_PROMPT = """
-  <task>
-  Provide exactly 5 test cases for a given problem along with its solution.
-  </task>
-  <constraint>
-  1. Each test case contains a string for both input and output.
-  2. The solution code successfully processes the test case's input without errors and the outcome aligns with the test case's output.
-  3. All test cases are simple and achieve optimal branch and line coverage.
-  4. Your response MUST only contain a string in the following JSON format:
-  [{{"input": input string, "output": output string}}]
-  </constraint>
-  """
+  SYSTEM_PROMPT = """<task>
+Provide exactly 5 test cases for a given problem along with its solution.
+</task>
+<constraint>
+1. Each test case contains a string for both input and output.
+2. The solution code successfully processes the test case's input without errors and the outcome aligns with the test case's output.
+3. All test cases are simple and achieve optimal branch and line coverage.
+4. Your response MUST only contain a string in the following JSON format:
+[{{"input": input string, "output": output string}}]
+</constraint>
+"""
 
-  USER_PROMPT = """
-  <language>{lang}</language>
-  <problem_description>{desc}</problem_description>
-  <input_specification>{input_spec}</input_specification>
-  <output_specification>{output_spec}</output_specification>
-  <sample_inputs>```
-  {sample_inputs}
-  ```</sample_inputs>
-  <sample_outputs>```
-  {sample_outputs}
-  ```</sample_outputs>
-  <code>```{lang}
-  {code}
-  ```</code>
-  <notes>{notes}</notes>
-  """
+  USER_PROMPT = """<language>{lang}</language>
+<problem_description>{desc}</problem_description>
+<input_specification>{input_spec}</input_specification>
+<output_specification>{output_spec}</output_specification>
+<sample_inputs>```
+{sample_inputs}
+```</sample_inputs>
+<sample_outputs>```
+{sample_outputs}
+```</sample_outputs>
+<code>```{lang}
+{code}
+```</code>
+<notes>{notes}</notes>
+"""
 
   def __init__(self, lang: str):
     super().__init__()

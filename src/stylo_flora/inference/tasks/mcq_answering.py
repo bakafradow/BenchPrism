@@ -3,23 +3,21 @@ from .base import BaseTask
 
 
 class MCQAnswering(BaseTask):
-  SYSTEM_PROMPT = """
-  <task>
-  Given a code snippet, select the most probable option that describes the behavior while running.
-  </task>
-  <constraint>
-  Your output MUST only contain the letter (A, B, C, or D) corresponding to the correct answer without any explanation.
-  </constraint>
-  """
+  SYSTEM_PROMPT = """<task>
+Given a code snippet, select the most probable option that describes the behavior while running.
+</task>
+<constraint>
+You MUST only return the letter of the correct option (A, B, C, or D).
+</constraint>
+"""
 
-  USER_PROMPT = """
-  <code>```{lang}
-  {code}
-  ```</code>
-  <choices>
-  {choices}
-  </choices>
-  """
+  USER_PROMPT = """<code>```{lang}
+{code}
+```</code>
+<choices>
+{choices}
+</choices>
+"""
 
   def __init__(self, lang: str):
     super().__init__()

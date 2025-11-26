@@ -6,31 +6,29 @@ from .base import BaseTask
 
 
 class CodeRepair(BaseTask):
-  SYSTEM_PROMPT = """
-  <task>
-  Repair buggy code to make it work correctly.
-  </task>
-  <constraint>
-  Your output MUST only contain the repaired code WITHOUT any explanation, enclosed by triple back quotes and the language specified.
-  </constraint>
-  """
+  SYSTEM_PROMPT = """<task>
+Repair buggy code to make it work correctly.
+</task>
+<constraint>
+Your output MUST only contain the repaired code WITHOUT any explanation, enclosed by triple back quotes and the language specified.
+</constraint>
+"""
 
-  USER_PROMPT = """
-  <language>{lang}</language>
-  <problem_description>{desc}</problem_description>
-  <input_specification>{input_spec}</input_specification>
-  <output_specification>{output_spec}</output_specification>
-  <sample_inputs>```
-  {sample_inputs}
-  ```</sample_inputs>
-  <sample_outputs>```
-  {sample_outputs}
-  ```</sample_outputs>
-  <buggy_code>```{lang}
-  {code}
-  ```</buggy_code>
-  <error_message>{msg}</error_message>
-  """
+  USER_PROMPT = """<language>{lang}</language>
+<problem_description>{desc}</problem_description>
+<input_specification>{input_spec}</input_specification>
+<output_specification>{output_spec}</output_specification>
+<sample_inputs>```
+{sample_inputs}
+```</sample_inputs>
+<sample_outputs>```
+{sample_outputs}
+```</sample_outputs>
+<buggy_code>```{lang}
+{code}
+```</buggy_code>
+<error_message>{msg}</error_message>
+"""
 
   def __init__(self, lang: str) -> None:
     super().__init__()

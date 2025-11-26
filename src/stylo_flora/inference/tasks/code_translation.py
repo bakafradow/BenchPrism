@@ -6,24 +6,22 @@ from .base import BaseTask
 
 
 class CodeTranslation(BaseTask):
-  SYSTEM_PROMPT = """
-  <task>
-  Translate code from one language to another without changing its behavior.
-  </task>
-  <constraint>
-  Your output MUST only contain the translated code WITHOUT any explanation, enclosed by triple back quotes with the language specified.
-  Assertion statements, if exist, should also be considered.
-  Apply camel case in Java; apply snake case in C++ and Python.
-  </constraint>
-  """
+  SYSTEM_PROMPT = """<task>
+Translate code from one language to another without changing its behavior.
+</task>
+<constraint>
+Your output MUST only contain the translated code WITHOUT any explanation, enclosed by triple back quotes with the language specified.
+Assertion statements, if exist, should also be considered.
+Apply camel case in Java; apply snake case in C++ and Python.
+</constraint>
+"""
 
-  USER_PROMPT = """
-  <source_language>{src_lang}</source_language>
-  <target_language>{dst_lang}</target_language>
-  <source_code>```{src_lang}
-  {code}
-  ```</source_code>
-  """
+  USER_PROMPT = """<source_language>{src_lang}</source_language>
+<target_language>{dst_lang}</target_language>
+<source_code>```{src_lang}
+{code}
+```</source_code>
+"""
 
   def __init__(self, src_lang: str, dst_lang: str) -> None:
     super().__init__()

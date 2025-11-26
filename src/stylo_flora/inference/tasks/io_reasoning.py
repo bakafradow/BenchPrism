@@ -68,24 +68,23 @@ def _mask_java(code: str, type: ReasoningType) -> str:
 
 
 class IOReasoning(BaseTask):
-  SYSTEM_PROMPT = f"""
-  <task>
-  Based on the given code, which may contain errors, reason out the "{MASK}" in the assertion statement to make it compilable and correct in Java 17.
-  </task>
-  <constraint>
-  Your output MUST only contain the exact expression that should replace the "{MASK}" in the assertion statement without any explanations, enclosed by triple back quotes with the language specified.
-  </constraint>
-  """
+  SYSTEM_PROMPT = f"""<task>
+Based on the given code, which may contain errors, reason out the "{MASK}" in the assertion statement to make it compilable and correct in Java 17.
+</task>
+<constraint>
+Your output MUST only contain the exact expression that should replace the "{MASK}" in the assertion statement instead of the whole assertion statement, enclosed by triple back quotes with the language specified without any explanation.
+</constraint>
+"""
 
-  USER_PROMPT = """
-  <code>```{lang}
-  {code}
-  ```</code>
-  """
+  USER_PROMPT = """<code>```{lang}
+{code}
+```</code>
+"""
 
   def __init__(self, lang: str, reasoning_type: ReasoningType) -> None:
     super().__init__()
     self.lang = lang
+    self.reasoning_type = reasoning_type
 
     match lang:
       case 'java':
