@@ -126,9 +126,9 @@ class XCodeEval(BaseBenchmark):
     testcases = self._load_tests(src_uids)
     return [Snippet(id=src_uid, data={
         'code': source,
-        'io_tests': testcases[i],
+        'io_tests': testcase,
         'checker': _io_checker,
-    }) for i, (src_uid, source) in enumerate(zip(src_uids, sources))]
+    }) for src_uid, source, testcase in zip(src_uids, sources, testcases)]
 
   def load_for_repair(self, lang):
     TASK_NAME = 'apr'

@@ -21,7 +21,6 @@ jp.startJVM('-ea', '--enable-native-access=ALL-UNNAMED')
 
 from .stylex_builders import build_styler
 from .base import BaseTransformer
-from ..metrics.correctness import pass_at_1
 from ..logger import logger
 from .. import Snippet, setting_dict
 

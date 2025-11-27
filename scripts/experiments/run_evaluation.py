@@ -88,8 +88,22 @@ def parse_args() -> Namespace:
   parser.add_argument('--evaluate-only', action='store_true', default=False,
                       help='If set, only calculates metrics with existing data without transformation and inference.')
   args = parser.parse_args()
+
   args.dataset = args.dataset.lower()
   args.task = args.task.lower()
+
+  data_id = f'{args.dataset}_{args.task}_{args.src_lang}_seed{args.seed}'
+  args.candidates_path = args.result_dir / f'candidates_{data_id}.json'
+  args.variants_path = args.result_dir / f'variants_{data_id}.jsonl'
+
+  eval_id = f'{args.dataset}_{args.task}_{args.src_lang}'
+  if args.task == 'code_translation':
+    eval_id += f'{"_to_" + args.dst_lang}'
+  eval_id += f'_with_{re.split(r"[:/]", args.model)[-1]}_seed{args.seed}'
+  args.outputs_path = args.result_dir / f'outputs_{eval_id}.jsonl'
+  args.result_path = args.result_dir /\
+      f'results_{eval_id}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+
   return args
 
 
@@ -110,11 +124,13 @@ def _pick_snippets(
   indices = list(range(len(snippets)))
   if args.candidates_path.exists():
     with open(args.candidates_path, 'r') as f:
+      logger.info(f'Loading candidate indices from {args.candidates_path}...')
       candidates = json.loads(f.read())
   else:
     candidates = list(tqdm((i for i in indices if is_valid(snippets[i])),
                            desc='Picking snippets', total=len(snippets), leave=False))
     with open(args.candidates_path, 'w') as f:
+      logger.info(f'Saving candidate indices to {args.candidates_path}...')
       f.write(json.dumps(candidates))
 
   if args.random:
@@ -717,19 +733,7 @@ def main():
   agent = agent_factory(name=args.model)
   logger.info(f'Initializing task {args.task}...')
   task = task_factory(args.task, **dict(args._get_kwargs()))
-
   os.makedirs(args.result_dir, exist_ok=True)
-  data_id = f'{args.dataset}_{args.task}_{args.src_lang}_seed{args.seed}'
-  args.candidates_path = args.result_dir / f'candidates_{data_id}.json'
-  args.variants_path = args.result_dir / f'variants_{data_id}.jsonl'
-  eval_id = f'{args.dataset}_{args.task}_{args.src_lang}'
-  if args.task == 'code_translation':
-    eval_id += f'{"_to_" + args.dst_lang}'
-  eval_id += f'_with_{re.sub(r"[/: ]+", "-", args.model.split(":", 1)[-1])}_seed{args.seed}'
-  args.outputs_path = args.result_dir /\
-      f'outputs_{eval_id}.jsonl'
-  args.result_path = args.result_dir /\
-      f'results_{eval_id}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
 
   # prioritize dataset-specific evaluator
   evaluator = getattr(sys.modules[__name__],

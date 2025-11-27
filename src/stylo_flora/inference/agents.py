@@ -233,8 +233,10 @@ class GeminiAgent(BaseAgent):
             'system_instruction': {'parts': [{'text': sys_prompt}]},
             'generation_config': {
                 'max_output_tokens': setting_dict['agent']['max_new_tokens'],
+                'thinking_config': {
+                    'include_thoughts': False,
+                }
             },
-
         },
     }
 
