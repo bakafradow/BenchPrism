@@ -336,6 +336,10 @@ class CruxEvalX(BaseBenchmark):
 
 
 class ClassEvalT(BaseBenchmark):
+  """
+  :Note: Problematic snippets that cannot pass unit tests: `SQLQueryBuilder` in Java; `CookiesUtil`, `IpUtil`, `SignInSystem`, and `VendingMachine` in C++.
+  """
+
   supported_langs: frozenset[str] = frozenset({
       'cpp', 'java', 'python',
   })
@@ -363,7 +367,7 @@ class ClassEvalT(BaseBenchmark):
         f'test_{dst_lang}': self._load_test(file.stem, dst_lang),
         'checker': lambda s, l: bool(pass_at_1_classeval([s.data['code']],
                                                          [s.data[f'test_{l}']], l)),
-    }) for file in src_dir.iterdir()
+    }) for file in sorted(src_dir.iterdir())
         if file.is_file() and file.suffix == f'.{self.lang_to_name[src_lang]}']
     return snippets
 
