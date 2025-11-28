@@ -4,6 +4,7 @@ import tempfile
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from functools import cached_property
 from io import StringIO
 from typing import ParamSpec
 from uuid import uuid4
@@ -14,7 +15,8 @@ from google import genai
 from google.genai import types as gtypes
 from openai import OpenAI  # type: ignore[attr-defined]
 from requests.exceptions import Timeout
-from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig, StoppingCriteria
+from transformers import (AutoModelForCausalLM, AutoTokenizer,
+                          GenerationConfig, StoppingCriteria)
 
 from .. import setting_dict
 from ..logger import logger
@@ -149,6 +151,9 @@ class OpenAIAgent(BaseAgent):
           )
         except Exception as e:
           logger.error(f'{e.__class__.__name__} occurred while uploading batch file: {e}')
+    if not input_file or not input_file.id:
+      logger.warning('Failed to get the id of uploaded file.')
+      return
     logger.info(f'Uploaded {len(requests)} requests from {batch_file}: {input_file.id}')
 
     try:
@@ -254,8 +259,8 @@ class GeminiAgent(BaseAgent):
         )
       except Exception as e:
         logger.error(f'{e.__class__.__name__} occurred while uploading batch file: {e}')
-    if not uploaded_file.name:
-      logger.warning('Name of uploaded file is empty, maybe due to internal error of Google API.')
+    if not uploaded_file or not uploaded_file.name:
+      logger.warning('Failed to get the name of uploaded file.')
       return
     logger.info(f'Uploaded {len(requests)} requests from {batch_file}: {uploaded_file.name}')
 
@@ -312,18 +317,22 @@ class TimeoutCriteria(StoppingCriteria):
 
 
 class LocalAgent(BaseAgent):
-  def __init__(self, name: str):
-    super().__init__(name)
-    logger.info(f'Loading tokenizer from {name}...')
-    self.tokenizer = AutoTokenizer.from_pretrained(
-        name,
+  @cached_property
+  def tokenizer(self):
+    logger.info(f'Loading tokenizer from {self.name}...')
+    tokenizer = AutoTokenizer.from_pretrained(
+        self.name,
         trust_remote_code=True,
     )
-    if not self.tokenizer.pad_token_id:
-      self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
-    logger.info(f'Loading model from {name}...')
-    self.model = AutoModelForCausalLM.from_pretrained(
-        pretrained_model_name_or_path=name,
+    if not tokenizer.pad_token_id:
+      tokenizer.pad_token_id = tokenizer.eos_token_id
+    return tokenizer
+
+  @cached_property
+  def model(self):
+    logger.info(f'Loading model from {self.name}...')
+    return AutoModelForCausalLM.from_pretrained(
+        pretrained_model_name_or_path=self.name,
         trust_remote_code=True,
         torch_dtype=torch.bfloat16,
         low_cpu_mem_usage=True,
@@ -331,8 +340,12 @@ class LocalAgent(BaseAgent):
     )
 
   def __del__(self):
-    logger.info(f'Releasing resources for {self.name}...')
-    del self.tokenizer, self.model
+    if 'tokenizer' in self.__dict__:
+      logger.info(f'Releasing tokenizer of {self.name}...')
+      del self.tokenizer
+    if 'model' in self.__dict__:
+      logger.info(f'Releasing model of {self.name}...')
+      del self.model
     gc.collect()
     if torch.cuda.is_available():
       torch.cuda.empty_cache()
