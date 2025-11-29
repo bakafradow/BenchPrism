@@ -22,17 +22,16 @@ in `${ROOT}/data/`.
 ├── README.md
 ├── results         # outputs for further analysis
 ├── scripts         # helper scripts
-├── src             # source code of StyloFlora
-└── targets         # compiled code while running
+└── src             # source code of StyloFlora
 ```
 
 ## Usage
 
-Refer to scripts in `scripts/experiments`.
+Refer to scripts in `scripts/experiment`.
 Example usage:
 ```bash
-python3 -m scripts.experiments.run_evaluation \
-  -d xCodeEval -m gemini-2.0-flash -t code_translation \
+python3 -m scripts.experiment.run \
+  -d xCodeEval -m gemini-2.5-flash -t code_translation \
   --src-lang java --dst-lang python --result-dir results --log-path logs/StyloFlora.log \
   -n 100 --seed 42 -rv
 ```
