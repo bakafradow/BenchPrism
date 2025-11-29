@@ -27,8 +27,6 @@ class BaseAgent(ABC):
   Abstract base class for LLM-based agents.
   """
 
-  supports_concurrency: bool = True
-
   def __init__(self, name: str):
     self.name = name
     self.token_count = 0
@@ -98,13 +96,12 @@ def retry(retries: int = 3, interval: float = 30) -> Callable[[Callable[P, str]]
 
 
 class OpenAIAgent(BaseAgent):
-  supports_concurrency = False
-
-  def __init__(self, name: str):
-    super().__init__(name)
-    self.client = OpenAI(base_url=os.getenv('BASE_URL'), api_key=os.getenv('API_KEY'))
-    if name not in {model.id for model in self.client.models.list()}:
-      raise TypeError(f'{name} is not available from {self.client.base_url}.')
+  @cached_property
+  def client(self):
+    client = OpenAI(base_url=os.getenv('BASE_URL'), api_key=os.getenv('API_KEY'))
+    if self.name not in {model.id for model in client.models.list()}:
+      raise TypeError(f'{self.name} is not available from {client.base_url}.')
+    return client
 
   @retry(retries=setting_dict['agent']['retries'],
          interval=setting_dict['agent']['retry_interval'])
@@ -201,18 +198,17 @@ class OpenAIAgent(BaseAgent):
 
 
 class GeminiAgent(BaseAgent):
-  supports_concurrency = False
-
-  def __init__(self, name: str):
-    super().__init__(name)
-    self.client = genai.Client(
+  @cached_property
+  def client(self):
+    client = genai.Client(
         api_key=os.getenv('API_KEY'),
         http_options=gtypes.HttpOptions(
             timeout=setting_dict['agent']['timeout'] * 1000,
         ),
     )
-    if 'models/' + name not in {model.name for model in self.client.models.list()}:
-      raise TypeError(f'{name} is not available from Google API.')
+    if 'models/' + self.name not in {model.name for model in client.models.list()}:
+      raise TypeError(f'{self.name} is not available from Google API.')
+    return client
 
   @retry(retries=setting_dict['agent']['retries'],
          interval=setting_dict['agent']['retry_interval'])

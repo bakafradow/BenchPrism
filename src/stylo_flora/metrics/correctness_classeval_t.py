@@ -6,6 +6,7 @@ import sys
 import tempfile
 from collections.abc import Sequence as Seq
 from concurrent.futures import ThreadPoolExecutor
+from functools import cache
 
 from tqdm import tqdm
 
@@ -13,16 +14,6 @@ from .. import setting_dict
 from ..logger import logger
 from . import utils
 from .utils import CompilationError
-
-msys_tmpdir_abs = utils.get_msys_root() + utils.get_msys_tmpdir()
-with open(f'{utils.get_msys_tmpdir()}/common.h', 'w') as f:
-  f.write('#include <bits/stdc++.h>\n#include <sqlite3.h>\n')
-cmd_pch = ['g++', '-std=c++20', '-x', 'c++-header', f'{utils.get_msys_tmpdir()}/common.h',
-           '-o', f'{utils.get_msys_tmpdir()}/common.h.pch']
-completed = subprocess.run(cmd_pch, cwd=msys_tmpdir_abs, encoding='utf-8', errors='replace',
-                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-if completed.returncode != 0:
-  raise CompilationError(f'Failed to compile common.h:\n{completed.stderr}')
 
 
 def test_classeval_java(code: str, test: str) -> bool:
@@ -63,7 +54,7 @@ def test_classeval_java(code: str, test: str) -> bool:
 
 def test_classeval_cpp(code: str, test: str) -> bool:
   try:
-    with tempfile.TemporaryDirectory(dir=msys_tmpdir_abs) as tmpdir:
+    with tempfile.TemporaryDirectory(dir=utils.get_msys_tmpdir_abs()) as tmpdir:
       with open(f'{tmpdir}/pch.h', 'w') as f:
         f.write(code)
       with open(f'{tmpdir}/test.cpp', 'w') as f:
@@ -115,7 +106,7 @@ def test_classeval_python(code: str, test: str) -> bool:
     if not matched:
       raise CompilationError('Class name not found.')
     module_name = matched.group(1)
-    with tempfile.TemporaryDirectory(dir=msys_tmpdir_abs) as tmpdir:
+    with tempfile.TemporaryDirectory(dir=utils.get_msys_tmpdir_abs()) as tmpdir:
       path = os.path.join(tmpdir, f'{module_name}.py')
       with open(path, 'w') as f:
         f.write(f'{code}\n{test}')
@@ -134,7 +125,22 @@ def test_classeval_python(code: str, test: str) -> bool:
   return True
 
 
+@cache
+def initialize_cpp() -> None:
+  with open(f'{utils.get_msys_tmpdir()}/common.h', 'w') as f:
+    f.write('#include <bits/stdc++.h>\n#include <sqlite3.h>\n')
+  cmd_pch = ['g++', '-std=c++20', '-x', 'c++-header', f'{utils.get_msys_tmpdir()}/common.h',
+             '-o', f'{utils.get_msys_tmpdir()}/common.h.pch']
+  completed = subprocess.run(cmd_pch, cwd=utils.get_msys_tmpdir_abs(), encoding='utf-8',
+                             errors='replace', stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+  if completed.returncode != 0:
+    raise CompilationError(f'Failed to compile common.h:\n{completed.stderr}')
+
+
 def pass_at_1_classeval(code_list: Seq[str], test_list: Seq[str], lang: str) -> float:
+  initializer = getattr(sys.modules[__name__], f'initialize_{lang}', None)
+  if initializer:
+    initializer()
   tester = getattr(sys.modules[__name__], f'test_classeval_{lang}', None)
   if not tester:
     raise ValueError(f'Unsupported language: {lang}')

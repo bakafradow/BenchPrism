@@ -25,23 +25,27 @@ def calc_codebleu(prd: Seq[str], ref: Seq[str], lang: str) -> dict[str, float]:
                           lang=lang_to_name[lang], weights=(.25, .25, .25, .25), tokenizer=None)
 
 
+@cache
+def _get_bleu():
+  logger.info('Initializing BLEU from evaluate library...')
+  return evaluate.load('bleu')
+
+
 @ensure_equal_lengths
 def calc_bleu(prd: Seq[str], ref: Seq[str]) -> float:
-  @cache
-  def get_bleu():
-    logger.info('Initializing BLEU from evaluate library...')
-    return evaluate.load('bleu')
-  bleu = get_bleu()
+  bleu = _get_bleu()
   return bleu.compute(predictions=prd, references=[[sentence] for sentence in ref])['bleu']
+
+
+@cache
+def _get_rouge():
+  logger.info('Initializing ROUGE from evaluate library...')
+  return evaluate.load('rouge')
 
 
 @ensure_equal_lengths
 def calc_rouge(prd: Seq[str], ref: Seq[str]) -> dict:
-  @cache
-  def get_rouge():
-    logger.info('Initializing ROUGE from evaluate library...')
-    return evaluate.load('rouge')
-  rouge = get_rouge()
+  rouge = _get_rouge()
   return rouge.compute(predictions=prd, references=[[sentence] for sentence in ref])
 
 
@@ -52,11 +56,13 @@ def calc_meteor(prd: Seq[str], ref: Seq[str]) -> float:
   return np.mean(scores)
 
 
+@cache
+def _get_bertscore():
+  logger.info('Initializing BERTScore from evaluate library...')
+  return evaluate.load('bertscore')
+
+
 @ensure_equal_lengths
 def calc_bertscore(prd: Seq[str], ref: Seq[str]) -> dict:
-  @cache
-  def get_bertscore():
-    logger.info('Initializing BERTScore from evaluate library...')
-    return evaluate.load('bertscore')
-  bertscore = get_bertscore()
+  bertscore = _get_bertscore()
   return bertscore.compute(predictions=prd, references=ref, lang='en')

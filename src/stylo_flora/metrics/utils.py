@@ -64,3 +64,8 @@ def get_msys_tmpdir() -> str:
   except subprocess.CalledProcessError as e:
     logger.warning(f'Failed to get MSYS2 temp directory: {e}')
     raise
+
+
+@cache
+def get_msys_tmpdir_abs() -> str:
+  return get_msys_root() + get_msys_tmpdir()
