@@ -337,7 +337,10 @@ class CruxEvalX(BaseBenchmark):
 
 class ClassEvalT(BaseBenchmark):
   """
-  :Note: Problematic snippets that cannot pass unit tests: `SQLQueryBuilder` in Java; `CookiesUtil`, `IpUtil`, `SignInSystem`, and `VendingMachine` in C++.
+  :Note: Problematic snippets that cannot pass unit tests originally:
+  - `SQLQueryBuilder` (with index `69`) in Java;
+  - `CookiesUtil`, `IpUtil`, `SignInSystem`, and `VendingMachine` (with indices `26, 45, 72, 88`) in C++;
+  - `BookManagementDB`, `IpUtil`, `KappaCalculator`, `MovieTicketDB`, `StudentDatabaseProcessor`, `UserLoginDB` (with indices `14, 45, 48, 55, 77, 86`) in Python.
   """
 
   supported_langs: frozenset[str] = frozenset({

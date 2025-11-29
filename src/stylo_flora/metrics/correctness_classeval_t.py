@@ -1,11 +1,9 @@
-import importlib
 import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
-import unittest
 from collections.abc import Sequence as Seq
 from concurrent.futures import ThreadPoolExecutor
 
@@ -18,7 +16,7 @@ from .utils import CompilationError
 
 msys_tmpdir_abs = utils.get_msys_root() + utils.get_msys_tmpdir()
 with open(f'{utils.get_msys_tmpdir()}/common.h', 'w') as f:
-  f.write('#define NOMINMAX\n#include <bits/stdc++.h>\n#include <sqlite3.h>\n')
+  f.write('#include <bits/stdc++.h>\n#include <sqlite3.h>\n')
 cmd_pch = ['g++', '-std=c++20', '-x', 'c++-header', f'{utils.get_msys_tmpdir()}/common.h',
            '-o', f'{utils.get_msys_tmpdir()}/common.h.pch']
 completed = subprocess.run(cmd_pch, cwd=msys_tmpdir_abs, encoding='utf-8', errors='replace',
@@ -103,25 +101,37 @@ def test_classeval_cpp(code: str, test: str) -> bool:
 
 
 def test_classeval_python(code: str, test: str) -> bool:
-  cwd = os.getcwd()
-  with tempfile.TemporaryDirectory() as tmpdir:
-    try:
-      with open(f'{tmpdir}/to_test.py', 'w') as f:
+  """
+  :note: Python environment requirements on MSYS2:
+  - gensim~=4.2.0
+  - numpy~=1.22.4
+  - openpyxl~=3.0.9
+  - pandas~=1.4.2
+  - python~=3.10
+  - scipy~=1.8.1
+  """
+  try:
+    matched = re.search(r'class\s+(\w+)', code)
+    if not matched:
+      raise CompilationError('Class name not found.')
+    module_name = matched.group(1)
+    with tempfile.TemporaryDirectory(dir=msys_tmpdir_abs) as tmpdir:
+      path = os.path.join(tmpdir, f'{module_name}.py')
+      with open(path, 'w') as f:
         f.write(f'{code}\n{test}')
-      os.chdir(tmpdir)
-      module = importlib.import_module('to_test')
-      suite = unittest.TestLoader().loadTestsFromModule(module)
-      with open(os.devnull, 'w') as f:
-        result = unittest.TextTestRunner(stream=f, failfast=True).run(suite)
-      success = result.wasSuccessful()
-      if not success:
-        logger.verbose(f'Test failed:\n{result.errors}')
-      return success
-    except Exception as e:
-      logger.warning(f'{e.__class__.__name__} occurred while testing:\n{e}')
-      return False
-    finally:
-      os.chdir(cwd)
+      cmd = ['cd', f'/{os.path.relpath(tmpdir, utils.get_msys_root())}', '&&',
+             'python', '-m', 'unittest', '-bfq', module_name]
+      completed = utils.run_msys(cmd, cwd=tmpdir, encoding='utf-8', errors='replace',
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 timeout=setting_dict['metrics']['timeout'])
+  except Exception as e:
+    logger.warning(f'{e.__class__.__name__} occurred while testing:\n{e}')
+    return False
+  if completed.returncode != 0:
+    logger.warning(f'Test failed with exit code {completed.returncode}.')
+    logger.verbose(f'Standard Error:\n{completed.stderr}')
+    return False
+  return True
 
 
 def pass_at_1_classeval(code_list: Seq[str], test_list: Seq[str], lang: str) -> float:
