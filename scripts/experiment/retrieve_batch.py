@@ -65,7 +65,11 @@ def _retrieve(agent: BaseAgent, args: Namespace) -> dict:
 def _message(text: str) -> None:
   if not shutil.which('powershell.exe'):
     return
-  cmd = f'Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show("{text}", "{os.path.basename(__file__)}")'
+  cmd = (
+      f'Add-Type -AssemblyName PresentationFramework;'
+      f'[System.Windows.MessageBox]::Show("{text}", "{os.path.basename(__file__)}", '
+      f'0, 64, 0, 0x00020000)'
+  )
   subprocess.run(['powershell.exe', '-Command', cmd], capture_output=True)
 
 

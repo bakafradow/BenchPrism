@@ -34,8 +34,7 @@ from stylo_flora.inference import agent_factory, task_factory, task_worker
 from stylo_flora.inference.agents import BaseAgent
 from stylo_flora.inference.tasks import MASK, BaseTask, IOReasoning
 from stylo_flora.logger import init_logger, logger
-from stylo_flora.metrics import (calc_codebleu, calc_coverage, calc_macro_f1,
-                                 pass_at_1)
+from stylo_flora.metrics import calc_codebleu, calc_coverage, pass_at_1
 from stylo_flora.transformer.base import BaseTransformer, transformer_factory
 
 _MetricsEvaluator = Callable[[Seq[str], Seq[Seq[str]], Seq[Snippet], Namespace],
@@ -81,12 +80,14 @@ def parse_args() -> Namespace:
                       help='If set, enables verbose level logging.')
   parser.add_argument('--debug', action='store_true', default=False,
                       help='If set, enables debugging level logging.')
-  parser.add_argument('--transform-only', action='store_true', default=False,
-                      help='If set, terminates after code transformation WITHOUT inference.')
   parser.add_argument('--batch-api', action='store_true', default=False,
-                      help='If set, uses batch API and terminates WITHOUT evaluation. Only for proprietary models.')
-  parser.add_argument('--evaluate-only', action='store_true', default=False,
-                      help='If set, only calculates metrics with existing data without transformation and inference.')
+                      help='If set, uses batch API and terminates without evaluation. Only for proprietary models.')
+  parser.add_argument('-T', '--no-transform', action='store_true', default=False,
+                      help='If set, skips style transformation and loads existing variants from file.')
+  parser.add_argument('-I', '--no-inference', action='store_true', default=False,
+                      help='If set, skips inference and loads existing outputs from file.')
+  parser.add_argument('-E', '--no-evaluate', action='store_true', default=False,
+                      help='If set, skips evaluation.')
   args = parser.parse_args()
 
   args.dataset = args.dataset.lower()
@@ -166,20 +167,6 @@ def _load_jsonl(
     return data
 
 
-def _load_outputs(
-    path: Path,
-    snippets: Seq[Snippet],
-) -> tuple[MSeq[Any], MSeq[MSeq[Any]]]:
-  output_data = _load_jsonl(path)
-
-  res_orig: MSeq[Any] = []
-  res_span: MSeq[MSeq[Any]] = []
-  for snippet in snippets:
-    res_orig.append(output_data.get(snippet.id, {}).get('output', None))
-    res_span.append(output_data.get(snippet.id, {}).get('variant_outputs', []))
-  return res_orig, res_span
-
-
 def _save_json(
     path: Path,
     obj: dict,
@@ -234,11 +221,17 @@ def _transform_with(
     args: Namespace,
 ) -> list[list[str | None]]:
   variant_data = _load_jsonl(args.variants_path)
+  corpus: list[list[str | None]] = []
+  if args.no_transform:
+    logger.info(f'--no-transform set, only using variants from {args.variants_path}...')
+    for snippet in snippets:
+      corpus.append(variant_data.get(snippet.id, {}).get('variants', None))
+    return corpus
 
+  logger.info(f'Transforming styles of {len(snippets)} code snippets...')
   import jpype as jp
   System = jp.JClass('java.lang.System')
   start_time = time.perf_counter()
-  corpus: list[list[str | None]] = []
   for i, snippet in tqdm(enumerate(snippets), desc='Transforming styles',
                          total=len(snippets), leave=False):
     cached_variants = variant_data.get(snippet.id, {}).get('variants', [])
@@ -271,10 +264,17 @@ def _perform_with(
     args: Namespace,
 ) -> tuple[MSeq[Any], MSeq[MSeq[Any]]]:
   output_data = _load_jsonl(args.outputs_path)
-
-  start_time = time.perf_counter()
   res_orig: MSeq[Any] = []
   res_span: MSeq[MSeq[Any]] = []
+  if args.no_inference:
+    logger.info(f'--no-inference set, only using outputs from {args.outputs_path}...')
+    for snippet in snippets:
+      res_orig.append(output_data.get(snippet.id, {}).get('output', None))
+      res_span.append(output_data.get(snippet.id, {}).get('variant_outputs', []))
+    return res_orig, res_span
+
+  logger.info(f'Performing {args.task} with {args.model}...')
+  start_time = time.perf_counter()
   for i, snippet in tqdm(enumerate(snippets), desc=f'Performing {task.__class__.__name__}', total=len(snippets), leave=False):
     cached_output = output_data.get(snippet.id, {}).get('output', None)
     output_orig = cached_output or task_worker(agent, task, snippet)
@@ -308,6 +308,7 @@ def _batch_with(
 ) -> None:
   output_data = _load_jsonl(args.outputs_path)
 
+  logger.info(f'Submitting code tasks to {args.model} via batch API...')
   requests = []
   for i, snippet in enumerate(snippets):
     cached_output = output_data.get(snippet.id, {}).get('output', None)
@@ -347,23 +348,15 @@ def _evaluate_task_template(
   _cut_testcases(snippets, args)
   snippets = _pick_snippets(snippets, transformer, args)
 
-  logger.info(f'Transforming styles of {len(snippets)} code snippets...')
   corpus = _transform_with(transformer, snippets, args)
-  num_styles = len(corpus[0]) if corpus else 0
-  if args.evaluate_only:
-    logger.info(f'--evaluate-only set, only evaluating outputs from {args.outputs_path}...')
-    res_orig, res_span = _load_outputs(args.outputs_path, snippets)
-  else:
-    if args.transform_only:
-      logger.info('--transform-only set, skipping inference.')
-      return
-    if args.batch_api:
-      logger.info('Submitting code tasks via batch API...')
-      _batch_with(agent, task, snippets, corpus, args)
-      logger.info('--batch-api set, skipping evaluation.')
-      return
-    logger.info(f'Performing {args.task} with {args.model}...')
-    res_orig, res_span = _perform_with(agent, task, snippets, corpus, args)
+  if args.batch_api:
+    _batch_with(agent, task, snippets, corpus, args)
+    logger.info('--batch-api set, skipping evaluation.')
+    return
+  res_orig, res_span = _perform_with(agent, task, snippets, corpus, args)
+  if args.no_evaluate:
+    logger.info('--no-evaluate set, skipping evaluation.')
+    return
 
   # eliminate `None`s by filtering
   indices_filtered = [i for i, res in enumerate(res_orig) if res]
@@ -383,6 +376,7 @@ def _evaluate_task_template(
   assert all(res for responses in res_span_to_eval for res in responses)
 
   logger.info('Calculating metrics for the responses...')
+  num_styles = len(corpus[0]) if corpus else 0
   result = metrics_evaluator(res_orig_filtered, res_span_to_eval, snippets_filtered, args)
   codebleu = [calc_codebleu([snippet.data['code'] for snippet in snippets_filtered],
                             variants, args.src_lang)['codebleu']
@@ -398,7 +392,7 @@ def _evaluate_task_template(
       'codebleu': codebleu,
       'codebleu_avg': np.mean(codebleu),
   })
-  if not args.evaluate_only:
+  if not args.no_inference:
     result.update(token_count=agent.token_count)
   _save_json(args.result_path, result)
   logger.info(f'Saved results to {args.result_path}.')
@@ -471,6 +465,7 @@ def _evaluate_tag_classification(
     task: BaseTask,
     args: Namespace,
 ) -> None:
+  from stylo_flora.metrics import calc_macro_f1
   def evaluate_metrics(
       res_orig: Seq[Seq[str]], res_span: Seq[Seq[Seq[str]]],
       snippets: Seq[Snippet], args: Namespace,
