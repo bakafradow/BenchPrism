@@ -1,16 +1,11 @@
 """
 The original ClassEval-T repository has several issues on file names and directory names, resulting in failures while evaluating. 🥱
-Specifically, this script executes the following operations:
-- mv ClassEval_T/cpp/test/test_CalendarUti.cpp ClassEval_T/cpp/test/test_CalendarUtil.cpp
-- mv ClassEval_T/java/solutuon ClassEval_T/java/solution
-- mv ClassEval_T/py/test/DatabaseOperation.py ClassEval_T/py/test/DatabaseProcessor.py
-- sed -i 's/meigimport/import/g' ClassEval_T/py/test/AccessGatewayFilter.py
-- sed -i 's/ClassroomManagementTest/ClassroomTest/g' ClassEval_T/java/solution/Classroom.java
 """
 
-from pathlib import Path
+import re
 import shutil
 import sys
+from pathlib import Path
 
 
 def main():
@@ -39,31 +34,44 @@ def main():
     pass
 
   try:
-    with open(dataset_dir / 'java' / 'test' / 'IpUtilTest.java', 'r', encoding='utf-8') as f:
+    path = dataset_dir / 'java' / 'test' / 'IpUtilTest.java'
+    with open(path, 'r', encoding='utf-8') as f:
       content = f.read()
     content = content.replace('IPUtil', 'IpUtil')
-    with open(dataset_dir / 'java' / 'test' / 'IpUtilTest.java', 'w', encoding='utf-8') as f:
+    with open(path, 'w', encoding='utf-8') as f:
       f.write(content)
   except FileNotFoundError:
     pass
 
   try:
-    with open(dataset_dir / 'py' / 'test' / 'AccessGatewayFilter.py', 'r', encoding='utf-8') as f:
+    path = dataset_dir / 'py' / 'test' / 'AccessGatewayFilter.py'
+    with open(path, 'r', encoding='utf-8') as f:
       content = f.read()
     content = content.replace('meigimport', 'import')
-    with open(dataset_dir / 'py' / 'test' / 'AccessGatewayFilter.py', 'w', encoding='utf-8') as f:
+    with open(path, 'w', encoding='utf-8') as f:
       f.write(content)
   except FileNotFoundError:
     pass
 
   try:
-    with open(dataset_dir / 'java' / 'solution' / 'Classroom.java', 'r', encoding='utf-8') as f:
+    path = dataset_dir / 'java' / 'solution' / 'Classroom.java'
+    with open(path, 'r', encoding='utf-8') as f:
       content = f.read()
     content = content.replace('ClassroomManagementTest', 'ClassroomTest')
-    with open(dataset_dir / 'java' / 'solution' / 'Classroom.java', 'w', encoding='utf-8') as f:
+    with open(path, 'w', encoding='utf-8') as f:
       f.write(content)
   except FileNotFoundError:
     pass
+
+  for file in (dataset_dir / 'py' / 'test').glob('*.py'):
+    try:
+      with open(file, 'r', encoding='utf-8') as f:
+        content = f.read()
+      content = re.sub(r'from translation\.solution_py\.\w+ import \w+', '', content, flags=re.DOTALL)
+      with open(file, 'w', encoding='utf-8') as f:
+        f.write(content)
+    except FileNotFoundError:
+      pass
 
   print('Done.')
 
