@@ -7,8 +7,9 @@ from .. import Snippet
 from ..logger import logger
 from .agents import BaseAgent, GeminiAgent, LocalAgent, OpenAIAgent
 from .tasks import (BaseTask, CodeRepair, CodeSummarization, CodeTranslation,
-                    IOReasoning, MCQAnswering, ReasoningType,
-                    TagClassification, TestGeneration)
+                    IOReasoning, MCQAnswering, TagClassification,
+                    TestGeneration)
+from .tasks.io_reasoning import ReasoningType
 
 
 def get_freest_gpu() -> str:
@@ -65,9 +66,9 @@ def task_factory(name: str, **kwargs) -> BaseTask:
     case 'code_summarization':
       return CodeSummarization(kwargs['src_lang'])
     case 'input_reasoning':
-      return IOReasoning(kwargs['src_lang'], reasoning_type=ReasoningType.INPUT)
+      return IOReasoning(kwargs['src_lang'], ReasoningType.INPUT_REASONING)
     case 'output_reasoning':
-      return IOReasoning(kwargs['src_lang'], reasoning_type=ReasoningType.OUTPUT)
+      return IOReasoning(kwargs['src_lang'], ReasoningType.OUTPUT_REASONING)
     case 'mcq_answering':
       return MCQAnswering(kwargs['src_lang'])
     case 'test_generation':

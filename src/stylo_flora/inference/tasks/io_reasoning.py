@@ -3,9 +3,10 @@ Modified from CRUXEval-X repository (https://github.com/CRUXEVAL-X/cruxeval-x).
 """
 
 import re
+import sys
 from enum import Enum, auto
 from functools import cache
-from typing import Callable
+from typing import Any
 
 import tree_sitter_java as tsjava
 from tree_sitter import Language, Parser
@@ -15,9 +16,13 @@ from ...logger import logger
 from .base import BaseTask
 
 
-class ReasoningType(Enum):
-  INPUT = auto()
-  OUTPUT = auto()
+class ReasoningType(str, Enum):
+  @staticmethod
+  def _generate_next_value_(name: str, start: int, count: int, last_values: list[Any]) -> Any:
+    return name.lower()
+
+  INPUT_REASONING = auto()
+  OUTPUT_REASONING = auto()
 
 
 MASK = '????'
@@ -32,7 +37,7 @@ def _get_parser(lang: str) -> Parser:
     raise ValueError(f'Unsupported language: {lang}')
 
 
-def _mask_java(code: str, type: ReasoningType) -> str:
+def mask_java(code: str, type: ReasoningType) -> str:
   parser = _get_parser('java')
   code_bytes = bytes(code, encoding='utf8')
   tree = parser.parse(code_bytes)
@@ -47,11 +52,11 @@ def _mask_java(code: str, type: ReasoningType) -> str:
     logger.error(f'Failed to find assertion statement in the main method: {e}')
   mask = bytes(MASK, encoding='utf8')
   match type:
-    case ReasoningType.INPUT:
+    case ReasoningType.INPUT_REASONING:
       arg_list_node = assert_node.child(1).child(1).child(0).child(1)
       result_bytes = code_bytes[:arg_list_node.child(1).start_byte] + mask + \
           code_bytes[arg_list_node.child(arg_list_node.child_count - 1).start_byte:]
-    case ReasoningType.OUTPUT:
+    case ReasoningType.OUTPUT_REASONING:
       if assert_node.child(1).child(1).type == 'method_invocation':
         arg_list_node = assert_node.child(1).child(1).child(3)
         result_bytes = code_bytes[:arg_list_node.child(1).start_byte] + mask + \
@@ -65,6 +70,13 @@ def _mask_java(code: str, type: ReasoningType) -> str:
     case _:
       raise ValueError(f'Unsupported type: {type}')
   return result_bytes.decode(encoding='utf8')
+
+
+def mask(code: str, lang: str, type_: ReasoningType) -> str:
+  mask_func = getattr(sys.modules[__name__], f'mask_{lang}', None)
+  if not mask_func:
+    raise ValueError(f'Unsupported language: {lang}')
+  return mask_func(code, type_)
 
 
 class IOReasoning(BaseTask):
@@ -81,19 +93,13 @@ Your output MUST only contain the exact expression that should replace the "{MAS
 ```</code>
 """
 
-  def __init__(self, lang: str, reasoning_type: ReasoningType) -> None:
+  def __init__(self, lang: str, type_: ReasoningType) -> None:
     super().__init__()
     self.lang = lang
-    self.reasoning_type = reasoning_type
-
-    match lang:
-      case 'java':
-        self.mask_func = lambda c: _mask_java(c, reasoning_type)
-      case _:
-        raise ValueError(f'Unsupported language: {lang}')
+    self.type = type_
 
   def get_prompt(self, snippet: Snippet) -> tuple[str, str]:
-    masked_code = self.mask_func(snippet.data['code'])
+    masked_code = mask(snippet.data['code'], self.lang, self.type)
     if masked_code.count(MASK) != 1:
       logger.warning(f'Failed to find exactly one "{MASK}" in masked code.')
     return self.SYSTEM_PROMPT, self.USER_PROMPT.format(

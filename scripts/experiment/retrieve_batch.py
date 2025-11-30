@@ -11,7 +11,6 @@ import jsonlines
 from tqdm import tqdm
 
 from stylo_flora.inference import agent_factory, task_factory
-from stylo_flora.inference.agents import BaseAgent
 from stylo_flora.logger import init_logger, logger
 
 
@@ -46,7 +45,7 @@ def parse_args() -> Namespace:
   return args
 
 
-def _retrieve(agent: BaseAgent, args: Namespace) -> dict:
+def _retrieve() -> dict:
   while True:
     result = agent.retrieve_batch_result(args.job)
     if result:
@@ -74,14 +73,7 @@ def _message(text: str) -> None:
 
 
 def main():
-  args = parse_args()
-  init_logger()
-  logger.info(f'Initializing model {args.model}...')
-  agent = agent_factory(name=args.model)
-  logger.info(f'Initializing task {args.task}...')
-  task = task_factory(args.task, **dict(args._get_kwargs()))
-
-  result = _retrieve(agent, args)
+  result = _retrieve()
 
   with jsonlines.open(args.file, mode='r') as reader:
     data = {row['id']: row for row in reader}
@@ -105,10 +97,16 @@ def main():
       data[snippet_id]['variant_outputs'][seq] = res
 
   with jsonlines.open(args.file, mode='w') as writer:
-    for row in sorted(data.values(), key=itemgetter('id')):
-      writer.write(row)
+    writer.write_all(sorted(data.values(), key=itemgetter('id')))
   logger.info(f'Saved outputs to {args.file} with {len(data)} rows.')
 
 
 if __name__ == '__main__':
+  args = parse_args()
+  init_logger()
+  logger.info(f'Initializing model {args.model}...')
+  agent = agent_factory(name=args.model)
+  logger.info(f'Initializing task {args.task}...')
+  task = task_factory(args.task, **dict(args._get_kwargs()))
+
   main()

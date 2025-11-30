@@ -73,16 +73,6 @@ def _count_tokens_local(tokenizer, sys_prompt: str, user_prompt: str) -> int:
 
 
 def main() -> None:
-  parser = ArgumentParser()
-  parser.add_argument('-d', '--dataset', type=str, required=True,
-                      help='Specify one dataset to evaluate.')
-  parser.add_argument('-m', '--model', type=str, required=True,
-                      help='Specify the model to use.')
-  parser.add_argument('--src-lang', type=str, required=True,
-                      help='Specify the source language.')
-  args = parser.parse_args()
-  args.dst_lang = 'python'
-
   print(f'Counting tokens for model {args.model} on dataset {args.dataset}...')
 
   if 'gpt' in args.model:
@@ -121,4 +111,14 @@ def main() -> None:
 
 
 if __name__ == '__main__':
+  parser = ArgumentParser()
+  parser.add_argument('-d', '--dataset', type=str, required=True,
+                      help='Specify one dataset to evaluate.')
+  parser.add_argument('-m', '--model', type=str, required=True,
+                      help='Specify the model to use.')
+  parser.add_argument('--src-lang', type=str, required=True,
+                      help='Specify the source language.')
+  args = parser.parse_args()
+  args.dst_lang = 'python'
+
   main()
