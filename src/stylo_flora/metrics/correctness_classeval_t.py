@@ -127,6 +127,7 @@ def test_classeval_python(code: str, test: str) -> bool:
 
 @cache
 def initialize_cpp() -> None:
+  logger.info('Initializing C++ testing environment for ClassEval-T.')
   with open(f'{utils.get_msys_tmpdir()}/common.h', 'w') as f:
     f.write('#include <bits/stdc++.h>\n#include <sqlite3.h>\n')
   cmd_pch = ['g++', '-std=c++20', '-x', 'c++-header', f'{utils.get_msys_tmpdir()}/common.h',

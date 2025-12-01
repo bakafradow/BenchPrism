@@ -335,17 +335,6 @@ class LocalAgent(BaseAgent):
         device_map='auto',
     )
 
-  def __del__(self):
-    if 'tokenizer' in self.__dict__:
-      logger.info(f'Releasing tokenizer of {self.name}...')
-      del self.tokenizer
-    if 'model' in self.__dict__:
-      logger.info(f'Releasing model of {self.name}...')
-      del self.model
-    gc.collect()
-    if torch.cuda.is_available():
-      torch.cuda.empty_cache()
-
   def _get_generation_config(self) -> GenerationConfig:
     config = GenerationConfig(
         max_new_tokens=setting_dict['agent']['max_new_tokens'],

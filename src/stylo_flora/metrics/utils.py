@@ -30,7 +30,7 @@ def get_windows_tmpdir() -> str:
     cmd_wslpath = ['wslpath', '-u', path]
     completed = subprocess.run(cmd_wslpath, capture_output=True, check=True, encoding='utf-8')
     tmpdir = completed.stdout.strip()
-    logger.info(f'Using Windows temp directory: {tmpdir}')
+    logger.verbose(f'Using Windows temp directory: {tmpdir}')
     return tmpdir
   except subprocess.CalledProcessError as e:
     logger.warning(f'Failed to get Windows temp directory: {e}')
@@ -43,7 +43,7 @@ def get_msys_root() -> str:
   if not os.path.exists(msys_root):
     raise ValueError('MSYS2 UCRT64 on Windows is required for ClassEval-T C++ testing. '
                      'Please set MSYS2_ROOT environment variable correctly.')
-  logger.info(f'Using MSYS2 root: {msys_root}')
+  logger.verbose(f'Using MSYS2 root: {msys_root}')
   return msys_root
 
 
@@ -59,7 +59,7 @@ def get_msys_tmpdir() -> str:
     cmd = ['echo', '$TEMP']
     completed = run_msys(cmd, capture_output=True, check=True, encoding='utf-8', errors='replace')
     tmpdir = completed.stdout.strip()
-    logger.info(f'Using MSYS2 temp directory: {tmpdir}')
+    logger.verbose(f'Using MSYS2 temp directory: {tmpdir}')
     return tmpdir
   except subprocess.CalledProcessError as e:
     logger.warning(f'Failed to get MSYS2 temp directory: {e}')
