@@ -145,7 +145,6 @@ class XCodeEval(BaseBenchmark):
         **args_dict[src_uid],
         'code': source,
         'io_tests': testcases[i],
-        'checker': _io_checker,
     }) for i, (src_uid, source) in enumerate(zip(src_uids, sources))]
 
   def load_for_tagging(self, lang: str) -> Seq[Snippet]:
@@ -207,7 +206,7 @@ class CodeScope(BaseBenchmark):
 
   @check_lang_support
   def load_for_translation(self, src_lang: str, dst_lang: str) -> Seq[Snippet]:
-    ds = load_dataset('json', data_files=self._data_dir / 'data/code_translation_data.jsonl')
+    ds = load_dataset('json', data_files=str(self._data_dir / 'data/code_translation_data.jsonl'))
     ds = ds.filter(lambda row: row['source_lang_cluster'] == self.lang_to_name[src_lang] and row['target_lang_cluster'] == self.lang_to_name[dst_lang])
     return [Snippet(id=row['src_uid'], data={
         'code': row['source_code'],
@@ -217,7 +216,7 @@ class CodeScope(BaseBenchmark):
 
   @check_lang_support
   def load_for_repair(self, lang: str) -> Seq[Snippet]:
-    ds = load_dataset('json', data_files=self._data_dir / 'data/code_repair_data.jsonl')
+    ds = load_dataset('json', data_files=str(self._data_dir / 'data/code_repair_data.jsonl'))
     ds = ds.filter(lambda row: row['lang_cluster'] == self.lang_to_name[lang])
     return [Snippet(id=row['src_uid'], data={
         'code': row['source_code'],
@@ -227,12 +226,11 @@ class CodeScope(BaseBenchmark):
         'sample_inputs': row['sample_inputs'],
         'sample_outputs': row['sample_outputs'],
         'io_tests': self._normalize_test(row['testcases']),
-        'checker': _io_checker,
     }) for row in ds['train']]
 
   @check_lang_support
   def load_for_summarization(self, lang: str) -> Seq[Snippet]:
-    ds = load_dataset('json', data_files=self._data_dir / 'data/code_summarization_data.jsonl')
+    ds = load_dataset('json', data_files=str(self._data_dir / 'data/code_summarization_data.jsonl'))
     ds = ds.filter(lambda row: row['lang_cluster'] == self.lang_to_name[lang])
     return [Snippet(id=row['id'], data={
         'code': row['source_code'],
@@ -241,7 +239,7 @@ class CodeScope(BaseBenchmark):
 
   @check_lang_support
   def load_for_test_generation(self, lang: str) -> Seq[Snippet]:
-    ds = load_dataset('json', data_files=self._data_dir / 'data/automated_testing_data.jsonl')
+    ds = load_dataset('json', data_files=str(self._data_dir / 'data/automated_testing_data.jsonl'))
     ds = ds.filter(lambda row: row['lang_cluster'] == self.lang_to_name[lang])
     return [Snippet(id=row['id'], data={
         'code': row['source_code'],
@@ -341,15 +339,15 @@ class ClassEvalT(BaseBenchmark):
   - `BookManagementDB`, `IpUtil`, `KappaCalculator`, `MovieTicketDB`, `StudentDatabaseProcessor`, `UserLoginDB` (with indices `14, 45, 48, 55, 77, 86`) in Python.
   """
 
-  supported_langs: frozenset[str] = frozenset({
+  supported_langs = frozenset({
       'cpp', 'java', 'python',
   })
-  lang_to_name: dict[str, str] = {
+  lang_to_name = {
       'cpp': 'cpp',
       'java': 'java',
       'python': 'py',
   }
-  _data_dir: Path = Path('data/ClassEval-T')
+  _data_dir = Path('data/ClassEval-T')
 
   def __init__(self):
     super().__init__()
