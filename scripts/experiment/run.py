@@ -199,8 +199,12 @@ def _save_outputs(
     data[snippet.id].setdefault('id', snippet.id)
     if res_orig[i] or not data[snippet.id].get('output'):
       data[snippet.id]['output'] = res_orig[i]
-    if (res_span[i] or not data[snippet.id].get('variant_outputs')):
+    if not data[snippet.id].get('variant_outputs'):
       data[snippet.id]['variant_outputs'] = res_span[i]
+    else:
+      for j, res in enumerate(res_span[i]):
+        if res:
+          data[snippet.id]['variant_outputs'][j] = res
 
   with jsonlines.open(path, mode='w') as writer:
     writer.write_all(sorted(data.values(), key=itemgetter('id')))
