@@ -5,7 +5,7 @@ agent:
   max_new_tokens: 32768
 
   ######### settings for remote API #########
-  timeout: 120
+  timeout: 180
   sleep: 1
   retries: 3
   retry_interval: 30

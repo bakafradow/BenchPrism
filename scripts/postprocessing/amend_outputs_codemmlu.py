@@ -27,7 +27,6 @@ def amend(output: str) -> str:
   return output
 
 
-
 def main():
   with jsonlines.open(args.file, 'r') as reader:
     data = list(reader)
