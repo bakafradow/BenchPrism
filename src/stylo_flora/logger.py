@@ -36,6 +36,9 @@ class ColorFormatter(logging.Formatter):
 
 
 logger = cast(VerboseLogger, logging.getLogger('stylo_flora'))
+for handler in logger.handlers:
+  logger.removeHandler(handler)
+logger.setLevel(logging.CRITICAL)
 
 
 def init_logger(
@@ -44,9 +47,6 @@ def init_logger(
     verbose: bool = False,
     debug: bool = False
 ) -> None:
-  for handler in logger.handlers:
-    logger.removeHandler(handler)
-
   logger.setLevel(logging.INFO)
   if verbose:
     logger.setLevel(VERBOSE_LEVEL)
