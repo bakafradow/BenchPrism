@@ -57,6 +57,8 @@ def test_classeval_cpp(code: str, test: str) -> bool:
     with tempfile.TemporaryDirectory(dir=utils.get_msys_tmpdir_abs()) as tmpdir:
       with open(f'{tmpdir}/pch.h', 'w') as f:
         f.write(code)
+      if 'namespace example' in code:
+        test = test.replace('#include "pch.h"', '# include "pch.h"\nusing namespace org::example;')
       with open(f'{tmpdir}/test.cpp', 'w') as f:
         f.write(test)
       tmpdir_rel = os.path.relpath(tmpdir, utils.get_msys_root())
