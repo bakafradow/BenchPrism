@@ -47,10 +47,10 @@ def _run_with_io(cmd: Seq[str], tc_list: Seq[IOTestCase]) -> bool:
 
 
 def test_io_java(code: str, tc_list: Seq[IOTestCase]) -> bool:
-  classname = extract_classname_java(code)
-  if not classname:
-    raise CompilationError('Failed to extract class name from Java code.', f'Generated code:\n{code}')
   try:
+    classname = extract_classname_java(code)
+    if not classname:
+      raise CompilationError('Failed to extract class name from Java code.', f'Generated code:\n{code}')
     with tempfile.TemporaryDirectory() as tmpdir:
       with open(f'{tmpdir}/{classname}.java', 'w') as f:
         f.write(code)
@@ -88,7 +88,10 @@ def test_io_cpp(code: str, tc_list: Seq[IOTestCase]) -> bool:
     return False
   cmd = [executable]
   result = _run_with_io(cmd, tc_list)
-  os.remove(executable)
+  try:
+    os.remove(executable)
+  except FileNotFoundError:
+    pass
   return result
 
 
