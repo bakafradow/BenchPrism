@@ -30,7 +30,7 @@ def _amend_with_lm(output: str, snippet: 'Snippet', name: str) -> str:
 
 
 PATTERN_SNAKE_CLASS_NAME = re.compile(r'^\s*class\s+([a-z0-9]+(?:_[a-z0-9]+)*)', re.M)
-PATTERN_CAMEL_FIELD_NAME_CPP = re.compile(r'^[A-Za-z0-9_:&*<>, \t]+\s+\*?([a-z][a-z0-9]*(?:[A-Z][a-z0-9]*)+)\b', re.M)
+PATTERN_CAMEL_FIELD_NAME_CPP = re.compile(r'\b([a-z_][a-z0-9_]*(?:[A-Z][a-z0-9_]*)+)\b')
 PATTERN_CAMEL_FIELD_NAME_PYTHON = re.compile(r'(?:def\s+|self\.)(_?[a-z][a-z0-9]*(?:[A-Z][a-z0-9]*)+)')
 PATTERN_CAMEL_INTERSPACE = re.compile(r'(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z0-9])')
 
