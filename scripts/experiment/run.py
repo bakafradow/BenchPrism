@@ -37,6 +37,18 @@ from stylo_flora.transformer import transformer_factory
 
 _MetricsEvaluator = Callable[[Seq[str], Seq[Seq[str]], Seq[Snippet]], dict[str, Any]]
 
+SUPPORTED_TASKS = [
+    'code_translation',
+    'code_repair',
+    'code2tag',
+    'descode2tag',
+    'code_summarization',
+    'input_reasoning',
+    'output_reasoning',
+    'mcq_answering',
+    'test_generation',
+]
+
 
 def parse_args() -> Namespace:
   parser = ArgumentParser()
@@ -45,17 +57,7 @@ def parse_args() -> Namespace:
   parser.add_argument('-m', '--model', type=str, required=True,
                       help='Specify the model to use. For proprietary models, API platform should be specified; for open source model, HF/local path should be provided. Format: <openai|gemini>:model_name|model_path')
   parser.add_argument('-t', '--task', type=str, required=True,
-                      choices=[
-                          'code_translation',
-                          'code_repair',
-                          'code2tag',
-                          'descode2tag',
-                          'code_summarization',
-                          'input_reasoning',
-                          'output_reasoning',
-                          'mcq_answering',
-                          'test_generation',
-                      ],
+                      choices=SUPPORTED_TASKS,
                       help='Specify the code task to evaluate on.')
   parser.add_argument('--src-lang', type=str, required=True,
                       help='Specify the source language.')
@@ -65,10 +67,10 @@ def parse_args() -> Namespace:
                       help='Directory to save the results.')
   parser.add_argument('--log-path', type=Path, required=False,
                       help='Path to save the log file. If not set, only logs to console.')
-  parser.add_argument('-n', '--num-snippets', type=int, default=-1,
-                      help='Limit the number of snippets to test. -1 for all.')
-  parser.add_argument('--num-tests', type=int, default=-1,
-                      help='Limit the number of test cases for each snippet. -1 for all.')
+  parser.add_argument('-i', '--index-range', type=str, default=':',
+                      help='Select snippet indices in the range of [start]:[end] to evaluate, left inclusive and right exclusive.')
+  parser.add_argument('--num-tests', type=int, default=0,
+                      help='Limit the number of test cases for each snippet. 0 for all.')
   parser.add_argument('-r', '--random', action='store_true', default=False,
                       help='Select snippets randomly with the seed instead of sequentially.')
   parser.add_argument('--seed', type=int, default=42,
@@ -105,42 +107,49 @@ def parse_args() -> Namespace:
   return args
 
 
+def _is_snippet_valid(snippet: Snippet) -> bool:
+  if not transformer.is_processable(snippet):
+    return False
+  checker = snippet.data.get('checker')
+  return not checker or checker(snippet, args.src_lang)
+
+
 def _pick_snippets(
     snippets: Seq[Snippet],
 ) -> Seq[Snippet]:
-  if args.num_snippets < 0:
-    args.num_snippets = len(snippets)
-
-  def is_valid(snippet: Snippet) -> bool:
-    if not transformer.is_processable(snippet):
-      return False
-    checker = snippet.data.get('checker')
-    return not checker or checker(snippet, args.src_lang)
-
+  parts = args.index_range.split(':')
+  if len(parts) != 2:
+    logger.error(f'Invalid index range: {args.index_range}. Correct format: [start]:[end]')
+    sys.exit(1)
   indices = list(range(len(snippets)))
-  if args.candidates_path.exists():
-    with open(args.candidates_path, 'r') as f:
-      logger.info(f'Loading candidate indices from {args.candidates_path}...')
-      candidates = json.loads(f.read())
-  else:
-    candidates = list(tqdm((i for i in indices if is_valid(snippets[i])),
-                           desc='Picking snippets', total=len(snippets), leave=False))
-    with open(args.candidates_path, 'w') as f:
-      logger.info(f'Saving candidate indices to {args.candidates_path}...')
-      f.write(json.dumps(candidates))
-
   if args.random:
     random.seed(args.seed)
-    random.shuffle(candidates)
-  picked_indices = candidates[:args.num_snippets]
-  logger.verbose(f'Picked {len(picked_indices)} snippet indices: {picked_indices}')
-  return [snippets[i] for i in picked_indices]
+    random.shuffle(indices)
+  index_set = set(indices[int(parts[0]) if parts[0] else 0:
+                          int(parts[1]) if parts[1] else len(snippets)])
+
+  if not args.candidates_path.exists():
+    candidate_map = {}
+  else:
+    with open(args.candidates_path, 'r') as f:
+      candidate_map = json.load(f, object_hook=lambda d: {int(k): v for k, v in d.items()})
+    logger.info(f'Loaded candidate map from {args.candidates_path}.')
+  unknown_set = index_set - set(candidate_map)
+  for i in tqdm(unknown_set, desc='Picking candidates', total=len(unknown_set), leave=False):
+    candidate_map[i] = _is_snippet_valid(snippets[i])
+  with open(args.candidates_path, 'w') as f:
+    f.write(json.dumps(candidate_map))
+    logger.info(f'Saved candidate map to {args.candidates_path}.')
+
+  candidates = sorted(i for i in index_set if candidate_map[i])
+  logger.verbose(f'Picked {len(candidates)} valid candidates: {candidates}')
+  return [snippets[i] for i in candidates]
 
 
 def _cut_testcases(
     snippets: Seq[Snippet],
 ) -> None:
-  if args.num_tests < 0:
+  if args.num_tests <= 0:
     return
   for snippet in snippets:
     if not snippet.data.get('io_tests'):

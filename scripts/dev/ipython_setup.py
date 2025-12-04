@@ -2,13 +2,13 @@
 Prepares IPython enviromnment for fine-grained debugging of transformations.
 
 Usage:
-  ipython -i <path_to_this_file> -- -d <dataset> -t <task> --src-lang <src-lang>
+  ipython -i <path_to_this_file> -- <args>
 """
 
 import ast
 import json
 import os
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser
 from datetime import datetime
 from pathlib import Path
 
@@ -16,8 +16,8 @@ from google import genai
 from openai import OpenAI  # type: ignore[attr-defined]
 from tqdm import tqdm
 
-from stylo_flora import Snippet
-from stylo_flora.benchmarks import benchmark_factory
+from scripts.experiment.run import SUPPORTED_TASKS
+from scripts.experiment.utils import load_snippets
 from stylo_flora.logger import init_logger
 from stylo_flora.transformer.stylex import StyleX
 
@@ -50,41 +50,12 @@ def count_processable() -> tuple[int, int]:
   return sum(tqdm(map(stylex.is_processable, snippets), desc='Counting', total=len(snippets), leave=False)), len(snippets)
 
 
-def _load_benchmark(args: Namespace) -> list[Snippet]:
-  benchmark = benchmark_factory(args.dataset)
-  task_to_dataset = {
-      'code_translation': 'translation',
-      'code_repair': 'repair',
-      'code2tag': 'tagging',
-      'descode2tag': 'tagging',
-      'code_summarization': 'summarization',
-      'input_reasoning': 'io_reasoning',
-      'output_reasoning': 'io_reasoning',
-      'mcq_answering': 'mcq_answering',
-      'test_generation': 'test_generation',
-  }
-  func_name = f'load_for_{task_to_dataset[args.task]}'
-  if args.task == 'code_translation':
-    return getattr(benchmark, func_name)(args.src_lang, args.dst_lang)
-  return getattr(benchmark, func_name)(args.src_lang)
-
-
 if __name__ == '__main__':
   parser = ArgumentParser()
   parser.add_argument('-d', '--dataset', type=str, required=True,
                       help='Specify one dataset to evaluate.')
   parser.add_argument('-t', '--task', type=str, required=True,
-                      choices=[
-                          'code_translation',
-                          'code_repair',
-                          'code2tag',
-                          'descode2tag',
-                          'code_summarization',
-                          'input_reasoning',
-                          'output_reasoning',
-                          'mcq_answering',
-                          'test_generation',
-                      ],
+                      choices=SUPPORTED_TASKS,
                       help='Specify the code task to evaluate on.')
   parser.add_argument('--src-lang', type=str, required=True,
                       help='Specify the source language.')
@@ -94,4 +65,4 @@ if __name__ == '__main__':
 
   init_logger(verbose=True)
   stylex = StyleX(lang=args.src_lang)
-  snippets = _load_benchmark(args)
+  snippets = load_snippets(args)

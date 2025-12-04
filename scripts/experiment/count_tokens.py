@@ -8,7 +8,7 @@ from google import genai
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
-from scripts.ipython_setup import _load_benchmark
+from scripts.experiment.utils import load_snippets
 from stylo_flora.inference import task_factory
 
 
@@ -98,7 +98,7 @@ def main() -> None:
   ]:
     args.task = task_name
     try:
-      snippets = _load_benchmark(args)
+      snippets = load_snippets(args)
     except NotImplementedError:
       print(f'Skipping {task_name}.')
       continue
