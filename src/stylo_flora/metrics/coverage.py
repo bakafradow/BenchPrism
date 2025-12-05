@@ -1,9 +1,9 @@
 import subprocess
+import os
 import sys
 import tempfile
 from collections.abc import Sequence as Seq
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -16,29 +16,45 @@ from .utils import extract_classname_java
 
 def calc_coverage_java(code: str, tc_list: Seq[IOTestCase]) -> dict:
   with tempfile.TemporaryDirectory() as temp_dir:
+    ORIGINAL_DIR = os.path.join(temp_dir, 'original')
+    INSTRUMENT_DIR = os.path.join(temp_dir, 'instrumented')
+    EXEC_PATH = os.path.join(temp_dir, 'test.exec')
+    REPORT_PATH = os.path.join(temp_dir, 'coverage.csv')
+
     classname = extract_classname_java(code)
     if not classname:
       logger.warning('Failed to extract class name.')
       return {}
-    with open(f'{temp_dir}/{classname}.java', 'w') as f:
+    src_path = os.path.join(temp_dir, f'{classname}.java')
+    with open(src_path, 'w') as f:
       f.write(code)
-    compile_cmd = f'javac {temp_dir}/{classname}.java'.split()
-    completed = subprocess.run(compile_cmd, cwd=temp_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                              encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
+    cmd_compile = ['javac', '-d', ORIGINAL_DIR, src_path]
+    completed = subprocess.run(cmd_compile, cwd=temp_dir, capture_output=True, encoding='utf-8',
+                               timeout=setting_dict['metrics']['timeout'])
     if completed.returncode != 0:
-      logger.warning('Failed to compile snippet.')
+      logger.warning(f'Failed to compile {classname}.')
       return {}
 
-    jar_dir = Path('data').absolute()
-    exec_name = 'test.exec'
-    csv_name = 'coverage.csv'
+    cmd_instrument = ['java', 'org.jacoco.cli.internal.Main', 'instrument',
+                      ORIGINAL_DIR, '--dest', INSTRUMENT_DIR]
+    try:
+      completed = subprocess.run(cmd_instrument, cwd=temp_dir, check=True,
+                                 capture_output=True, encoding='utf-8')
+    except subprocess.CalledProcessError as e:
+      logger.warning(f'{e.__class__.__name__} occurred while instrumenting {classname} with jacocoagent:\n{e.stderr}')
+      return {}
+
+    cmd_exec = ['java', f'-Djacoco-agent.destfile={EXEC_PATH}',
+                '-Djacoco-agent.append=true', classname]
     def worker(testcase: IOTestCase) -> bool:
-      exec_cmd = f'java -javaagent:{jar_dir}/jacocoagent.jar=destfile={exec_name},append=true {classname}'.split()
-      completed = subprocess.run(exec_cmd, cwd=temp_dir, input=testcase.input,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
+      try:
+        completed = subprocess.run(cmd_exec, cwd=INSTRUMENT_DIR, input=testcase.input,
+                                   capture_output=True, encoding='utf-8')
+      except Exception as e:
+        logger.warning(f'{e.__class__.__name__} occurred while executing instrumented {classname}.')
+        return False
       if completed.returncode != 0:
-        logger.warning(f'Failed to execute snippet with jacocoagent:\n{completed.stdout}')
+        logger.verbose(f'Failed to execute {classname} with jacocoagent:\n{completed.stderr}')
         return False
       return completed.stdout.strip() in (output.strip() for output in testcase.outputs)
 
@@ -46,13 +62,15 @@ def calc_coverage_java(code: str, tc_list: Seq[IOTestCase]) -> dict:
       num_pass = sum(tqdm(executor.map(worker, tc_list), total=len(tc_list), leave=False))
     pass_rate = num_pass / len(tc_list)
 
-    report_cmd = f'java -jar {jar_dir}/jacococli.jar report {exec_name} --classfiles . --sourcefiles . --csv {csv_name}'.split()
-    completed = subprocess.run(report_cmd, cwd=temp_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                              encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
-    if completed.returncode != 0:
-      logger.warning('Failed to generate coverage report.')
+    cmd_report = ['java', 'org.jacoco.cli.internal.Main', 'report', EXEC_PATH,
+                  '--classfiles', ORIGINAL_DIR, '--sourcefiles', '.', '--csv', REPORT_PATH]
+    try:
+      completed = subprocess.run(cmd_report, cwd=temp_dir, check=True,
+                                 capture_output=True, encoding='utf-8')
+    except subprocess.CalledProcessError as e:
+      logger.warning(f'{e.__class__.__name__} occurred while generating coverage report for {classname}:\n{e.stderr}')
       return {'pass_rate': pass_rate}
-    with open(f'{temp_dir}/{csv_name}', 'r') as f:
+    with open(REPORT_PATH, 'r') as f:
       return pd.read_csv(f).to_dict(orient='records')[0] | {'pass_rate': pass_rate}
 
 
