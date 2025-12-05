@@ -12,10 +12,14 @@ class CompilationError(Exception):
     super().__init__(message)
 
 
+PATTERN_JAVA_PUBLIC_CLASS = re.compile(r'public\s+(?:final\s+)?class\s+(\w+)')
+PATTERN_JAVA_CLASS = re.compile(r'(?:final\s+)?class\s+(\w+)')
+
+
 def extract_classname_java(code: str) -> str | None:
-  matched = re.search(r'public\s+(?:final\s+)?class\s+(\w+)', code)
+  matched = PATTERN_JAVA_PUBLIC_CLASS.search(code)
   if not matched:
-    matched = re.search(r'(?:final\s+)?class\s+(\w+)', code)
+    matched = PATTERN_JAVA_CLASS.search(code)
   if not matched:
     return None
   return matched.group(1)

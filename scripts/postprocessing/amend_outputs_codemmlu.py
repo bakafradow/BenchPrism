@@ -4,6 +4,7 @@ from pathlib import Path
 import jsonlines
 from tqdm import tqdm
 
+from scripts.postprocessing import utils
 from stylo_flora.inference import agent_factory
 
 SYS_PROMPT = """
@@ -40,10 +41,8 @@ def main():
         if output:
           row['variant_outputs'][i] = amend(output)
 
-  amended_file = args.file.with_stem('amended_' + args.file.stem)
-  with jsonlines.open(amended_file, mode='w') as writer:
-    writer.write_all(data)
-  print(f'Amended {count} outputs, saved to {amended_file}.')
+  utils.save_with_backups(data, args.file)
+  print(f'Amended {count} outputs, saved to {args.file}.')
 
 
 if __name__ == '__main__':

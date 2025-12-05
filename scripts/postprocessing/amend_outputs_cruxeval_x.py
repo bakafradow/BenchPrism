@@ -4,12 +4,14 @@ from pathlib import Path
 
 import jsonlines
 
-PATTERN = r'assert\s*\(?\s*f\s*\((.*)\)\s*(?:.\s*equals\s*\((.*)\)|==\s*(.*))\s*\)?'
+from scripts.postprocessing import utils
+
+PATTERN = re.compile(r'assert\s*\(?\s*f\s*\((.*)\)\s*(?:.\s*equals\s*\((.*)\)|==\s*(.*))\s*\)?', re.S)
 
 
 def amend(output: str, group_idx) -> str:
   global count
-  matched = re.search(PATTERN, output, re.DOTALL)
+  matched = PATTERN.search(output)
   if matched:
     count += 1
     return matched.group(group_idx)
@@ -28,10 +30,8 @@ def main():
         if output:
           row['variant_outputs'][i] = amend(output, group_idx)
 
-  amended_file = args.file.with_stem('amended_' + args.file.stem)
-  with jsonlines.open(amended_file, mode='w') as writer:
-    writer.write_all(data)
-  print(f'Amended {count} outputs, saved to {amended_file}.')
+  utils.save_with_backups(data, args.file)
+  print(f'Amended {count} outputs, saved to {args.file}.')
 
 
 if __name__ == '__main__':

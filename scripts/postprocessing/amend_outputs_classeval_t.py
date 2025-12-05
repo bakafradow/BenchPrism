@@ -6,6 +6,8 @@ from reprlib import repr
 import jsonlines
 from tqdm import tqdm
 
+from scripts.postprocessing import utils
+
 SYS_PROMPT = """
 An LLM was instructed to translate a code snippet. Given its output, i.e. the translated code, and unit tests in the same language, your task is to align the class/method names in the translated code with the unit tests.
 For example, if the unit tests call `add_course_score` while the translated code declares `addCourseScore` method, you should replace `addCourseScore` in the translated code with `add_course_score`.
@@ -96,10 +98,8 @@ def main():
         if output:
           row['variant_outputs'][i] = amend(output, id_, i)
 
-  amended_file = args.file.with_stem('amended_' + args.file.stem)
-  with jsonlines.open(amended_file, mode='w') as writer:
-    writer.write_all(data)
-  print(f'Amended {count} outputs, saved to {amended_file}.')
+  utils.save_with_backups(data, args.file)
+  print(f'Amended {count} outputs, saved to {args.file}.')
 
 
 if __name__ == '__main__':
