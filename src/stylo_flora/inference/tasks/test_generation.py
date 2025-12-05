@@ -52,11 +52,11 @@ Provide exactly 5 test cases for a given problem along with its solution.
         notes=snippet.data['notes'],
     )
 
-  def resolve_response(self, res: str) -> Seq[IOTestCase] | None:
+  def resolve_response(self, res: str) -> Seq[IOTestCase] | str | None:
     matched = re.search(r'\[\s*\{.*?\}\s*\]', res, re.DOTALL)
     if not matched:
       logger.debug(res)
-      return None
+      return res.strip()
     json_str = matched.group(0)
     try:
       tc_list = json.loads(json_str, strict=False)

@@ -46,7 +46,7 @@ class IOTestCase(NamedTuple):
   @staticmethod
   def from_list(l: list) -> 'IOTestCase':
     return IOTestCase(
-        input=l[0] if isinstance(l, list) else l,
+        input=l[0][0] if isinstance(l[0], list) else l[0],
         outputs=l[1] if isinstance(l[1], list) else [l[1]],
     )
 
