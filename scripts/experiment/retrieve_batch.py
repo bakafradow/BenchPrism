@@ -53,6 +53,9 @@ def _retrieve() -> dict:
       logger.info(info)
       _message(info)
       return result
+    elif result is not None:
+      logger.info('The batch job stopped without results. Stop retrying.')
+      exit(1)
     try:
       for _ in tqdm(range(args.retry_interval), desc='Retry after',
                     leave=False, unit='s', bar_format='{l_bar}{bar}'):

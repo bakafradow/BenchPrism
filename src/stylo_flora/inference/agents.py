@@ -60,12 +60,12 @@ class BaseAgent(ABC):
     """
     raise NotImplementedError
 
-  def retrieve_batch_result(self, batch_id: str) -> dict:
+  def retrieve_batch_result(self, batch_id: str) -> dict | None:
     """
     Retrieves the result of a batch.
 
     :param batch_id: the identifier of the batch
-    :return: a mapping from custom ids to generated responses
+    :return: a mapping from custom ids to generated responses, or None if the job is not completed, or an empty mapping if the job failed
     """
     raise NotImplementedError
 
@@ -163,7 +163,7 @@ class OpenAIAgent(BaseAgent):
     except Exception as e:
       logger.error(f'{e.__class__.__name__} occurred while creating batch: {e}')
 
-  def retrieve_batch_result(self, batch_id: str) -> dict:
+  def retrieve_batch_result(self, batch_id: str) -> dict | None:
     batch = self.client.batches.retrieve(batch_id)
     match batch.status:
       case 'completed':
@@ -187,13 +187,16 @@ class OpenAIAgent(BaseAgent):
               continue
         return result
       case 'failed':
-        logger.info(f'Batch {batch.id} failed. Error: {batch.errors}')
+        errors = '\n'.join(f'{error.code}@{error.line}: {error.message}'
+                           for error in batch.errors.data)
+        logger.warning(f'Batch {batch.id} failed. Errors:\n{errors}')
       case 'cancelled':
-        logger.info(f'Batch {batch.id} canceled.')
+        logger.warning(f'Batch {batch.id} canceled.')
       case 'expired':
-        logger.info(f'Batch {batch.id} expired.')
+        logger.warning(f'Batch {batch.id} expired.')
       case _:
         logger.info(f'Batch {batch.id} not completed yet. Status: {batch.status}')
+        return None
     return {}
 
 
@@ -270,7 +273,7 @@ class GeminiAgent(BaseAgent):
     except Exception as e:
       logger.error(f'{e.__class__.__name__} occurred while creating batch job: {e}')
 
-  def retrieve_batch_result(self, batch_id: str) -> dict:
+  def retrieve_batch_result(self, batch_id: str) -> dict | None:
     job = self.client.batches.get(name=batch_id)
     match job.state:
       case gtypes.JobState.JOB_STATE_SUCCEEDED:
@@ -293,11 +296,14 @@ class GeminiAgent(BaseAgent):
               continue
         return result
       case gtypes.JobState.JOB_STATE_FAILED:
-        logger.info(f'Batch job {job.name} failed. Error: {job.error}')
+        details = '\n'.join(job.error.details)
+        logger.warning(f'Batch job {job.name} failed. {job.error.code}: {job.error.message}\n'
+                    f'Details:\n{details}')
       case gtypes.JobState.JOB_STATE_CANCELLED:
-        logger.info(f'Batch job {job.name} canceled.')
+        logger.warning(f'Batch job {job.name} canceled.')
       case _:
         logger.info(f'Batch job {job.name} not completed yet. State: {job.state}')
+        return None
     return {}
 
 
