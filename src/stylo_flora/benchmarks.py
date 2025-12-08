@@ -116,24 +116,27 @@ class XCodeEval(BaseBenchmark):
       'ruby': 'Ruby',
       'rust': 'Rust',
   }
+  _data_dir = Path('data/xCodeEval')
 
   def load_for_translation(self, src_lang: str, dst_lang: str) -> Seq[Snippet]:
     TASK_NAME = 'code_translation'
-    src_uids = self._load(src_lang, TASK_NAME, 'src_uid')
+    code_uids = self._load(src_lang, TASK_NAME, 'code_uid')
     sources = self._load(src_lang, TASK_NAME, 'source_code')
+    src_uids = self._load(src_lang, TASK_NAME, 'src_uid')
     testcases = self._load_tests(src_uids)
-    return [Snippet(id=src_uid, data={
+    return [Snippet(id=code_uid, data={
         'code': source,
         'io_tests': testcase,
         'checker': _io_checker,
-    }) for src_uid, source, testcase in zip(src_uids, sources, testcases)]
+    }) for code_uid, source, testcase in zip(code_uids, sources, testcases)]
 
   def load_for_repair(self, lang):
     TASK_NAME = 'apr'
+    code_uids = self._load(lang, TASK_NAME, 'bug_code_uid')
     src_uids = self._load(lang, TASK_NAME, 'src_uid')
     sources = self._load(lang, TASK_NAME, 'bug_source_code')
-    with jsonlines.open('data/xCodeEval/problem_descriptions.jsonl', 'r') as reader:
-      args_dict = {obj['src_uid']: {
+    with jsonlines.open(self._data_dir / 'problem_descriptions.jsonl', 'r') as reader:
+      problem_dict = {obj['src_uid']: {
           'desc': obj['description'],
           'input_spec': obj['input_spec'],
           'output_spec': obj['output_spec'],
@@ -141,36 +144,40 @@ class XCodeEval(BaseBenchmark):
           'sample_outputs': obj['sample_outputs'],
       } for obj in reader}
     testcases = self._load_tests(src_uids)
-    return [Snippet(id=src_uid, data={
-        **args_dict[src_uid],
+    return [Snippet(id=code_uid, data={
         'code': source,
-        'io_tests': testcases[i],
-    }) for i, (src_uid, source) in enumerate(zip(src_uids, sources))]
+        'io_tests': testcase,
+        **problem_dict[src_uid],
+    }) for code_uid, src_uid, source, testcase in zip(code_uids, src_uids, sources, testcases)]
 
   def load_for_tagging(self, lang: str) -> Seq[Snippet]:
     TASK_NAME = 'tag_classification'
+    code_uids = self._load(lang, TASK_NAME, 'code_uid')
     src_uids = self._load(lang, TASK_NAME, 'src_uid')
     sources = self._load(lang, TASK_NAME, 'source_code')
     tags_list = self._load(lang, TASK_NAME, 'tags')
-    with jsonlines.open('data/xCodeEval/problem_descriptions.jsonl', 'r') as reader:
-      args_dict = {obj['src_uid']: {
+    with jsonlines.open(self._data_dir / 'problem_descriptions.jsonl', 'r') as reader:
+      problem_dict = {obj['src_uid']: {
           'desc': obj['description'],
       } for obj in reader}
-    return [Snippet(id=src_uid, data={
+    return [Snippet(id=code_uid, data={
         'code': source,
         'tags': tags,
-        'desc': args_dict[src_uid]['desc']
-    }) for src_uid, source, tags in zip(src_uids, sources, tags_list)]
+        'desc': problem_dict[src_uid]['desc']
+    }) for code_uid, src_uid, source, tags in zip(code_uids, src_uids, sources, tags_list)]
 
   @check_lang_support
   def _load(self, lang: str, task: str, column: str) -> Seq[str]:
+    """
+    :Note: there's an issue in loading from HF when the version of datasets != 2.16.1
+    """
     lang_name = self.lang_to_name[lang]
-    ds = load_dataset('json', data_dir=f'data/xCodeEval/{task}/test')  # there's an issue in loading from HF when the version of datasets != 2.16.1
+    ds = load_dataset('json', data_dir=self._data_dir / f'{task}/test')
     ds = ds.filter(lambda row: row['lang_cluster'] == lang_name)
     return ds['train'][column]
 
   def _load_tests(self, ids: Iterable[str]) -> Seq[Seq[IOTestCase]]:
-    with open('data/xCodeEval/unittest_db.json', 'r') as f:
+    with open(self._data_dir / 'unittest_db.json', 'r') as f:
       unittests = json.load(f)
     return [[IOTestCase(input=pair['input'].replace('\r\n', '\n'),
                         outputs=[output.replace('\r\n', '\n') for output in pair['output']])
