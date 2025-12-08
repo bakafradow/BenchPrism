@@ -34,7 +34,7 @@ Your output MUST only contain the repaired code WITHOUT any explanation, enclose
     super().__init__()
     self.lang = lang
 
-  def get_prompt(self, snippet: Snippet) -> tuple[str, str]:
+  def get_prompt(self, snippet: Snippet) -> tuple[str, str] | None:
     return self.SYSTEM_PROMPT, self.USER_PROMPT.format(
         lang=self.lang,
         desc=snippet.data['desc'],

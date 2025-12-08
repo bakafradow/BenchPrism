@@ -17,12 +17,12 @@ class BaseTask(ABC):
       raise NotImplementedError(f'{cls.__name__} must define \'USER_PROMPT\'.')
 
   @abstractmethod
-  def get_prompt(self, snippet: Snippet) -> tuple[str, str]:
+  def get_prompt(self, snippet: Snippet) -> tuple[str, str] | None:
     """
     Obtains the system and user prompts for the given snippet.
 
     :param snippet: the code snippet with necessary information
-    :return: a system prompt and a user prompt
+    :return: a tuple consisting of a system prompt and a user prompt
     """
     raise NotImplementedError
 

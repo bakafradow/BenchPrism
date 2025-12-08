@@ -19,7 +19,7 @@ def count_tokens_gpt5mini(sys_prompt: str, user_prompt: str) -> int:
   num_tokens = 0
   msgs = [
       {'role': 'system', 'content': sys_prompt},
-      {'role': 'user', 'content': user_prompt}
+      {'role': 'user', 'content': user_prompt},
   ]
   for msg in msgs:
     num_tokens += tokens_per_msg
@@ -63,7 +63,7 @@ def _count_tokens_local(tokenizer, sys_prompt: str, user_prompt: str) -> int:
   input_ids = tokenizer.apply_chat_template(
       conversation=[
           {'role': 'system', 'content': sys_prompt},
-          {'role': 'user', 'content': user_prompt}
+          {'role': 'user', 'content': user_prompt},
       ],
       tokenize=True,
       add_generation_prompt=True,
@@ -74,22 +74,6 @@ def _count_tokens_local(tokenizer, sys_prompt: str, user_prompt: str) -> int:
 
 def main() -> None:
   print(f'Counting tokens for model {args.model} on dataset {args.dataset}...')
-
-  if 'gpt' in args.model:
-    count_func = count_tokens_gpt5mini
-  elif 'gemini' in args.model:
-    count_func = count_tokens_gemini25flash
-  elif 'qwen2.5' in args.model:
-    count_func = count_tokens_local('Qwen/Qwen2.5-7B-Instruct')
-  elif 'phi-4' in args.model:
-    count_func = count_tokens_local('microsoft/Phi-4-mini-reasoning')
-  elif 'codegeex4' in args.model:
-    count_func = count_tokens_local('THUDM/codegeex4-all-9b')
-  elif 'codellama' in args.model:
-    count_func = count_tokens_local('codellama/CodeLlama-7b-Instruct-hf')
-  else:
-    raise NotImplementedError(f'Model {args.model} not supported yet.')
-
   print('task'.ljust(20) + 'total tokens'.ljust(15) + 'avg tokens/snippet')
   for task_name in [
       'code_translation', 'code_repair', 'code2tag', 'descode2tag',
@@ -105,8 +89,10 @@ def main() -> None:
     task = task_factory(task_name, **dict(args._get_kwargs()))
     total_tokens = 0
     for snippet in tqdm(snippets, desc=f'Counting on {task_name}', leave=False):
-      sys_prompt, user_prompt = task.get_prompt(snippet)
-      total_tokens += count_func(sys_prompt, user_prompt)
+      if prompts := task.get_prompt(snippet):
+        total_tokens += count_func(*prompts)
+      else:
+        print(f'Failed to get prompt for snippet {snippet.id}.')
     print(f'{task_name.ljust(20)}{str(total_tokens).ljust(15)}{total_tokens / len(snippets):.2f}')
 
 
@@ -120,5 +106,20 @@ if __name__ == '__main__':
                       help='Specify the source language.')
   args = parser.parse_args()
   args.dst_lang = 'python'
+
+  if 'gpt' in args.model:
+    count_func = count_tokens_gpt5mini
+  elif 'gemini' in args.model:
+    count_func = count_tokens_gemini25flash
+  elif 'qwen2.5' in args.model:
+    count_func = count_tokens_local('Qwen/Qwen2.5-7B-Instruct')
+  elif 'phi-4' in args.model:
+    count_func = count_tokens_local('microsoft/Phi-4-mini-reasoning')
+  elif 'codegeex4' in args.model:
+    count_func = count_tokens_local('THUDM/codegeex4-all-9b')
+  elif 'codellama' in args.model:
+    count_func = count_tokens_local('codellama/CodeLlama-7b-Instruct-hf')
+  else:
+    raise NotImplementedError(f'Model {args.model} not supported yet.')
 
   main()

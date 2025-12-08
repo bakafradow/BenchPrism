@@ -24,7 +24,7 @@ Your output MUST only contain the exact list of categories separated by commas, 
     self.lang = lang
     self.with_desc = with_desc
 
-  def get_prompt(self, snippet: Snippet) -> tuple[str, str]:
+  def get_prompt(self, snippet: Snippet) -> tuple[str, str] | None:
     desc = f'\n<problem_description>{snippet.data["desc"]}</problem_description>\n' if self.with_desc else ''
     return self.SYSTEM_PROMPT, self.USER_PROMPT.format(
         lang=self.lang,

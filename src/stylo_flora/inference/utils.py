@@ -84,8 +84,10 @@ def task_worker(
 ) -> Any:
   if not snippet:
     return None
-  sys_prompt, user_prompt = task.get_prompt(snippet)
-  res = agent.generate(sys_prompt, user_prompt)
+  prompts = task.get_prompt(snippet)
+  if not prompts:
+    return None
+  res = agent.generate(*prompts)
   if not res:
     return None
   res = task.resolve_response(res)

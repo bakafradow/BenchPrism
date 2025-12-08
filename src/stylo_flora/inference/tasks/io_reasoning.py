@@ -98,7 +98,7 @@ Your output MUST only contain the exact expression that should replace the "{MAS
     self.lang = lang
     self.type = type_
 
-  def get_prompt(self, snippet: Snippet) -> tuple[str, str]:
+  def get_prompt(self, snippet: Snippet) -> tuple[str, str] | None:
     masked_code = mask(snippet.data['code'], self.lang, self.type)
     if masked_code.count(MASK) != 1:
       logger.warning(f'Failed to find exactly one "{MASK}" in masked code.')

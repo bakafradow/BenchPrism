@@ -310,9 +310,10 @@ def _batch(
   for i, snippet in enumerate(snippets):
     cached_output = output_data.get(snippet.id, {}).get('output', None)
     if not cached_output:
-      sys_prompt, user_prompt = task.get_prompt(snippet)
-      req = agent.create_batch_request(f'{snippet.id}_orig', sys_prompt, user_prompt)
-      requests.append(req)
+      prompts = task.get_prompt(snippet)
+      if prompts:
+        req = agent.create_batch_request(f'{snippet.id}_orig', *prompts)
+        requests.append(req)
 
     cached_variant_outputs = output_data.get(snippet.id, {}).get('variant_outputs', [])
     seqs_to_skip = {j for j, output in enumerate(cached_variant_outputs) if output}
@@ -321,9 +322,10 @@ def _batch(
       if j in seqs_to_skip or not code:
         continue
       var_snippet = snippet.replace(code=code)
-      sys_prompt, user_prompt = task.get_prompt(var_snippet)
-      req = agent.create_batch_request(f'{snippet.id}_{j}', sys_prompt, user_prompt)
-      requests.append(req)
+      prompts = task.get_prompt(var_snippet)
+      if prompts:
+        req = agent.create_batch_request(f'{snippet.id}_{j}', *prompts)
+        requests.append(req)
   logger.info(f'Submitting {len(requests)} requests to {args.model} via batch API...')
   agent.submit_batch_job(requests)
 

@@ -106,12 +106,12 @@ class OpenAIAgent(BaseAgent):
   @retry(retries=setting_dict['agent']['retries'],
          interval=setting_dict['agent']['retry_interval'])
   def generate(self, sys_prompt: str, user_prompt: str) -> str:
+    messages = [{'role': 'user', 'content': user_prompt}]
+    if sys_prompt:
+      messages += [{'role': 'system', 'content': sys_prompt}]
     completion = self.client.chat.completions.create(
         model=self.name,
-        messages=[
-            {'role': 'system', 'content': sys_prompt},
-            {'role': 'user', 'content': user_prompt}
-        ],
+        messages=messages,
         max_completion_tokens=setting_dict['agent']['max_new_tokens'],
         timeout=setting_dict['agent']['timeout'],
     )
@@ -121,16 +121,16 @@ class OpenAIAgent(BaseAgent):
     return completion.choices[0].message.content or ''
 
   def create_batch_request(self, custom_id: str, sys_prompt: str, user_prompt: str) -> dict:
+    messages = [{'role': 'user', 'content': user_prompt}]
+    if sys_prompt:
+      messages += [{'role': 'system', 'content': sys_prompt}]
     return {
         'custom_id': custom_id,
         'method': 'POST',
         'url': '/v1/chat/completions',
         'body': {
             'model': self.name,
-            'messages': [
-                {'role': 'system', 'content': sys_prompt},
-                {'role': 'user', 'content': user_prompt},
-            ],
+            'messages': messages,
             'max_completion_tokens': setting_dict['agent']['max_new_tokens'],
         },
     }
@@ -234,7 +234,7 @@ class GeminiAgent(BaseAgent):
         'key': custom_id,
         'request': {
             'contents': [{'parts': [{'text': user_prompt}]}],
-            'system_instruction': {'parts': [{'text': sys_prompt}]},
+            'system_instruction': {'parts': [{'text': sys_prompt}]} if sys_prompt else None,
             'generation_config': {
                 'max_output_tokens': setting_dict['agent']['max_new_tokens'],
                 'thinking_config': {

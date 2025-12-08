@@ -27,7 +27,7 @@ If original code has no main function, do NOT add one.
     self.src_lang = src_lang
     self.dst_lang = dst_lang
 
-  def get_prompt(self, snippet: Snippet) -> tuple[str, str]:
+  def get_prompt(self, snippet: Snippet) -> tuple[str, str] | None:
     return self.SYSTEM_PROMPT, self.USER_PROMPT.format(
         src_lang=self.src_lang,
         dst_lang=self.dst_lang,
