@@ -49,10 +49,3 @@ class IOTestCase(NamedTuple):
         input=l[0][0] if isinstance(l[0], list) else l[0],
         outputs=l[1] if isinstance(l[1], list) else [l[1]],
     )
-
-
-class APITestCase(NamedTuple):
-  """If `method` is empty, all methods in the file will be tested."""
-  file: str
-  code: str
-  method: str = ''

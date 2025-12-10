@@ -16,6 +16,8 @@ from stylo_flora.logger import init_logger, logger
 
 def parse_args() -> Namespace:
   parser = ArgumentParser()
+  parser.add_argument('-d', '--dataset', type=str, required=True,
+                      help='Specify one dataset to evaluate.')
   parser.add_argument('-m', '--model', type=str, required=True,
                       help='Specify the model used for inference.')
   parser.add_argument('-t', '--task', type=str, required=True,

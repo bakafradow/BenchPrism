@@ -6,9 +6,9 @@ import torch
 from .. import Snippet
 from ..logger import logger
 from .agents import BaseAgent, GeminiAgent, LocalAgent, OpenAIAgent
-from .tasks import (BaseTask, CodeRepair, CodeSummarization, CodeTranslation,
-                    IOReasoning, MCQAnswering, TagClassification,
-                    TestGeneration)
+from .tasks import (BaseTask, CodeRepair, CodeRepairUJB, CodeSummarization,
+                    CodeTranslation, IOReasoning, MCQAnswering,
+                    TagClassification, TestGeneration)
 from .tasks.io_reasoning import ReasoningType
 
 
@@ -58,6 +58,8 @@ def task_factory(name: str, **kwargs) -> BaseTask:
     case 'code_translation':
       return CodeTranslation(kwargs['src_lang'], kwargs['dst_lang'])
     case 'code_repair':
+      if kwargs['dataset'] == 'coderujb':
+        return CodeRepairUJB(kwargs['src_lang'])
       return CodeRepair(kwargs['src_lang'])
     case 'code2tag':
       return TagClassification(kwargs['src_lang'], with_desc=False)

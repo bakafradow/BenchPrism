@@ -32,7 +32,10 @@ from stylo_flora import IOTestCase, Snippet
 from stylo_flora.benchmarks import benchmark_factory
 from stylo_flora.inference import agent_factory, task_factory, task_worker
 from stylo_flora.logger import init_logger, logger
-from stylo_flora.metrics import calc_codebleu, calc_coverage, pass_at_1
+from stylo_flora.metrics import (calc_bertscore, calc_bleu, calc_codebleu,
+                                 calc_coverage, calc_macro_f1, calc_meteor,
+                                 calc_rouge, pass_at_1_ujb, pass_at_1,
+                                 pass_at_1_classeval)
 from stylo_flora.transformer import transformer_factory
 
 _MetricsEvaluator = Callable[[Seq[str], Seq[Seq[str]], Seq[Snippet]], dict[str, Any]]
@@ -442,8 +445,6 @@ def _evaluate_tag_classification() -> None:
       res_span: Seq[Seq[Seq[str]]],
       snippets: Seq[Snippet],
   ) -> dict[str, Any]:
-    from stylo_flora.metrics import calc_macro_f1
-
     gloden_tags = [snippet.data['tags'] for snippet in snippets]
     f1_orig = calc_macro_f1(res_orig, gloden_tags)
     f1_span = [calc_macro_f1(variants, gloden_tags)
@@ -466,15 +467,48 @@ def evaluate_descode2tag() -> None:
   _evaluate_tag_classification()
 
 
+def evaluate_test_generation() -> None:
+  def evaluate_metrics(
+      res_orig: Seq[Seq[list[str | list[str]] | str]],
+      res_span: Seq[Seq[Seq[list[str | list[str]] | str]]],
+      snippets: Seq[Snippet],
+  ) -> dict[str, Any]:
+    code_list = [snippet.data['code'] for snippet in snippets]
+    dummy = IOTestCase.from_dict({'input': '', 'output': ['']})
+    tc_list_orig = [[IOTestCase.from_list(l) if isinstance(l, list) else dummy for l in res]
+                    for res in res_orig]
+    tc_lists_span = [[[IOTestCase.from_list(l) if isinstance(l, list) else dummy for l in res]
+                      for res in res_list]
+                     for res_list in res_span]
+    cov_orig = calc_coverage(code_list, tc_list_orig, args.src_lang)
+    cov_span = [calc_coverage(code_list, tc_list, args.src_lang)
+                for tc_list in tqdm(zip(*tc_lists_span), desc='Evaluating',
+                                    total=len(res_span[0]), leave=False)]
+    pass_span = [cov['pass_rate'] for cov in cov_span]
+    line_cov_span = [cov['line_cov_rate'] for cov in cov_span]
+    branch_cov_span = [cov['branch_cov_rate'] for cov in cov_span]
+    return {
+        'pass_orig': cov_orig['pass_rate'],
+        'pass_span': pass_span,
+        'pass_span_avg': np.mean(pass_span),
+        'line_cov_orig': cov_orig['line_cov_rate'],
+        'line_cov_span': line_cov_span,
+        'line_cov_span_avg': np.mean(line_cov_span),
+        'branch_cov_orig': cov_orig['branch_cov_rate'],
+        'branch_cov_span': branch_cov_span,
+        'branch_cov_span_avg': np.mean(branch_cov_span),
+    }
+
+  snippets = benchmark.load_for_test_generation(args.src_lang)
+  _evaluate_task_template(snippets, evaluate_metrics)
+
+
 def evaluate_code_summarization() -> None:
   def evaluate_metrics(
       res_orig: Seq[str],
       res_span: Seq[Seq[str]],
       snippets: Seq[Snippet],
   ) -> dict[str, Any]:
-    from stylo_flora.metrics import (calc_bertscore, calc_bleu, calc_meteor,
-                                     calc_rouge)
-
     human_summaries = [snippet.data['human_summarization'] for snippet in snippets]
     bleu_orig = calc_bleu(res_orig, human_summaries)
     meteor_orig = calc_meteor(res_orig, human_summaries)
@@ -509,6 +543,26 @@ def evaluate_code_summarization() -> None:
     }
 
   snippets = benchmark.load_for_summarization(args.src_lang)
+  _evaluate_task_template(snippets, evaluate_metrics)
+
+
+def evaluate_mcq_answering() -> None:
+  def evaluate_metrics(
+      res_orig: Seq[str],
+      res_span: Seq[Seq[str]],
+      snippets: Seq[Snippet],
+  ) -> dict[str, Any]:
+    answers = np.array([snippet.data['answer'] for snippet in snippets])
+    acc_orig = np.mean(np.array(res_orig) == answers)
+    acc_span = [np.mean(np.array(variants) == answers)
+                for variants in zip(*res_span)]
+    return {
+        'acc_orig': acc_orig,
+        'acc_span': acc_span,
+        'acc_span_avg': np.mean(acc_span),
+    }
+
+  snippets = benchmark.load_for_mcq_answering(args.src_lang)
   _evaluate_task_template(snippets, evaluate_metrics)
 
 
@@ -550,61 +604,6 @@ def evaluate_output_reasoning() -> None:
   _evaluate_io_reasoning()
 
 
-def evaluate_mcq_answering() -> None:
-  def evaluate_metrics(
-      res_orig: Seq[str],
-      res_span: Seq[Seq[str]],
-      snippets: Seq[Snippet],
-  ) -> dict[str, Any]:
-    answers = np.array([snippet.data['answer'] for snippet in snippets])
-    acc_orig = np.mean(np.array(res_orig) == answers)
-    acc_span = [np.mean(np.array(variants) == answers)
-                for variants in zip(*res_span)]
-    return {
-        'acc_orig': acc_orig,
-        'acc_span': acc_span,
-        'acc_span_avg': np.mean(acc_span),
-    }
-
-  snippets = benchmark.load_for_mcq_answering(args.src_lang)
-  _evaluate_task_template(snippets, evaluate_metrics)
-
-
-def evaluate_test_generation() -> None:
-  def evaluate_metrics(
-      res_orig: Seq[Seq[Any]],
-      res_span: Seq[Seq[Seq[Any]]],
-      snippets: Seq[Snippet],
-  ) -> dict[str, Any]:
-    code_list = [snippet.data['code'] for snippet in snippets]
-    tc_list_orig = [[IOTestCase.from_list(l) for l in res]
-                    for res in res_orig]
-    tc_lists_span = [[[IOTestCase.from_list(l) for l in res]
-                      for res in res_list]
-                     for res_list in res_span]
-    cov_orig = calc_coverage(code_list, tc_list_orig, args.src_lang)
-    cov_span = [calc_coverage(code_list, tc_list, args.src_lang)
-                for tc_list in tqdm(zip(*tc_lists_span), desc='Evaluating',
-                                    total=len(res_span[0]), leave=False)]
-    pass_span = [cov['pass_rate'] for cov in cov_span]
-    line_cov_span = [cov['line_cov_rate'] for cov in cov_span]
-    branch_cov_span = [cov['branch_cov_rate'] for cov in cov_span]
-    return {
-        'pass_orig': cov_orig['pass_rate'],
-        'pass_span': pass_span,
-        'pass_span_avg': np.mean(pass_span),
-        'line_cov_orig': cov_orig['line_cov_rate'],
-        'line_cov_span': line_cov_span,
-        'line_cov_span_avg': np.mean(line_cov_span),
-        'branch_cov_orig': cov_orig['branch_cov_rate'],
-        'branch_cov_span': branch_cov_span,
-        'branch_cov_span_avg': np.mean(branch_cov_span),
-    }
-
-  snippets = benchmark.load_for_test_generation(args.src_lang)
-  _evaluate_task_template(snippets, evaluate_metrics)
-
-
 def evaluate_code_translation_classeval_t() -> None:
   if not args.dst_lang:
     raise ValueError('Destination language must be specified for code translation task.')
@@ -614,8 +613,6 @@ def evaluate_code_translation_classeval_t() -> None:
       res_span: Seq[Seq[str]],
       snippets: Seq[Snippet],
   ) -> dict[str, Any]:
-    from stylo_flora.metrics.correctness_classeval_t import pass_at_1_classeval
-
     tests = [snippet.data[f'test_{args.dst_lang}'] for snippet in snippets]
     pass_orig = pass_at_1_classeval(res_orig, tests, args.dst_lang)
     pass_span = [pass_at_1_classeval(variants, tests, args.dst_lang)
@@ -628,6 +625,26 @@ def evaluate_code_translation_classeval_t() -> None:
     }
 
   snippets = benchmark.load_for_translation(args.src_lang, args.dst_lang)
+  _evaluate_task_template(snippets, evaluate_metrics)
+
+
+def evaluate_code_repair_coderujb() -> None:
+  def evaluate_metrics(
+      res_orig: Seq[str],
+      res_span: Seq[Seq[str]],
+      snippets: Seq[Snippet],
+  ) -> dict[str, Any]:
+    items = [snippet.data for snippet in snippets]
+    count_orig = pass_at_1_ujb(res_orig, items, args.src_lang)
+    count_span = [pass_at_1_ujb(variants, items, args.src_lang)
+                  for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
+    return {
+        'count_orig': count_orig,
+        'count_span': count_span,
+        'count_span_avg': np.mean(count_span),
+    }
+
+  snippets = benchmark.load_for_repair(args.src_lang)
   _evaluate_task_template(snippets, evaluate_metrics)
 
 

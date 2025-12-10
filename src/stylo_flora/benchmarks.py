@@ -1,15 +1,15 @@
 import json
+import re
 from abc import ABC
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable
 from collections.abc import Sequence as Seq
 from pathlib import Path
-from typing import Any
 
 import jsonlines
 from datasets import load_dataset
 
-from . import APITestCase, IOTestCase, Snippet
-from .metrics import pass_at_1
+from . import IOTestCase, Snippet
+from .metrics import pass_at_1, pass_at_1_classeval
 
 
 def check_lang_support(func: Callable) -> Callable:
@@ -296,28 +296,6 @@ class CodeMMLU(BaseBenchmark):
     }) for row in ds['test']]
 
 
-class CoderUJB(BaseBenchmark):
-  supported_langs: frozenset[str] = frozenset({
-      'java',
-  })
-
-  def _construct_code(self, row: Mapping[str, Any]) -> str:
-    return f'{row["import_context"]}\n\n{row["class_signature"]} {{\n{row["class_field_context"]}\n\n{row["class_function_signature_context"]}\n\n{row["buggy"]}\n}}'
-
-  @check_lang_support
-  def load_for_repair(self, lang):
-    ds = load_dataset('ZHENGRAN/code_ujb_repair', trust_remote_code=True)
-    return [Snippet(id=row['task_id'], data={
-        'code': self._construct_code(row),
-        f'api_testcases_{lang}': [APITestCase(file=source['file'], code=self._construct_code(source),
-                                              method=source['method'])
-                                  for source in row['test_sources']],
-        'oracle': row['source'],
-        'start': row['start'],
-        'end': row['end'],
-    }) for row in ds['train']]
-
-
 class CruxEvalX(BaseBenchmark):
   supported_langs = frozenset({
       'java',
@@ -366,7 +344,6 @@ class ClassEvalT(BaseBenchmark):
     src_dir = self._data_dir / 'ClassEval_T' / self.lang_to_name[src_lang] / 'solution'
     if not src_dir.exists():
       raise FileNotFoundError(f'Directory {src_dir} does not exist.')
-    from .metrics.correctness_classeval_t import pass_at_1_classeval
     snippets = [Snippet(id=file.stem, data={
         'code': file.read_text(),
         f'test_{src_lang}': self._load_test(file.stem, src_lang),
@@ -406,14 +383,48 @@ class ClassEvalT(BaseBenchmark):
         raise TypeError(f'Unsupported language: {lang}')
 
 
+class CoderUJB(BaseBenchmark):
+  supported_langs: frozenset[str] = frozenset({
+      'java',
+  })
+  _data_dir = Path('data/CoderUJB')
+
+  def __init__(self):
+    super().__init__()
+    if not self._data_dir.exists():
+      raise FileNotFoundError(f'Please clone CoderUJB repo manually from https://github.com/ZZR0/CoderUJB and place it to {self._data_dir}.')
+
+  @staticmethod
+  def _extract_prefix(prompt: str) -> str:
+    matched = re.search(r'(^.+```java\n\s*(?:(?:\/\/[^\n]*|\/\*.*?\*\/)\s*)*\n)(.+)\n```\s*\Z', prompt, re.S)
+    if not matched:
+      raise ValueError(f'Failed to extract prefix from prompt: {prompt}')
+    return matched.group(1)
+
+  @check_lang_support
+  def load_for_repair(self, lang: str) -> Seq[Snippet]:
+    ds = load_dataset('ZHENGRAN/code_ujb_repair', trust_remote_code=True)
+    return [Snippet(id=row['task_id'], data={
+        'code': f'{row["class_signature"]}{{\n{row["buggy"]}\n}}',
+        'prompt_prefix': self._extract_prefix(row['prompt_chat']),
+        'function_signature': row['function_signature'],
+        'project': row['project'],
+        'bug_id': row['bug_id'],
+        'source': row['source'],
+        'start': row['start'],
+        'end': row['end'],
+        'location': row['location'],
+    }) for row in ds['train']]
+
+
 def benchmark_factory(dataset: str) -> BaseBenchmark:
   name_to_class = {
       'xcodeeval': XCodeEval,
       'codescope': CodeScope,
       'cruxeval-x': CruxEvalX,
-      'coderujb': CoderUJB,
       'codemmlu': CodeMMLU,
       'classeval-t': ClassEvalT,
+      'coderujb': CoderUJB,
   }
   dataset = dataset.lower()
   if dataset not in name_to_class:
