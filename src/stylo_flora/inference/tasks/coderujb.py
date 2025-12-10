@@ -8,6 +8,8 @@ from ... import Snippet
 from ...logger import logger
 from .base import BaseTask
 
+PATTERN_FUNC = re.compile(r'class\s+[\w\$]+[^\{]+\{\n(.+)\n\}', re.S)
+
 
 class CodeRepairUJB(BaseTask):
   SYSTEM_PROMPT = ''
@@ -22,9 +24,9 @@ Your output MUST only contain the repaired function WITHOUT any explanation, enc
     self.lang = lang
 
   def get_prompt(self, snippet: Snippet) -> tuple[str, str] | None:
-    matched = re.search(r'class\s+\w+\s*\{\n(.+)\n\}', snippet.data['code'], re.S)
+    matched = PATTERN_FUNC.search(snippet.data['code'])
     if not matched:
-      logger.warning(f'Failed to unwrap buggy function for {snippet.id}.')
+      logger.warning(f'Failed to unwrap function for {snippet.id}.')
       return None
     buggy = matched.group(1)
     return self.SYSTEM_PROMPT, self.USER_PROMPT.format(
