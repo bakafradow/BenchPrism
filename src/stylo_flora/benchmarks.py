@@ -8,7 +8,7 @@ from pathlib import Path
 import jsonlines
 from datasets import load_dataset
 
-from . import IOTestCase, Snippet
+from . import IOTestCase, Snippet, setting_dict
 from .metrics import pass_at_1, pass_at_1_classeval
 
 
@@ -116,7 +116,7 @@ class XCodeEval(BaseBenchmark):
       'ruby': 'Ruby',
       'rust': 'Rust',
   }
-  _data_dir = Path('data/xCodeEval')
+  _data_dir = Path(setting_dict['datasets']['xcodeeval_root'])
 
   def load_for_translation(self, src_lang: str, dst_lang: str) -> Seq[Snippet]:
     TASK_NAME = 'code_translation'
@@ -204,7 +204,7 @@ class CodeScope(BaseBenchmark):
       'ruby': 'Ruby',
       'rust': 'Rust',
   }
-  _data_dir = Path('data/CodeScope')
+  _data_dir = Path(setting_dict['datasets']['codescope_root'])
 
   def __init__(self):
     super().__init__()
@@ -332,7 +332,7 @@ class ClassEvalT(BaseBenchmark):
       'java': 'java',
       'python': 'py',
   }
-  _data_dir = Path('data/ClassEval-T')
+  _data_dir = Path(setting_dict['datasets']['classeval_t_root'])
 
   def __init__(self):
     super().__init__()
@@ -387,12 +387,6 @@ class CoderUJB(BaseBenchmark):
   supported_langs: frozenset[str] = frozenset({
       'java',
   })
-  _data_dir = Path('data/CoderUJB')
-
-  def __init__(self):
-    super().__init__()
-    if not self._data_dir.exists():
-      raise FileNotFoundError(f'Please clone CoderUJB repo manually from https://github.com/ZZR0/CoderUJB and place it to {self._data_dir}.')
 
   @staticmethod
   def _extract_prefix(prompt: str) -> str:

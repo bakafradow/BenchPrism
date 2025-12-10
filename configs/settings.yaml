@@ -1,3 +1,8 @@
+datasets:
+  xcodeeval_root: data/xCodeEval
+  codescope_root: data/CodeScope
+  classeval_t_root: data/ClassEval-T
+
 transformer:
   max_workers: 4
 
