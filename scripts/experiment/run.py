@@ -137,6 +137,9 @@ def _pick_snippets(
     with open(args.candidates_path, 'r') as f:
       candidate_map = json.load(f, object_hook=lambda d: {int(k): v for k, v in d.items()})
     logger.info(f'Loaded candidate map from {args.candidates_path}.')
+  if args.no_transform:
+    logger.info(f'--no-transform set, only using candidates from {args.candidates_path}...')
+    return [snippets[i] for i in index_set if candidate_map.get(i)]
   unknown_set = index_set - set(candidate_map)
   for i in tqdm(unknown_set, desc='Picking candidates', total=len(unknown_set), leave=False):
     candidate_map[i] = _is_snippet_valid(snippets[i])
@@ -144,7 +147,7 @@ def _pick_snippets(
     f.write(json.dumps(candidate_map))
     logger.info(f'Saved candidate map to {args.candidates_path}.')
 
-  candidates = sorted(i for i in index_set if candidate_map[i])
+  candidates = sorted(i for i in index_set if candidate_map.get(i))
   logger.verbose(f'Picked {len(candidates)} valid candidates: {candidates}')
   return [snippets[i] for i in candidates]
 

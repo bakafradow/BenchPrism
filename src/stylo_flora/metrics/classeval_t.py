@@ -35,6 +35,10 @@ def test_classeval_java(code: str, test: str) -> bool:
       completed = subprocess.run(cmd, cwd=tmpdir, encoding='gbk', errors='replace',
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                  timeout=setting_dict['metrics']['timeout'])
+    if completed.returncode != 0:
+      logger.warning(f'Failed to test {classname}.')
+      logger.verbose(f'Standard Output:\n{completed.stdout}')
+      return False
   except CompilationError as e:
     logger.warning(e)
     logger.verbose(f'Standard Error:\n{e.stderr}')
@@ -44,10 +48,6 @@ def test_classeval_java(code: str, test: str) -> bool:
     return False
   except Exception as e:
     logger.warning(f'{e.__class__.__name__} occurred during testing of {classname}:\n{e}')
-    return False
-  if completed.returncode != 0:
-    logger.warning(f'Failed to test {classname}.')
-    logger.verbose(f'Standard Output:\n{completed.stdout}')
     return False
   return True
 
@@ -76,19 +76,19 @@ def test_classeval_cpp(code: str, test: str) -> bool:
       completed = utils.run_msys(cmd_exe, cwd=tmpdir, encoding='utf-8', errors='replace',
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                  timeout=setting_dict['metrics']['timeout'])
+    if completed.returncode != 0:
+      logger.warning(f'Test failed with exit code {completed.returncode}.')
+      logger.verbose(f'Standard Output:\n{completed.stdout}')
+      return False
   except CompilationError as e:
     logger.warning(e)
     logger.verbose(f'Standard Error:\n{e.stderr}')
     return False
   except subprocess.TimeoutExpired:
-    logger.warning('Testing timed out.')
+    logger.warning('Test timed out.')
     return False
   except Exception as e:
     logger.warning(f'{e.__class__.__name__} occurred during testing: {e}')
-    return False
-  if completed.returncode != 0:
-    logger.warning(f'Test failed with exit code {completed.returncode}.')
-    logger.verbose(f'Standard Output:\n{completed.stdout}')
     return False
   return True
 
@@ -117,12 +117,12 @@ def test_classeval_python(code: str, test: str) -> bool:
       completed = utils.run_msys(cmd, cwd=tmpdir, encoding='utf-8', errors='replace',
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                  timeout=setting_dict['metrics']['timeout'])
+    if completed.returncode != 0:
+      logger.warning(f'Test failed with exit code {completed.returncode}.')
+      logger.verbose(f'Standard Error:\n{completed.stderr}')
+      return False
   except Exception as e:
     logger.warning(f'{e.__class__.__name__} occurred while testing:\n{e}')
-    return False
-  if completed.returncode != 0:
-    logger.warning(f'Test failed with exit code {completed.returncode}.')
-    logger.verbose(f'Standard Error:\n{completed.stderr}')
     return False
   return True
 

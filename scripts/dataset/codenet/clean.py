@@ -8,7 +8,7 @@ if __name__ == '__main__':
     objects = list(reader)
   for object in objects:
     # eliminate everything before the first import statement in Java
-    object['result']['file_name'] = re.sub(r'^.*?(import.*)', r'\1', object['result']['file_name'], flags=re.DOTALL)
+    object['result']['file_name'] = re.sub(r'^.*?(import.*)', r'\1', object['result']['file_name'], flags=re.S)
   dst = 'data/CodeNet/result/codenet_deepseekcoder_clean.jsonl'
   with jsonlines.open(dst, 'w') as writer:
     for object in objects:

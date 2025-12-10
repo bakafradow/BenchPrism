@@ -67,7 +67,7 @@ def main():
     try:
       with open(file, 'r', encoding='utf-8') as f:
         content = f.read()
-      content = re.sub(r'from translation\.solution_py\.\w+ import \w+', '', content, flags=re.DOTALL)
+      content = re.sub(r'from translation\.solution_py\.\w+ import \w+', '', content, flags=re.S)
       with open(file, 'w', encoding='utf-8') as f:
         f.write(content)
     except FileNotFoundError:

@@ -38,10 +38,10 @@ def calc_coverage_java(code: str, tc_list: Seq[IOTestCase]) -> dict:
     cmd_instrument = ['java', 'org.jacoco.cli.internal.Main', 'instrument',
                       ORIGINAL_DIR, '--dest', INSTRUMENT_DIR]
     try:
-      completed = subprocess.run(cmd_instrument, cwd=temp_dir, check=True,
-                                 capture_output=True, encoding='utf-8')
+      completed = subprocess.run(cmd_instrument, cwd=temp_dir, capture_output=True,
+                                 check=True, encoding='utf-8')
     except subprocess.CalledProcessError as e:
-      logger.warning(f'{e.__class__.__name__} occurred while instrumenting {classname} with jacocoagent:\n{e.stderr}')
+      logger.warning(f'Failed to instrument {classname} with jacocoagent:\n{e.stderr}')
       return {}
 
     cmd_exec = ['java', f'-Djacoco-agent.destfile={EXEC_PATH}',
@@ -50,13 +50,13 @@ def calc_coverage_java(code: str, tc_list: Seq[IOTestCase]) -> dict:
       try:
         completed = subprocess.run(cmd_exec, cwd=INSTRUMENT_DIR, input=testcase.input,
                                    capture_output=True, encoding='utf-8')
+        if completed.returncode != 0:
+          logger.verbose(f'Failed to execute {classname} with jacocoagent:\n{completed.stderr}')
+          return False
+        return completed.stdout.strip() in (output.strip() for output in testcase.outputs)
       except Exception as e:
         logger.warning(f'{e.__class__.__name__} occurred while executing instrumented {classname}.')
         return False
-      if completed.returncode != 0:
-        logger.verbose(f'Failed to execute {classname} with jacocoagent:\n{completed.stderr}')
-        return False
-      return completed.stdout.strip() in (output.strip() for output in testcase.outputs)
 
     with ThreadPoolExecutor(max_workers=setting_dict['metrics']['max_workers']) as executor:
       num_pass = sum(tqdm(executor.map(worker, tc_list), total=len(tc_list), leave=False))
@@ -65,10 +65,10 @@ def calc_coverage_java(code: str, tc_list: Seq[IOTestCase]) -> dict:
     cmd_report = ['java', 'org.jacoco.cli.internal.Main', 'report', EXEC_PATH,
                   '--classfiles', ORIGINAL_DIR, '--sourcefiles', '.', '--csv', REPORT_PATH]
     try:
-      completed = subprocess.run(cmd_report, cwd=temp_dir, check=True,
-                                 capture_output=True, encoding='utf-8')
+      completed = subprocess.run(cmd_report, cwd=temp_dir, capture_output=True,
+                                 check=True, encoding='utf-8')
     except subprocess.CalledProcessError as e:
-      logger.warning(f'{e.__class__.__name__} occurred while generating coverage report for {classname}:\n{e.stderr}')
+      logger.warning(f'Failed to generate coverage report for {classname}:\n{e.stderr}')
       return {'pass_rate': pass_rate}
     with open(REPORT_PATH, 'r') as f:
       return pd.read_csv(f).to_dict(orient='records')[0] | {'pass_rate': pass_rate}

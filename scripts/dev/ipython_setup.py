@@ -6,11 +6,14 @@ Usage:
 """
 
 import ast
+import importlib.util
 import json
 import os
+import sys
 from argparse import ArgumentParser
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from google import genai
 from openai import OpenAI  # type: ignore[attr-defined]
@@ -23,6 +26,17 @@ from stylo_flora.transformer.stylex import StyleX
 
 SRC_PATH = Path('~/playground/research/samples/src.java').expanduser()
 CHOICE_DICT_PATH = Path('~/playground/research/samples/choices.json').expanduser()
+
+
+def import_from_path(path: os.PathLike) -> Any:
+  module_name = Path(path).stem
+  spec = importlib.util.spec_from_file_location(module_name, path)
+  if not spec or not spec.loader:
+    raise ValueError(f'Failed load module spec from {path}.')
+  module = importlib.util.module_from_spec(spec)
+  sys.modules[module_name] = module
+  spec.loader.exec_module(module)
+  return module
 
 
 def dump_code(idx: int) -> None:
@@ -41,7 +55,7 @@ def dump_seq_as_dict() -> None:
 
 def format_timestamp(d: dict) -> dict:
   for k, v in d.items():
-      if isinstance(v, int) and datetime.fromtimestamp(v).year == 2025:
+      if isinstance(v, int) and datetime.fromtimestamp(v).year in range(1900, 2100):
           d[k] = datetime.fromtimestamp(v).strftime('%Y-%m-%d %H:%M:%S')
   return d
 

@@ -53,7 +53,7 @@ Provide exactly 5 test cases for a given problem along with its solution.
     )
 
   def resolve_response(self, res: str) -> Seq[IOTestCase] | str | None:
-    matched = re.search(r'\[\s*\{.*?\}\s*\]', res, re.DOTALL)
+    matched = re.search(r'\[\s*\{.*?\}\s*\]', res, re.S)
     if not matched:
       logger.debug(res)
       return res.strip()

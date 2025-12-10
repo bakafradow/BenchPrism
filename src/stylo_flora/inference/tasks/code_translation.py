@@ -35,7 +35,7 @@ If original code has no main function, do NOT add one.
     )
 
   def resolve_response(self, res: str) -> str | None:
-    matched = re.search(r'```(?:\w+)?\n(.+)```', res, re.DOTALL)
+    matched = re.search(r'```(?:\w+)?\n(.+)```', res, re.S)
     if not matched:
       logger.debug(res)
       return None

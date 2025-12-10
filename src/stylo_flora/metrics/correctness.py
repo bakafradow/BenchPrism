@@ -17,6 +17,17 @@ def _run_with_io(cmd: Seq[str], tc_list: Seq[IOTestCase]) -> bool:
   def worker(test: IOTestCase) -> bool:
     try:
       completed = subprocess.run(cmd, input=test.input, text=True, capture_output=True, encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
+      if completed.returncode != 0:
+        logger.verbose(f'{completed.returncode} was returned.\n'
+                      f'Input:\n{test.input.strip()}\n'
+                      f'Standard Error:\n{completed.stderr}')
+        return False
+      if completed.stdout.strip() not in (output.strip() for output in test.outputs):
+        logger.verbose(f'Wrong answer.\n'
+                      f'Input:\n{test.input.strip()}\n'
+                      f'Expected:\n{test.outputs[0]}\n'
+                      f'Actual:\n{completed.stdout}')
+        return False
     except KeyboardInterrupt:
       logger.warning('Keyboard interrupt.')
       raise
@@ -28,17 +39,6 @@ def _run_with_io(cmd: Seq[str], tc_list: Seq[IOTestCase]) -> bool:
       logger.verbose(f'Error.\n'
                      f'Input:\n{test.input.strip()}\n'
                      f'Exception:\n{e}')
-      return False
-    if completed.returncode != 0:
-      logger.verbose(f'{completed.returncode} was returned.\n'
-                     f'Input:\n{test.input.strip()}\n'
-                     f'Standard Error:\n{completed.stderr}')
-      return False
-    if completed.stdout.strip() not in (output.strip() for output in test.outputs):
-      logger.verbose(f'Wrong answer.\n'
-                     f'Input:\n{test.input.strip()}\n'
-                     f'Expected:\n{test.outputs[0]}\n'
-                     f'Actual:\n{completed.stdout}')
       return False
     return True
 
@@ -58,10 +58,10 @@ def test_io_java(code: str, tc_list: Seq[IOTestCase]) -> bool:
       os.makedirs(classdir, exist_ok=True)
       try:
         completed = subprocess.run(['javac', '-d', classdir, f.name], stderr=subprocess.PIPE, encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
+        if completed.returncode != 0:
+          raise CompilationError(f'Failed to compile {f.name}.', completed.stderr)
       except subprocess.TimeoutExpired:
         raise CompilationError(f'Compilation of {f.name} timed out.')
-      if completed.returncode != 0:
-        raise CompilationError(f'Failed to compile {f.name}.', completed.stderr)
       cmd = ['java', '-classpath', classdir, classname]
       return _run_with_io(cmd, tc_list)
   except CompilationError as e:
@@ -78,10 +78,10 @@ def test_io_cpp(code: str, tc_list: Seq[IOTestCase]) -> bool:
       executable = re.sub(r'\.cpp$', '', f.name)
       try:
         completed = subprocess.run(['g++', f.name, '-o', executable], stderr=subprocess.PIPE, encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
+        if completed.returncode != 0:
+          raise CompilationError(f'Failed to compile {f.name}.', completed.stderr)
       except subprocess.TimeoutExpired:
         raise CompilationError(f'Compilation of {f.name} timed out.')
-      if completed.returncode != 0:
-        raise CompilationError(f'Failed to compile {f.name}.', completed.stderr)
   except CompilationError as e:
     logger.warning(e)
     logger.verbose(f'Standard Error:\n{e.stderr}')

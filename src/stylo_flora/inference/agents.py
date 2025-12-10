@@ -148,6 +148,7 @@ class OpenAIAgent(BaseAgent):
           )
         except Exception as e:
           logger.error(f'{e.__class__.__name__} occurred while uploading batch file: {e}')
+          return
     if not input_file or not input_file.id:
       logger.warning('Failed to get the id of uploaded file.')
       return
@@ -258,6 +259,7 @@ class GeminiAgent(BaseAgent):
         )
       except Exception as e:
         logger.error(f'{e.__class__.__name__} occurred while uploading batch file: {e}')
+        return
     if not uploaded_file or not uploaded_file.name:
       logger.warning('Failed to get the name of uploaded file.')
       return

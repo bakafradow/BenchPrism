@@ -10,6 +10,7 @@ from pathlib import Path
 import jsonlines
 from tqdm import tqdm
 
+from scripts.experiment.run import SUPPORTED_TASKS
 from stylo_flora.inference import agent_factory, task_factory
 from stylo_flora.logger import init_logger, logger
 
@@ -21,17 +22,7 @@ def parse_args() -> Namespace:
   parser.add_argument('-m', '--model', type=str, required=True,
                       help='Specify the model used for inference.')
   parser.add_argument('-t', '--task', type=str, required=True,
-                      choices=[
-                          'code_translation',
-                          'code_repair',
-                          'code2tag',
-                          'descode2tag',
-                          'code_summarization',
-                          'input_reasoning',
-                          'output_reasoning',
-                          'mcq_answering',
-                          'test_generation',
-                      ],
+                      choices=SUPPORTED_TASKS,
                       help='Specify the code task to evaluate on.')
   parser.add_argument('--src-lang', type=str, required=True,
                       help='Specify the source language.')

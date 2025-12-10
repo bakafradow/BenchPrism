@@ -47,7 +47,7 @@ Your output MUST only contain the repaired code WITHOUT any explanation, enclose
     )
   
   def resolve_response(self, res: str) -> str | None:
-    matched = re.search(r'```(?:\w+)?\n(.+)```', res, re.DOTALL)
+    matched = re.search(r'```(?:\w+)?\n(.+)```', res, re.S)
     if not matched:
       logger.debug(res)
       return None

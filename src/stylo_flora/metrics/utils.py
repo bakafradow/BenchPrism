@@ -37,7 +37,7 @@ def get_windows_tmpdir() -> str:
     logger.verbose(f'Using Windows temp directory: {tmpdir}')
     return tmpdir
   except subprocess.CalledProcessError as e:
-    logger.warning(f'Failed to get Windows temp directory: {e}')
+    logger.warning(f'Failed to get Windows temp directory:\n{e.stderr}')
     raise
 
 
@@ -66,7 +66,7 @@ def get_msys_tmpdir() -> str:
     logger.verbose(f'Using MSYS2 temp directory: {tmpdir}')
     return tmpdir
   except subprocess.CalledProcessError as e:
-    logger.warning(f'Failed to get MSYS2 temp directory: {e}')
+    logger.warning(f'Failed to get MSYS2 temp directory:\n{e.stderr}')
     raise
 
 

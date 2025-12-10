@@ -212,13 +212,12 @@ class StyleX(BaseTransformer):
       f.flush()
     try:
       args = ['pict', f.name, f'/r:{seed}']
-      completed = subprocess.run(args, check=True, encoding='utf-8', stdout=subprocess.PIPE)
+      completed = subprocess.run(args, capture_output=True, check=True, encoding='utf-8')
+      os.remove(f.name)
+      return [[int(num) for num in line.split()] for line in completed.stdout.splitlines()[1:]]
     except subprocess.CalledProcessError as e:
-      logger.error(f'{e.__class__.__name__} occurred while running pict.\n{e}')
+      logger.error(f'Failed to generate sequences with pict:\n{e.stderr}')
       raise e
-    os.remove(f.name)
-    seqs = [[int(num) for num in line.split()] for line in completed.stdout.splitlines()[1:]]
-    return seqs
 
   def _seq_to_styler_containers(
       self,
