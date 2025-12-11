@@ -7,8 +7,8 @@ from .. import Snippet
 from ..logger import logger
 from .agents import BaseAgent, GeminiAgent, LocalAgent, OpenAIAgent
 from .tasks import (BaseTask, CodeRepair, CodeRepairUJB, CodeSummarization,
-                    CodeTranslation, IOReasoning, MCQAnswering,
-                    TagClassification, TestGeneration)
+                    CodeTranslation, DefectDetectionUJB, IOReasoning,
+                    MCQAnswering, TagClassification, TestGeneration)
 from .tasks.io_reasoning import ReasoningType
 
 
@@ -54,27 +54,33 @@ def agent_factory(name: str) -> BaseAgent:
 
 
 def task_factory(name: str, **kwargs) -> BaseTask:
+  if kwargs['dataset'].lower() == 'coderujb':
+    match name:
+      case 'code_repair':
+        return CodeRepairUJB(kwargs['src_lang'])
+      case 'defect_detection':
+        return DefectDetectionUJB(kwargs['src_lang'])
+      case _:
+        raise ValueError(f'Unknown task on CoderUJB: {name}')
   match name:
     case 'code_translation':
       return CodeTranslation(kwargs['src_lang'], kwargs['dst_lang'])
     case 'code_repair':
-      if kwargs['dataset'].lower() == 'coderujb':
-        return CodeRepairUJB(kwargs['src_lang'])
       return CodeRepair(kwargs['src_lang'])
     case 'code2tag':
       return TagClassification(kwargs['src_lang'], with_desc=False)
     case 'descode2tag':
       return TagClassification(kwargs['src_lang'], with_desc=True)
+    case 'test_generation':
+      return TestGeneration(kwargs['src_lang'])
     case 'code_summarization':
       return CodeSummarization(kwargs['src_lang'])
+    case 'mcq_answering':
+      return MCQAnswering(kwargs['src_lang'])
     case 'input_reasoning':
       return IOReasoning(kwargs['src_lang'], ReasoningType.INPUT_REASONING)
     case 'output_reasoning':
       return IOReasoning(kwargs['src_lang'], ReasoningType.OUTPUT_REASONING)
-    case 'mcq_answering':
-      return MCQAnswering(kwargs['src_lang'])
-    case 'test_generation':
-      return TestGeneration(kwargs['src_lang'])
     case _:
       raise ValueError(f'Unknown task: {name}')
 

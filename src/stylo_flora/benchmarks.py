@@ -62,15 +62,6 @@ class BaseBenchmark(ABC):
     """
     raise NotImplementedError('Tag classification unsupported for current benchmark.')
 
-  def load_for_summarization(self, lang: str) -> Seq[Snippet]:
-    """
-    Loads the source code snippets for code summarization.
-
-    :param lang: the language of the code snippets
-    :return: a sequence of source code snippets with human summarization
-    """
-    raise NotImplementedError('Code summarization unsupported for current benchmark.')
-
   def load_for_test_generation(self, lang: str) -> Seq[Snippet]:
     """
     Loads the source code snippets for test generation.
@@ -80,23 +71,41 @@ class BaseBenchmark(ABC):
     """
     raise NotImplementedError('Test generation unsupported for current benchmark.')
 
-  def load_for_io_reasoning(self, lang: str) -> Seq[Snippet]:
+  def load_for_summarization(self, lang: str) -> Seq[Snippet]:
     """
-    Loads the source code snippets for input reasoning.
+    Loads the source code snippets for code summarization.
 
     :param lang: the language of the code snippets
-    :return: a sequence of source code snippets with masked assertion statements.
+    :return: a sequence of source code snippets with human summarization
     """
-    raise NotImplementedError('Input reasoning unsupported for current benchmark.')
+    raise NotImplementedError('Code summarization unsupported for current benchmark.')
 
   def load_for_mcq_answering(self, lang: str) -> Seq[Snippet]:
     """
     Loads the source code snippets for Multiple-Choice Question (MCQ) answering.
 
     :param lang: the language of the code snippets
-    :return: a sequence of source code snippets with multiple-choice questions and corresponding answers.
+    :return: a sequence of source code snippets with multiple-choice questions and corresponding answers
     """
     raise NotImplementedError('MCQ answering unsupported for current benchmark.')
+
+  def load_for_io_reasoning(self, lang: str) -> Seq[Snippet]:
+    """
+    Loads the source code snippets for input reasoning.
+
+    :param lang: the language of the code snippets
+    :return: a sequence of source code snippets with masked assertion statements
+    """
+    raise NotImplementedError('IO reasoning unsupported for current benchmark.')
+
+  def load_for_defect_detection(self, lang: str) -> Seq[Snippet]:
+    """
+    Loads the source code snippets for defect detection.
+
+    :param lang: the language of the code snippets
+    :return: a sequence of source code snippets with potential defects and the ground truth
+    """
+    raise NotImplementedError('Defect detection unsupported for current benchmark.')
 
 
 class XCodeEval(BaseBenchmark):
@@ -390,7 +399,7 @@ class CoderUJB(BaseBenchmark):
 
   @staticmethod
   def _extract_prefix(prompt: str) -> str:
-    matched = re.search(r'(^.+```java\n\s*(?:(?:\/\/[^\n]*|\/\*.*?\*\/)\s*)*\n)(.+)\n```\s*\Z', prompt, re.S)
+    matched = re.search(r'(^.+```java\n\s*(?:(?:\/\/[^\n]*|\/\*.*?\*\/)\s*)*\n)(.+)\n```\s*(?:\Z|Please)', prompt, re.S)
     if not matched:
       raise ValueError(f'Failed to extract prefix from prompt: {prompt}')
     return matched.group(1)
@@ -409,6 +418,19 @@ class CoderUJB(BaseBenchmark):
         'end': row['end'],
         'location': row['location'],
         'testmethods': row['testmethods'],
+    }) for row in ds['train']]
+
+  @check_lang_support
+  def load_for_defect_detection(self, lang: str) -> Seq[Snippet]:
+    """
+    :Note: In the HF dataset, `prompt_chat` field stands for FS0 prompt without program context.
+    """
+    ds = load_dataset('ZHENGRAN/code_ujb_defectdetection', trust_remote_code=True)
+    return [Snippet(id=row['task_id'], data={
+        'code': f'public class Dummy {{\n{row["code"]}\n}}',
+        'prompt_prefix': self._extract_prefix(row['prompt_chat']),
+        'function_signature': row['function_signature'],
+        'defective': row['defective'],
     }) for row in ds['train']]
 
 

@@ -40,3 +40,31 @@ Your output MUST only contain the repaired function WITHOUT any explanation, enc
       logger.debug(res)
       return None
     return matched.group(1)
+
+
+class DefectDetectionUJB(BaseTask):
+  SYSTEM_PROMPT = ''
+
+  USER_PROMPT = """{prefix}{code}
+```
+Please respond with either "A" if there are defects or "B" if there are no defects based on your assessment.
+You MUST only return the letter of the correct option (A or B).
+"""
+
+  def __init__(self, lang: str) -> None:
+    super().__init__()
+    self.lang = lang
+
+  def get_prompt(self, snippet: Snippet) -> tuple[str, str] | None:
+    matched = PATTERN_FUNC.search(snippet.data['code'])
+    if not matched:
+      logger.warning(f'Failed to unwrap function for {snippet.id}.')
+      return None
+    code = matched.group(1)
+    return self.SYSTEM_PROMPT, self.USER_PROMPT.format(
+        prefix=snippet.data['prompt_prefix'],
+        code=code,
+    )
+
+  def resolve_response(self, res: str) -> str | None:
+    return res.strip() or None

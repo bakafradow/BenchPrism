@@ -35,8 +35,8 @@ from stylo_flora.inference import agent_factory, task_factory, task_worker
 from stylo_flora.logger import init_logger, logger
 from stylo_flora.metrics import (calc_bertscore, calc_bleu, calc_codebleu,
                                  calc_coverage, calc_macro_f1, calc_meteor,
-                                 calc_rouge, pass_at_1_ujb, pass_at_1,
-                                 pass_at_1_classeval)
+                                 calc_rouge, pass_at_1, pass_at_1_classeval,
+                                 pass_at_1_ujb)
 from stylo_flora.transformer import transformer_factory
 
 _MetricsEvaluator = Callable[[Seq[str], Seq[Seq[str]], Seq[Snippet]], dict[str, Any]]
@@ -46,11 +46,12 @@ SUPPORTED_TASKS = [
     'code_repair',
     'code2tag',
     'descode2tag',
+    'test_generation',
     'code_summarization',
+    'mcq_answering',
     'input_reasoning',
     'output_reasoning',
-    'mcq_answering',
-    'test_generation',
+    'defect_detection',
 ]
 
 
@@ -635,11 +636,31 @@ def evaluate_code_repair_coderujb() -> None:
     items = [snippet.data for snippet in snippets]
     pass_orig = pass_at_1_ujb(res_orig, items, args.src_lang)
     pass_span = [pass_at_1_ujb(variants, items, args.src_lang)
-                  for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
+                 for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
     return {
         'pass_orig': pass_orig,
         'pass_span': pass_span,
         'pass_span_avg': np.mean(pass_span),
+    }
+
+  snippets = benchmark.load_for_repair(args.src_lang)
+  _evaluate_task_template(snippets, evaluate_metrics)
+
+
+def evaluate_defect_detection_coderujb() -> None:
+  def evaluate_metrics(
+      res_orig: Seq[str],
+      res_span: Seq[Seq[str]],
+      snippets: Seq[Snippet],
+  ) -> dict[str, Any]:
+    answers = np.array(['A' if snippet.data['defective'] else 'B' for snippet in snippets])
+    acc_orig = np.mean(np.array(res_orig) == answers)
+    acc_span = [np.mean(np.array(variants) == answers)
+                for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
+    return {
+        'acc_orig': acc_orig,
+        'acc_span': acc_span,
+        'acc_span_avg': np.mean(acc_span),
     }
 
   snippets = benchmark.load_for_repair(args.src_lang)

@@ -30,11 +30,12 @@ def load_snippets(args: Namespace) -> list[Snippet]:
       'code_repair': 'repair',
       'code2tag': 'tagging',
       'descode2tag': 'tagging',
+      'test_generation': 'test_generation',
       'code_summarization': 'summarization',
+      'mcq_answering': 'mcq_answering',
       'input_reasoning': 'io_reasoning',
       'output_reasoning': 'io_reasoning',
-      'mcq_answering': 'mcq_answering',
-      'test_generation': 'test_generation',
+      'defect_detection': 'defect_detection',
   }
   func_name = f'load_for_{task_to_dataset[args.task]}'
   if args.task == 'code_translation':
