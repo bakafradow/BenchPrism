@@ -28,6 +28,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+from scripts.experiment.utils import get_data_id, get_eval_id
 from stylo_flora import IOTestCase, Snippet
 from stylo_flora.benchmarks import benchmark_factory
 from stylo_flora.inference import agent_factory, task_factory, task_worker
@@ -92,17 +93,11 @@ def parse_args() -> Namespace:
                       help='If set, skips evaluation.')
   args = parser.parse_args()
 
-  args.dataset = args.dataset.lower()
-  args.task = args.task.lower()
-
-  data_id = f'{args.dataset}_{args.task}_{args.src_lang}_seed{args.seed}'
+  data_id = get_data_id(args)
   args.candidates_path = args.result_dir / f'candidates_{data_id}.json'
   args.variants_path = args.result_dir / f'variants_{data_id}.jsonl'
 
-  eval_id = f'{args.dataset}_{args.task}_{args.src_lang}'
-  if args.task == 'code_translation':
-    eval_id += f'{"_to_" + args.dst_lang}'
-  eval_id += f'_with_{re.split(r"[:/]", args.model)[-1]}_seed{args.seed}'
+  eval_id = get_eval_id(args)
   args.outputs_path = args.result_dir / f'outputs_{eval_id}.jsonl'
   args.result_path = args.result_dir /\
       f'results_{eval_id}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
@@ -666,7 +661,7 @@ if __name__ == '__main__':
 
   # prioritize dataset-specific evaluator
   evaluator = getattr(sys.modules[__name__],
-                      f'evaluate_{args.task}_{args.dataset.replace("-", "_")}', None) or \
+                      f'evaluate_{args.task}_{args.dataset.lower().replace("-", "_")}', None) or \
       getattr(sys.modules[__name__], f'evaluate_{args.task}', None)
   if not evaluator:
     raise ValueError(f'Unable to evaluate {args.task} on {args.dataset}.')

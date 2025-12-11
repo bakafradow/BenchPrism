@@ -1,7 +1,26 @@
+import re
 from argparse import Namespace
 
 from stylo_flora import Snippet
 from stylo_flora.benchmarks import benchmark_factory
+
+
+def get_data_id(args: Namespace) -> str:
+  """
+  Constructs a unique identifier for specific snippet series in a benchmark.
+  """
+  return f'{args.dataset.lower()}_{args.task}_{args.src_lang}_seed{args.seed}'
+
+
+def get_eval_id(args: Namespace) -> str:
+  """
+  Constructs a unique identifier for an experiment set.
+  """
+  eval_id = f'{args.dataset.lower()}_{args.task}_{args.src_lang}'
+  if args.task == 'code_translation':
+    eval_id += f'{"_to_" + args.dst_lang}'
+  eval_id += f'_with_{re.split(r"[:/]", args.model)[-1]}_seed{args.seed}'
+  return eval_id
 
 
 def load_snippets(args: Namespace) -> list[Snippet]:

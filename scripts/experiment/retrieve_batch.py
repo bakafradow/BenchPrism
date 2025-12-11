@@ -11,6 +11,7 @@ import jsonlines
 from tqdm import tqdm
 
 from scripts.experiment.run import SUPPORTED_TASKS
+from scripts.experiment.utils import get_eval_id
 from stylo_flora.inference import agent_factory, task_factory
 from stylo_flora.logger import init_logger, logger
 
@@ -28,13 +29,17 @@ def parse_args() -> Namespace:
                       help='Specify the source language.')
   parser.add_argument('--dst-lang', type=str, required=False,
                       help='Specify the destination language. Only used for code translation task.')
+  parser.add_argument('--result-dir', type=Path, required=True,
+                      help='Directory to save the results.')
+  parser.add_argument('--seed', type=int, default=42,
+                      help='Set the random seed for reproducibility.')
   parser.add_argument('-j', '--job', type=str, required=True,
                       help='Specify the job name returned by the API platform.')
-  parser.add_argument('-f', '--file', type=Path, required=True,
-                      help='Specify the path to the jsonl file that contains model outputs.')
   parser.add_argument('--retry-interval', type=int, required=False, default=30,
                       help='Specify retry interval (in seconds) in case the job is not ready.')
   args = parser.parse_args()
+  eval_id = get_eval_id(args)
+  args.outputs_path = args.result_dir / f'outputs_{eval_id}.jsonl'
   return args
 
 
@@ -71,7 +76,7 @@ def _message(text: str) -> None:
 def main():
   result = _retrieve()
 
-  with jsonlines.open(args.file, mode='r') as reader:
+  with jsonlines.open(args.outputs_path, mode='r') as reader:
     data = {row['id']: row for row in reader}
 
   for k, v in result.items():
@@ -86,15 +91,19 @@ def main():
     snippet_id, suffix = matched.groups()
 
     # data dict should be initialized with `None`s during the submission of batch job
-    if suffix == 'orig':
-      data[snippet_id]['output'] = res
-    else:
-      seq = int(suffix)
-      data[snippet_id]['variant_outputs'][seq] = res
+    try:
+      if suffix == 'orig':
+        data[snippet_id]['output'] = res
+      else:
+        seq = int(suffix)
+        data[snippet_id]['variant_outputs'][seq] = res
+    except KeyError as e:
+      logger.error(f'Invalid key {e}. Please make sure the batch corresponds to correct experiment!')
+      exit(1)
 
-  with jsonlines.open(args.file, mode='w') as writer:
+  with jsonlines.open(args.outputs_path, mode='w') as writer:
     writer.write_all(sorted(data.values(), key=itemgetter('id')))
-  logger.info(f'Saved outputs to {args.file} with {len(data)} rows.')
+  logger.info(f'Saved outputs to {args.outputs_path} with {len(data)} rows.')
 
 
 if __name__ == '__main__':

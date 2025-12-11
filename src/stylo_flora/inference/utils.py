@@ -58,7 +58,7 @@ def task_factory(name: str, **kwargs) -> BaseTask:
     case 'code_translation':
       return CodeTranslation(kwargs['src_lang'], kwargs['dst_lang'])
     case 'code_repair':
-      if kwargs['dataset'] == 'coderujb':
+      if kwargs['dataset'].lower() == 'coderujb':
         return CodeRepairUJB(kwargs['src_lang'])
       return CodeRepair(kwargs['src_lang'])
     case 'code2tag':
