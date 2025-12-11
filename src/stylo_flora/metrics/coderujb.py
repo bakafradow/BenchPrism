@@ -2,6 +2,7 @@
 Modified from CoderUJB repository (https://github.com/ZZR0/CoderUJB).
 """
 
+from javalang import tokenizer, parser
 import os
 import subprocess
 import tempfile
@@ -20,11 +21,11 @@ def pass_at_1_ujb(patches: Seq[str], items: Seq[dict[str, Any]], lang: str) -> f
     raise ValueError(f'Unsupported language: {lang}')
   with ThreadPoolExecutor(max_workers=setting_dict['metrics']['max_workers']) as executor:
     return sum(tqdm(executor.map(_validate_all_patches, patches, items),
-                    desc='Calculating Count@1', total=len(patches), leave=False)) / len(patches)
+                    desc='Calculating Pass@1', total=len(patches), leave=False)) / len(patches)
 
 
 def _validate_all_patches(patch: str, item: dict[str, Any]) -> bool:
-  with tempfile.TemporaryDirectory() as tmpdir:
+  with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
     cmd_checkout = ['defects4j', 'checkout', '-p', item['project'],
                     '-v', f'{item["bug_id"]}f', '-w', tmpdir]
     try:
@@ -40,16 +41,28 @@ def _validate_all_patches(patch: str, item: dict[str, Any]) -> bool:
     with open(os.path.join(tmpdir, item['location']), 'w') as f:
       f.write(source)
 
-    cmd_test = ['defects4j', 'test', '-w', tmpdir]
     try:
-      completed = subprocess.run(cmd_test, env=_get_d4j_env(), capture_output=True, check=True,
-                                 encoding='utf-8', timeout=setting_dict['agent']['timeout'])
-      return 'Failing tests: 0\n' in completed.stdout
-    except subprocess.CalledProcessError as e:
-      logger.verbose(f'Failed to test project:\n{e.stderr}')
-    except subprocess.TimeoutExpired:
-      logger.verbose('Test timed out.')
-    return False
+      tokens = tokenizer.tokenize(source)
+      parser.Parser(tokens).parse()
+    except Exception as e:
+      logger.verbose(f'Compiling failed on {item["project"]}:\n{e}')
+      return False
+
+    for method in tqdm(item['testmethods'], desc=f'Testing {item["project"]}',
+                       total=len(item['testmethods']), leave=False):
+      cmd_test = ['defects4j', 'test', '-w', tmpdir, '-t', method.strip()]
+      try:
+        completed = subprocess.run(cmd_test, env=_get_d4j_env(), capture_output=True, check=True,
+                                  encoding='utf-8', timeout=setting_dict['agent']['timeout'])
+        if 'Failing tests: 0\n' not in completed.stdout:
+          return False
+      except subprocess.CalledProcessError as e:
+        logger.verbose(f'Failed to test `{method}` on {item["project"]}:\n{e.stderr}')
+        return False
+      except subprocess.TimeoutExpired:
+        logger.verbose(f'Test `{method}` timed out on {item["project"]}.')
+        return False
+    return True
 
 
 def _get_d4j_env() -> dict[str, str]:

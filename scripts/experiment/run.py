@@ -638,13 +638,13 @@ def evaluate_code_repair_coderujb() -> None:
       snippets: Seq[Snippet],
   ) -> dict[str, Any]:
     items = [snippet.data for snippet in snippets]
-    count_orig = pass_at_1_ujb(res_orig, items, args.src_lang)
-    count_span = [pass_at_1_ujb(variants, items, args.src_lang)
+    pass_orig = pass_at_1_ujb(res_orig, items, args.src_lang)
+    pass_span = [pass_at_1_ujb(variants, items, args.src_lang)
                   for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
     return {
-        'count_orig': count_orig,
-        'count_span': count_span,
-        'count_span_avg': np.mean(count_span),
+        'pass_orig': pass_orig,
+        'pass_span': pass_span,
+        'pass_span_avg': np.mean(pass_span),
     }
 
   snippets = benchmark.load_for_repair(args.src_lang)

@@ -408,6 +408,7 @@ class CoderUJB(BaseBenchmark):
         'start': row['start'],
         'end': row['end'],
         'location': row['location'],
+        'testmethods': row['testmethods'],
     }) for row in ds['train']]
 
 
