@@ -2,29 +2,41 @@
 Modified from CoderUJB repository (https://github.com/ZZR0/CoderUJB).
 """
 
-from javalang import tokenizer, parser
 import os
 import subprocess
 import tempfile
+from collections import Counter
 from collections.abc import Sequence as Seq
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from javalang import parser, tokenizer
 from tqdm import tqdm
 
-from stylo_flora import setting_dict
-from stylo_flora.logger import logger
+from .. import setting_dict
+from ..logger import logger
+from .correctness import CorrectnessResult
+from .utils import Correctness
 
 
-def pass_at_1_ujb(patches: Seq[str], items: Seq[dict[str, Any]], lang: str) -> float:
+def pass_at_1_ujb(
+    patches: Seq[str],
+    items: Seq[dict[str, Any]],
+    lang: str
+) -> CorrectnessResult:
   if lang != 'java':
     raise ValueError(f'Unsupported language: {lang}')
   with ThreadPoolExecutor(max_workers=setting_dict['metrics']['max_workers']) as executor:
-    return sum(tqdm(executor.map(_validate_all_patches, patches, items),
-                    desc='Calculating Pass@1', total=len(patches), leave=False)) / len(patches)
+    counter = Counter(tqdm(executor.map(_validate_all_patches, patches, items),
+                           desc='Calculating Pass@1', total=len(patches), leave=False))
+  total = sum(counter.values())
+  return CorrectnessResult(
+      comp_rate=(total - counter[Correctness.FAIL_COMP]) / total,
+      pass_rate=counter[Correctness.PASS] / total,
+  )
 
 
-def _validate_all_patches(patch: str, item: dict[str, Any]) -> bool:
+def _validate_all_patches(patch: str, item: dict[str, Any]) -> Correctness:
   with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
     cmd_checkout = ['defects4j', 'checkout', '-p', item['project'],
                     '-v', f'{item["bug_id"]}f', '-w', tmpdir]
@@ -32,8 +44,8 @@ def _validate_all_patches(patch: str, item: dict[str, Any]) -> bool:
       subprocess.run(cmd_checkout, env=_get_d4j_env(), capture_output=True,
                      check=True, encoding='utf-8')
     except subprocess.CalledProcessError as e:
-      logger.warning(f'Failed to checkout project:\n{e.stderr}')
-      return False
+      logger.warning(f'Failed to checkout {item["project"]}:\n{e.stderr}')
+      return Correctness.FAIL_COMP
 
     source_lines = item['source'].split('\n')
     patch_lines = patch.split('\n')
@@ -45,24 +57,24 @@ def _validate_all_patches(patch: str, item: dict[str, Any]) -> bool:
       tokens = tokenizer.tokenize(source)
       parser.Parser(tokens).parse()
     except Exception as e:
-      logger.verbose(f'Compiling failed on {item["project"]}:\n{e}')
-      return False
+      logger.verbose(f'{e.__class__.__name__} occurred while compiling on {item["project"]}.')
+      return Correctness.FAIL_COMP
 
     for method in tqdm(item['testmethods'], desc=f'Testing {item["project"]}',
                        total=len(item['testmethods']), leave=False):
       cmd_test = ['defects4j', 'test', '-w', tmpdir, '-t', method.strip()]
       try:
         completed = subprocess.run(cmd_test, env=_get_d4j_env(), capture_output=True, check=True,
-                                  encoding='utf-8', timeout=setting_dict['agent']['timeout'])
+                                   encoding='utf-8', timeout=setting_dict['agent']['timeout'])
         if 'Failing tests: 0\n' not in completed.stdout:
-          return False
+          return Correctness.FAIL_EXEC
       except subprocess.CalledProcessError as e:
         logger.verbose(f'Failed to test `{method}` on {item["project"]}:\n{e.stderr}')
-        return False
+        return Correctness.FAIL_COMP
       except subprocess.TimeoutExpired:
         logger.verbose(f'Test `{method}` timed out on {item["project"]}.')
-        return False
-    return True
+        return Correctness.FAIL_EXEC
+    return Correctness.PASS
 
 
 def _get_d4j_env() -> dict[str, str]:

@@ -1,32 +1,103 @@
 import os
-import re
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from collections.abc import Sequence as Seq
 from concurrent.futures import ThreadPoolExecutor
+from typing import NamedTuple
 
 from tqdm import tqdm
 
 from .. import IOTestCase, setting_dict
 from ..logger import logger
-from .utils import CompilationError, extract_classname_java
+from .utils import Correctness, extract_classname_java
 
 
-def _run_with_io(cmd: Seq[str], tc_list: Seq[IOTestCase]) -> bool:
+class CorrectnessResult(NamedTuple):
+  comp_rate: float
+  pass_rate: float
+
+
+def pass_at_1(code_list: Seq[str], tc_lists: Seq[Seq[IOTestCase]], lang: str) -> CorrectnessResult:
+  tester = getattr(sys.modules[__name__], f'test_io_{lang}', None)
+  if not tester:
+    raise ValueError(f'Unsupported language: {lang}')
+  counter = Counter(tester(code, tc_list)
+                    for code, tc_list in tqdm(zip(code_list, tc_lists), desc='Calculating Pass@1',
+                                              total=len(code_list), leave=False))
+  total = sum(counter.values())
+  return CorrectnessResult(
+      comp_rate=(total - counter[Correctness.FAIL_COMP]) / total,
+      pass_rate=counter[Correctness.PASS] / total,
+  )
+
+
+def test_io_java(code: str, tc_list: Seq[IOTestCase]) -> Correctness:
+  classname = extract_classname_java(code)
+  if not classname:
+    logger.verbose('Failed to extract class name from code.')
+    return Correctness.FAIL_COMP
+  with tempfile.TemporaryDirectory() as tmpdir:
+    with open(os.path.join(tmpdir, f'{classname}.java'), 'w') as f:
+      f.write(code)
+    classdir = os.path.join(tmpdir, 'target')
+    os.makedirs(classdir, exist_ok=True)
+    cmd_compile = ['javac', '-d', classdir, f.name]
+    try:
+      subprocess.run(cmd_compile, capture_output=True, check=True, encoding='utf-8')
+    except subprocess.CalledProcessError as e:
+      logger.verbose(f'Failed to compile {f.name}:\n{e.stderr}')
+      return Correctness.FAIL_COMP
+    cmd = ['java', '-classpath', classdir, classname]
+    return _run_with_io(cmd, tc_list)
+
+
+def test_io_cpp(code: str, tc_list: Seq[IOTestCase]) -> Correctness:
+  with tempfile.TemporaryDirectory() as tmpdir:
+    src_path = os.path.join(tmpdir, 'main.cpp')
+    exe_path = os.path.join(tmpdir, 'main')
+    with open(src_path, 'w') as f:
+      f.write(code)
+    cmd_compile = ['g++', src_path, '-o', exe_path]
+    try:
+      subprocess.run(cmd_compile, capture_output=True, check=True, encoding='utf-8')
+    except subprocess.CalledProcessError as e:
+      logger.verbose(f'Failed to compile:\n{e.stderr}')
+      return Correctness.FAIL_COMP
+    cmd = [exe_path]
+    return _run_with_io(cmd, tc_list)
+
+
+def test_io_python(code: str, tc_list: Seq[IOTestCase]) -> Correctness:
+  try:
+    compile(code, '<string>', 'exec')
+  except SyntaxError as e:
+    logger.verbose(f'Syntax error:\n{e.msg}')
+    return Correctness.FAIL_COMP
+  with tempfile.TemporaryDirectory() as tmpdir:
+    src_path = os.path.join(tmpdir, 'main.py')
+    with open(src_path, 'w') as f:
+      f.write(code)
+    cmd = ['python', src_path]
+    return _run_with_io(cmd, tc_list)
+
+
+def _run_with_io(cmd: Seq[str], tc_list: Seq[IOTestCase]) -> Correctness:
   def worker(test: IOTestCase) -> bool:
     try:
-      completed = subprocess.run(cmd, input=test.input, text=True, capture_output=True, encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
+      completed = subprocess.run(cmd, input=test.input, capture_output=True, encoding='utf-8',
+                                 timeout=setting_dict['metrics']['timeout'])
       if completed.returncode != 0:
         logger.verbose(f'{completed.returncode} was returned.\n'
-                      f'Input:\n{test.input.strip()}\n'
-                      f'Standard Error:\n{completed.stderr}')
+                       f'Input:\n{test.input.strip()}\n'
+                       f'Standard Error:\n{completed.stderr}')
         return False
       if completed.stdout.strip() not in (output.strip() for output in test.outputs):
         logger.verbose(f'Wrong answer.\n'
-                      f'Input:\n{test.input.strip()}\n'
-                      f'Expected:\n{test.outputs[0]}\n'
-                      f'Actual:\n{completed.stdout}')
+                       f'Input:\n{test.input.strip()}\n'
+                       f'Expected:\n{test.outputs[0]}\n'
+                       f'Actual:\n{completed.stdout}')
         return False
     except KeyboardInterrupt:
       logger.warning('Keyboard interrupt.')
@@ -43,68 +114,5 @@ def _run_with_io(cmd: Seq[str], tc_list: Seq[IOTestCase]) -> bool:
     return True
 
   with ThreadPoolExecutor(max_workers=setting_dict['metrics']['max_workers']) as executor:
-    return all(tqdm(executor.map(worker, tc_list), total=len(tc_list), leave=False))
-
-
-def test_io_java(code: str, tc_list: Seq[IOTestCase]) -> bool:
-  try:
-    classname = extract_classname_java(code)
-    if not classname:
-      raise CompilationError('Failed to extract class name from Java code.', f'Generated code:\n{code}')
-    with tempfile.TemporaryDirectory() as tmpdir:
-      with open(f'{tmpdir}/{classname}.java', 'w') as f:
-        f.write(code)
-      classdir = f'{tmpdir}/target'
-      os.makedirs(classdir, exist_ok=True)
-      try:
-        completed = subprocess.run(['javac', '-d', classdir, f.name], stderr=subprocess.PIPE, encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
-        if completed.returncode != 0:
-          raise CompilationError(f'Failed to compile {f.name}.', completed.stderr)
-      except subprocess.TimeoutExpired:
-        raise CompilationError(f'Compilation of {f.name} timed out.')
-      cmd = ['java', '-classpath', classdir, classname]
-      return _run_with_io(cmd, tc_list)
-  except CompilationError as e:
-    logger.warning(e)
-    logger.verbose(f'Standard Error:\n{e.stderr}')
-  return False
-
-
-def test_io_cpp(code: str, tc_list: Seq[IOTestCase]) -> bool:
-  try:
-    with tempfile.NamedTemporaryFile(suffix='.cpp') as f:
-      f.write(code.encode())
-      f.flush()
-      executable = re.sub(r'\.cpp$', '', f.name)
-      try:
-        completed = subprocess.run(['g++', f.name, '-o', executable], stderr=subprocess.PIPE, encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
-        if completed.returncode != 0:
-          raise CompilationError(f'Failed to compile {f.name}.', completed.stderr)
-      except subprocess.TimeoutExpired:
-        raise CompilationError(f'Compilation of {f.name} timed out.')
-  except CompilationError as e:
-    logger.warning(e)
-    logger.verbose(f'Standard Error:\n{e.stderr}')
-    return False
-  cmd = [executable]
-  result = _run_with_io(cmd, tc_list)
-  try:
-    os.remove(executable)
-  except FileNotFoundError:
-    pass
-  return result
-
-
-def test_io_python(code: str, tc_list: Seq[IOTestCase]) -> bool:
-  cmd = ['python', '-c', code]
-  return _run_with_io(cmd, tc_list)
-
-
-def pass_at_1(code_list: Seq[str], tc_lists: Seq[Seq[IOTestCase]], lang: str) -> float:
-  tester = getattr(sys.modules[__name__], f'test_io_{lang}', None)
-  if not tester:
-    raise ValueError(f'Unsupported language: {lang}')
-  return sum(tester(code, tc_list)
-             for code, tc_list in tqdm(zip(code_list, tc_lists),
-                                       desc='Calculating Pass@1', total=len(code_list),
-                                       leave=False)) / len(code_list)
+    passed = all(tqdm(executor.map(worker, tc_list), total=len(tc_list), leave=False))
+  return Correctness.PASS if passed else Correctness.FAIL_EXEC

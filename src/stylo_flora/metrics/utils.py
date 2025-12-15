@@ -20,6 +20,7 @@ class Correctness(str, Enum):
 
 PATTERN_JAVA_PUBLIC_CLASS = re.compile(r'public\s+(?:final\s+)?class\s+(\w+)')
 PATTERN_JAVA_CLASS = re.compile(r'(?:final\s+)?class\s+(\w+)')
+PATTERN_PYTHON_CLASS = re.compile(r'class\s+(\w+)')
 
 
 def extract_classname_java(code: str) -> str | None:

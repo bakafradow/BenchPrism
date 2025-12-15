@@ -404,12 +404,17 @@ def evaluate_code_translation() -> None:
       snippets: Seq[Snippet],
   ) -> dict[str, Any]:
     tc_lists = [snippet.data['io_tests'] for snippet in snippets]
-    pass_orig = pass_at_1(res_orig, tc_lists, args.dst_lang)
-    pass_span = [pass_at_1(variants, tc_lists, args.dst_lang)
-                 for variants in tqdm(zip(*res_span), desc='Evaluating',
-                                      total=len(res_span[0]), leave=False)]
+    result_orig = pass_at_1(res_orig, tc_lists, args.dst_lang)
+    result_span = [pass_at_1(variants, tc_lists, args.dst_lang)
+                   for variants in tqdm(zip(*res_span), desc='Evaluating',
+                                        total=len(res_span[0]), leave=False)]
+    comp_span = [result.comp_rate for result in result_span]
+    pass_span = [result.pass_rate for result in result_span]
     return {
-        'pass_orig': pass_orig,
+        'comp_orig': result_orig.comp_rate,
+        'comp_span': comp_span,
+        'comp_span_avg': np.mean(comp_span),
+        'pass_orig': result_orig.pass_rate,
         'pass_span': pass_span,
         'pass_span_avg': np.mean(pass_span),
     }
@@ -425,11 +430,16 @@ def evaluate_code_repair() -> None:
       snippets: Seq[Snippet],
   ) -> dict[str, Any]:
     tc_lists = [snippet.data['io_tests'] for snippet in snippets]
-    pass_orig = pass_at_1(res_orig, tc_lists, args.src_lang)
-    pass_span = [pass_at_1(variants, tc_lists, args.src_lang)
-                 for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
+    result_orig = pass_at_1(res_orig, tc_lists, args.src_lang)
+    result_span = [pass_at_1(variants, tc_lists, args.src_lang)
+                   for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
+    comp_span = [result.comp_rate for result in result_span]
+    pass_span = [result.pass_rate for result in result_span]
     return {
-        'pass_orig': pass_orig,
+        'comp_orig': result_orig.comp_rate,
+        'comp_span': comp_span,
+        'comp_span_avg': np.mean(comp_span),
+        'pass_orig': result_orig.pass_rate,
         'pass_span': pass_span,
         'pass_span_avg': np.mean(pass_span),
     }
@@ -479,21 +489,25 @@ def evaluate_test_generation() -> None:
     tc_lists_span = [[[IOTestCase.from_list(l) if isinstance(l, list) else dummy for l in res]
                       for res in res_list]
                      for res_list in res_span]
-    cov_orig = calc_coverage(code_list, tc_list_orig, args.src_lang)
-    cov_span = [calc_coverage(code_list, tc_list, args.src_lang)
-                for tc_list in tqdm(zip(*tc_lists_span), desc='Evaluating',
-                                    total=len(res_span[0]), leave=False)]
-    pass_span = [cov['pass_rate'] for cov in cov_span]
-    line_cov_span = [cov['line_cov_rate'] for cov in cov_span]
-    branch_cov_span = [cov['branch_cov_rate'] for cov in cov_span]
+    result_orig = calc_coverage(code_list, tc_list_orig, args.src_lang)
+    result_span = [calc_coverage(code_list, tc_list, args.src_lang)
+                   for tc_list in tqdm(zip(*tc_lists_span), desc='Evaluating',
+                                       total=len(res_span[0]), leave=False)]
+    comp_span = [result.comp_rate for result in result_span]
+    pass_span = [result.pass_rate for result in result_span]
+    line_cov_span = [result.line_cov for result in result_span]
+    branch_cov_span = [result.branch_cov for result in result_span]
     return {
-        'pass_orig': cov_orig['pass_rate'],
+        'comp_orig': result_orig.comp_rate,
+        'comp_span': comp_span,
+        'comp_span_avg': np.mean(comp_span),
+        'pass_orig': result_orig.pass_rate,
         'pass_span': pass_span,
         'pass_span_avg': np.mean(pass_span),
-        'line_cov_orig': cov_orig['line_cov_rate'],
+        'line_cov_orig': result_orig.line_cov,
         'line_cov_span': line_cov_span,
         'line_cov_span_avg': np.mean(line_cov_span),
-        'branch_cov_orig': cov_orig['branch_cov_rate'],
+        'branch_cov_orig': result_orig.branch_cov,
         'branch_cov_span': branch_cov_span,
         'branch_cov_span_avg': np.mean(branch_cov_span),
     }
@@ -581,12 +595,17 @@ def _evaluate_io_reasoning() -> None:
                       for res in res_list]
                      for snippet, res_list in zip(snippets, res_span)]
     tc_lists = [snippet.data['io_tests'] for snippet in snippets]
-    pass_orig = pass_at_1(res_code_orig, tc_lists, args.src_lang)
-    pass_span = [pass_at_1(variants, tc_lists, args.src_lang)
+    result_orig = pass_at_1(res_code_orig, tc_lists, args.src_lang)
+    result_span = [pass_at_1(variants, tc_lists, args.src_lang)
                  for variants in tqdm(zip(*res_code_span), desc='Evaluating',
                                       total=len(res_code_span[0]), leave=False)]
+    comp_span = [result.comp_rate for result in result_span]
+    pass_span = [result.pass_rate for result in result_span]
     return {
-        'pass_orig': pass_orig,
+        'comp_orig': result_orig.comp_rate,
+        'comp_span': comp_span,
+        'comp_span_avg': np.mean(comp_span),
+        'pass_orig': result_orig.pass_rate,
         'pass_span': pass_span,
         'pass_span_avg': np.mean(pass_span),
     }
@@ -613,14 +632,23 @@ def evaluate_code_translation_classeval_t() -> None:
       snippets: Seq[Snippet],
   ) -> dict[str, Any]:
     tests = [snippet.data[f'test_{args.dst_lang}'] for snippet in snippets]
-    pass_orig = pass_at_1_classeval(res_orig, tests, args.dst_lang)
-    pass_span = [pass_at_1_classeval(variants, tests, args.dst_lang)
-                 for variants in tqdm(zip(*res_span), desc='Evaluating',
-                                      total=len(res_span[0]), leave=False)]
+    result_orig = pass_at_1_classeval(res_orig, tests, args.dst_lang)
+    result_span = [pass_at_1_classeval(variants, tests, args.dst_lang)
+                   for variants in tqdm(zip(*res_span), desc='Evaluating',
+                                        total=len(res_span[0]), leave=False)]
+    comp_span = [result.comp_rate for result in result_span]
+    pass_method_span = [result.pass_rate_method for result in result_span]
+    pass_class_span = [result.pass_rate_class for result in result_span]
     return {
-        'pass_orig': pass_orig,
-        'pass_span': pass_span,
-        'pass_span_avg': np.mean(pass_span),
+        'comp_orig': result_orig.comp_rate,
+        'comp_span': comp_span,
+        'comp_span_avg': np.mean(comp_span),
+        'pass_method_orig': result_orig.pass_rate_method,
+        'pass_method_span': pass_method_span,
+        'pass_method_span_avg': np.mean(pass_method_span),
+        'pass_class_orig': result_orig.pass_rate_class,
+        'pass_class_span': pass_class_span,
+        'pass_class_span_avg': np.mean(pass_class_span),
     }
 
   snippets = benchmark.load_for_translation(args.src_lang, args.dst_lang)
@@ -634,11 +662,17 @@ def evaluate_code_repair_coderujb() -> None:
       snippets: Seq[Snippet],
   ) -> dict[str, Any]:
     items = [snippet.data for snippet in snippets]
-    pass_orig = pass_at_1_ujb(res_orig, items, args.src_lang)
-    pass_span = [pass_at_1_ujb(variants, items, args.src_lang)
-                 for variants in tqdm(zip(*res_span), desc='Evaluating', total=len(res_span[0]), leave=False)]
+    result_orig = pass_at_1_ujb(res_orig, items, args.src_lang)
+    result_span = [pass_at_1_ujb(variants, items, args.src_lang)
+                   for variants in tqdm(zip(*res_span), desc='Evaluating',
+                                        total=len(res_span[0]), leave=False)]
+    comp_span = [result.comp_rate for result in result_span]
+    pass_span = [result.pass_rate for result in result_span]
     return {
-        'pass_orig': pass_orig,
+        'comp_orig': result_orig.comp_rate,
+        'comp_span': comp_span,
+        'comp_span_avg': np.mean(comp_span),
+        'pass_orig': result_orig.pass_rate,
         'pass_span': pass_span,
         'pass_span_avg': np.mean(pass_span),
     }
