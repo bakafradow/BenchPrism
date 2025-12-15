@@ -8,7 +8,8 @@ from ..logger import logger
 from .agents import BaseAgent, GeminiAgent, LocalAgent, OpenAIAgent
 from .tasks import (BaseTask, CodeRepair, CodeRepairUJB, CodeSummarization,
                     CodeTranslation, DefectDetectionUJB, IOReasoning,
-                    MCQAnswering, TagClassification, TestGeneration)
+                    MCQAnswering, TagClassification, TestGeneration,
+                    TestGenerationTB)
 from .tasks.io_reasoning import ReasoningType
 
 
@@ -62,6 +63,14 @@ def task_factory(name: str, **kwargs) -> BaseTask:
         return DefectDetectionUJB(kwargs['src_lang'])
       case _:
         raise ValueError(f'Unknown task on CoderUJB: {name}')
+
+  if kwargs['dataset'].lower() == 'testbench':
+    match name:
+      case 'test_generation':
+        return TestGenerationTB(kwargs['src_lang'])
+      case _:
+        raise ValueError(f'Unknown task on TestBench: {name}')
+
   match name:
     case 'code_translation':
       return CodeTranslation(kwargs['src_lang'], kwargs['dst_lang'])

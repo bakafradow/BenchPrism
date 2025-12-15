@@ -76,9 +76,9 @@ def main() -> None:
   print(f'Counting tokens for model {args.model} on dataset {args.dataset}...')
   print('task'.ljust(20) + 'total tokens'.ljust(15) + 'avg tokens/snippet')
   for task_name in [
-      'code_translation', 'code_repair', 'code2tag', 'descode2tag',
-      'code_summarization', 'input_reasoning',
-      'mcq_answering', 'test_generation',
+      'code_translation', 'code_repair', 'code2tag',
+      'descode2tag', 'test_generation', 'code_summarization',
+      'mcq_answering', 'input_reasoning', 'defect_detection',
   ]:
     args.task = task_name
     try:

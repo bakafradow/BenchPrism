@@ -1,0 +1,152 @@
+"""
+Modified from TestBench repository (https://github.com/iSEngLab/TestBench).
+"""
+
+import os
+import re
+import subprocess
+import xml.etree.ElementTree as ET
+from collections import Counter
+from collections.abc import Sequence as Seq
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Any, NamedTuple
+
+import numpy as np
+from tqdm import tqdm
+
+from .. import setting_dict
+from ..logger import logger
+from .utils import Correctness, extract_classname_java
+
+PROJ_PATH = Path(setting_dict['datasets']['testbench_root']) / 'java_project'
+
+
+class CoverageResultTB(NamedTuple):
+  comp_rate: float
+  pass_rate: float
+  line_cov: float
+  branch_cov: float
+  mut_score: float
+
+
+def calc_coverage_tb(tests: Seq[str], items: Seq[dict[str, Any]], lang: str) -> CoverageResultTB:
+  if lang != 'java':
+    raise ValueError(f'Unsupported language: {lang}')
+  with ThreadPoolExecutor(max_workers=setting_dict['metrics']['max_workers']) as executor:
+    dicts = list(tqdm(executor.map(_worker, tests, items),
+                      desc='Calculating coverage', total=len(tests), leave=False))
+  counter = Counter([d['correctness'] for d in dicts])
+  total = sum(counter.values())
+  return CoverageResultTB(
+      comp_rate=(total - counter[Correctness.FAIL_COMP]) / total,
+      pass_rate=counter[Correctness.PASS] / total,
+      line_cov=np.mean([d['line_cov'] for d in dicts if d.get('line_cov')]),
+      branch_cov=np.mean([d['branch_cov'] for d in dicts if d.get('branch_cov')]),
+      mut_score=np.mean([d['mut_score'] for d in dicts if d.get('mut_score')]),
+  )
+
+
+def _worker(test: str, item: dict[str, Any]) -> dict[str, Any]:
+  result: dict[str, Any] = {'correctness': Correctness.FAIL_COMP}
+  identifier = f'{item["class_name"]}::{item["method_name"]}'
+  test_dir = PROJ_PATH / item['relative_path'].replace('main', 'test').rsplit('/', 1)[0]
+  test_dir.mkdir(parents=True, exist_ok=True)
+  classname = extract_classname_java(test)
+  if not classname:
+    logger.verbose(f'Failed to extract class name for {identifier} test.')
+    return result
+  with open(test_dir / f'{classname}.java', 'w') as f:
+    f.write(test)
+  proj_root = PROJ_PATH / item['project_name']
+
+  mvn_prefix = ['mvn']
+  if matched := re.match(r'^[\w-]+/(.+)/src', item['relative_path']):
+    submodule = matched.group(1)
+    mvn_prefix += ['-pl', submodule, '-am']  # avoid building unnecessary modules
+  else:
+    submodule = ''
+  cmd_compile = mvn_prefix + ['test-compile', '-Drat.skip=true',
+                              '-Dsurefire.failIfNoSpecifiedTests=false', '-Dcheckstyle.skip']
+  try:
+    completed = subprocess.run(cmd_compile, cwd=proj_root, capture_output=True, check=True,
+                               encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
+  except subprocess.CalledProcessError as e:
+    logger.verbose(f'Failed to compile {identifier}\n{e.stderr}')
+    return result
+  except subprocess.TimeoutExpired:
+    logger.verbose(f'Compilation of {identifier} timed out.')
+    return result
+  result['correctness'] = Correctness.FAIL_EXEC
+
+  cmd_test = mvn_prefix + ['test', '-DskipPitest=True', '-Dsurefire.failIfNoSpecifiedTests=false',
+                           '-Dcheckstyle.skip', f'-Dtest={classname}']
+  try:
+    subprocess.run(cmd_test, cwd=proj_root, capture_output=True, check=True,
+                   encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
+  except subprocess.CalledProcessError as e:
+    logger.verbose(f'Failed to test {identifier}:\n{e.stderr}')
+    return result
+  except subprocess.TimeoutExpired:
+    logger.verbose(f'Test of {identifier} timed out.')
+    return result
+  report_path = os.path.join(proj_root, submodule, 'target/site/jacoco/jacoco.xml')
+  if not os.path.exists(report_path):
+    logger.verbose(f'Failed to find coverage report for {identifier}.')
+    return result
+  result['correctness'] = Correctness.PASS
+  result['line_cov'], result['branch_cov'] = _extract_coverage(report_path, item)
+
+  cmd_mutate = mvn_prefix + ['test-compile', 'org.pitest:pitest-maven:mutationCoverage',
+                             '-Drat.skip=true', '-Dsurefire.failIfNoSpecifiedTests=false',
+                             '-Dcheckstyle.skip',
+                             f'-DtargetClasses="{item["package"]}.{item["class_name"]}"',
+                             f'-DtargetTests="{item["package"]}.{classname}"']
+  try:
+    subprocess.run(cmd_mutate, cwd=proj_root, capture_output=True, check=True,
+                   encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
+  except subprocess.CalledProcessError as e:
+    logger.verbose(f'Failed to run mutation test on {identifier}:\n{e.stderr}')
+    return result
+  except subprocess.TimeoutExpired:
+    logger.verbose(f'Mutation test of {identifier} timed out.')
+    return result
+  result['mutation_score'] = _extract_mutation_score(completed.stdout)
+  return result
+
+
+def _extract_coverage(report_path: str, item: dict[str, Any]) -> tuple[float | None, float | None]:
+  tree = ET.parse(report_path)
+  root = tree.getroot()
+  try:
+    package = next(p for p in root.findall(".//package")
+                   if p.get('name') == item['package'].replace('.', '/'))
+    clazz = next(c for c in package.findall('class')
+                 if (name := c.get('name')) and name.endswith('/' + item['class_name']))
+    line_cnt, branch_cnt = 0, 0
+    line_cov, branch_cov = .0, .0
+    for method in clazz.findall('method'):
+      if method.get('name') == item['method_name']:
+        if line_ctr := method.find('counter[@type="LINE"]'):
+          line_cnt += 1
+          line_cov += _calculate_coverage(line_ctr)
+        if branch_ctr := method.find('counter[@type="BRANCH"]'):
+          branch_cnt += 1
+          branch_cov += _calculate_coverage(branch_ctr)
+    return (line_cov / line_cnt if line_cnt else .0,
+            branch_cov / branch_cnt if branch_cnt else .0)
+  except StopIteration:
+    return None, None
+
+
+def _calculate_coverage(counter: ET.Element) -> float:
+  missed = int(counter.get('missed', 0))
+  covered = int(counter.get('covered', 0))
+  total = missed + covered
+  return covered / total if total else .0
+
+
+def _extract_mutation_score(stdout: str) -> int | None:
+  if matches := re.search(r'Generated \d+ mutations Killed \d+ \((\d{1,3})%\)', stdout):
+    return int(matches.group(1))
+  return None

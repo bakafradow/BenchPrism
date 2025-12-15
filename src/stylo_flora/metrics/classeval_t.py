@@ -7,6 +7,7 @@ import tempfile
 from collections.abc import Sequence as Seq
 from concurrent.futures import ThreadPoolExecutor
 from functools import cache
+from pathlib import Path
 
 from tqdm import tqdm
 
@@ -14,6 +15,9 @@ from .. import setting_dict
 from ..logger import logger
 from . import utils
 from .utils import CompilationError
+
+POM_PATH = (Path(setting_dict['datasets']['classeval_t_root']) /
+            'BatchTestTool/java/java automated tester/pom.xml')
 
 
 def test_classeval_java(code: str, test: str) -> bool:
@@ -23,8 +27,7 @@ def test_classeval_java(code: str, test: str) -> bool:
     if not test_classes:
       raise CompilationError('No test classes found in the test code.')
     with tempfile.TemporaryDirectory(dir=utils.get_windows_tmpdir()) as tmpdir:
-      shutil.copy('data/ClassEval-T/BatchTestTool/java/java automated tester/pom.xml',
-                  f'{tmpdir}/pom.xml')
+      shutil.copy(POM_PATH, f'{tmpdir}/pom.xml')
       os.makedirs(f'{tmpdir}/src/main/java', exist_ok=True)
       os.makedirs(f'{tmpdir}/src/test/java', exist_ok=True)
       with open(f'{tmpdir}/src/main/java/{classname}.java', 'w') as f:

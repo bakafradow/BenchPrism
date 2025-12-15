@@ -3,6 +3,7 @@ import re
 from abc import ABC
 from collections.abc import Callable, Iterable
 from collections.abc import Sequence as Seq
+from hashlib import sha1
 from pathlib import Path
 
 import jsonlines
@@ -127,6 +128,11 @@ class XCodeEval(BaseBenchmark):
   }
   _data_dir = Path(setting_dict['datasets']['xcodeeval_root'])
 
+  def __init__(self):
+    super().__init__()
+    if not self._data_dir.exists():
+      raise FileNotFoundError(f'Please clone xCodeEval repo manually from https://huggingface.co/datasets/NTU-NLP-sg/xCodeEval and place it to {self._data_dir}')
+
   def load_for_translation(self, src_lang: str, dst_lang: str) -> Seq[Snippet]:
     TASK_NAME = 'code_translation'
     code_uids = self._load(src_lang, TASK_NAME, 'code_uid')
@@ -245,15 +251,6 @@ class CodeScope(BaseBenchmark):
     }) for row in ds['train']]
 
   @check_lang_support
-  def load_for_summarization(self, lang: str) -> Seq[Snippet]:
-    ds = load_dataset('json', data_files=str(self._data_dir / 'data/code_summarization_data.jsonl'))
-    ds = ds.filter(lambda row: row['lang_cluster'] == self.lang_to_name[lang])
-    return [Snippet(id=row['id'], data={
-        'code': row['source_code'],
-        'human_summarization': row['human_summarization'],
-    }) for row in ds['train']]
-
-  @check_lang_support
   def load_for_test_generation(self, lang: str) -> Seq[Snippet]:
     ds = load_dataset('json', data_files=str(self._data_dir / 'data/automated_testing_data.jsonl'))
     ds = ds.filter(lambda row: row['lang_cluster'] == self.lang_to_name[lang])
@@ -267,6 +264,15 @@ class CodeScope(BaseBenchmark):
         'notes': row['notes'],
         'io_tests': self._normalize_test(row['human_testcases']),  # for ensuring correct transformation
         'checker': _io_checker,
+    }) for row in ds['train']]
+
+  @check_lang_support
+  def load_for_summarization(self, lang: str) -> Seq[Snippet]:
+    ds = load_dataset('json', data_files=str(self._data_dir / 'data/code_summarization_data.jsonl'))
+    ds = ds.filter(lambda row: row['lang_cluster'] == self.lang_to_name[lang])
+    return [Snippet(id=row['id'], data={
+        'code': row['source_code'],
+        'human_summarization': row['human_summarization'],
     }) for row in ds['train']]
 
   @staticmethod
@@ -353,7 +359,7 @@ class ClassEvalT(BaseBenchmark):
     src_dir = self._data_dir / 'ClassEval_T' / self.lang_to_name[src_lang] / 'solution'
     if not src_dir.exists():
       raise FileNotFoundError(f'Directory {src_dir} does not exist.')
-    snippets = [Snippet(id=file.stem, data={
+    return [Snippet(id=file.stem, data={
         'code': file.read_text(),
         f'test_{src_lang}': self._load_test(file.stem, src_lang),
         f'test_{dst_lang}': self._load_test(file.stem, dst_lang),
@@ -361,7 +367,6 @@ class ClassEvalT(BaseBenchmark):
                                                          [s.data[f'test_{l}']], l)),
     }) for file in sorted(src_dir.iterdir())
         if file.is_file() and file.suffix == f'.{self.lang_to_name[src_lang]}']
-    return snippets
 
   def _load_test(self, name: str, lang: str) -> str:
     soln_name = self._normalize_name(name, lang)
@@ -393,7 +398,7 @@ class ClassEvalT(BaseBenchmark):
 
 
 class CoderUJB(BaseBenchmark):
-  supported_langs: frozenset[str] = frozenset({
+  supported_langs = frozenset({
       'java',
   })
 
@@ -434,6 +439,43 @@ class CoderUJB(BaseBenchmark):
     }) for row in ds['train']]
 
 
+class TestBench(BaseBenchmark):
+  supported_langs = frozenset({
+      'java',
+  })
+  _data_dir = Path(setting_dict['datasets']['testbench_root'])
+
+  def __init__(self):
+    super().__init__()
+    if not self._data_dir.exists():
+      raise FileNotFoundError(f'Please clone TestBench repo manually from https://github.com/iSEngLab/TestBench and place it to {self._data_dir}.')
+
+  @check_lang_support
+  def load_for_test_generation(self, lang: str) -> Seq[Snippet]:
+    snippets: list[Snippet] = []
+    for file in sorted((self._data_dir / 'source_file_parser').iterdir()):
+      if file.suffix != '.json':
+        continue
+      with open(file, 'r') as f:
+        data = json.load(f)
+      snippets.extend([Snippet(id=self._make_id(row), data={
+          'code': f'public class Dummy {{\n{row["source_code"]}\n}}',
+          'full_context': row['full_context'],
+          'simple_context': row['simple_context'],
+          'project_name': row['project_name'],
+          'package': row['package'],
+          'class_name': row['class_name'],
+          'method_name': row['method_name'],
+          'relative_path': row['relative_path'],
+      }) for row in data])
+    return snippets
+
+  @staticmethod
+  def _make_id(row: dict[str, str]) -> str:
+    id_str = f'{row["project_name"]}:{row["class_name"]}:{row["source_code"]}'
+    return sha1(id_str.encode('utf-8')).hexdigest()
+
+
 def benchmark_factory(dataset: str) -> BaseBenchmark:
   name_to_class = {
       'xcodeeval': XCodeEval,
@@ -442,6 +484,7 @@ def benchmark_factory(dataset: str) -> BaseBenchmark:
       'codemmlu': CodeMMLU,
       'classeval-t': ClassEvalT,
       'coderujb': CoderUJB,
+      'testbench': TestBench,
   }
   dataset = dataset.lower()
   if dataset not in name_to_class:

@@ -1,15 +1,21 @@
 import os
 import re
 import subprocess
+from enum import Enum, auto
 from functools import cache
+from typing import Any
 
 from ..logger import logger
 
 
-class CompilationError(Exception):
-  def __init__(self, message: str, stderr: str = ''):
-    self.stderr = stderr
-    super().__init__(message)
+class Correctness(str, Enum):
+  @staticmethod
+  def _generate_next_value_(name: str, start: int, count: int, last_values: list[Any]) -> Any:
+    return name
+
+  FAIL_COMP = auto()
+  FAIL_EXEC = auto()
+  PASS = auto()
 
 
 PATTERN_JAVA_PUBLIC_CLASS = re.compile(r'public\s+(?:final\s+)?class\s+(\w+)')

@@ -11,7 +11,6 @@ import gc
 import json
 import os
 import random
-import re
 import sys
 import time
 from argparse import ArgumentParser, Namespace
@@ -33,8 +32,9 @@ from stylo_flora import IOTestCase, Snippet
 from stylo_flora.benchmarks import benchmark_factory
 from stylo_flora.inference import agent_factory, task_factory, task_worker
 from stylo_flora.logger import init_logger, logger
-from stylo_flora.metrics import (calc_bertscore, calc_bleu, calc_codebleu,
-                                 calc_coverage, calc_macro_f1, calc_meteor,
+from stylo_flora.metrics import (calc_bertscore, calc_bleu,
+                                 calc_codebleu, calc_coverage,
+                                 calc_coverage_tb, calc_macro_f1, calc_meteor,
                                  calc_rouge, pass_at_1, pass_at_1_classeval,
                                  pass_at_1_ujb)
 from stylo_flora.transformer import transformer_factory
@@ -664,6 +664,44 @@ def evaluate_defect_detection_coderujb() -> None:
     }
 
   snippets = benchmark.load_for_repair(args.src_lang)
+  _evaluate_task_template(snippets, evaluate_metrics)
+
+
+def evaluate_test_generation_testbench() -> None:
+  def evaluate_metrics(
+      res_orig: Seq[str],
+      res_span: Seq[Seq[str]],
+      snippets: Seq[Snippet],
+  ) -> dict[str, Any]:
+    items = [snippet.data for snippet in snippets]
+    result_orig = calc_coverage_tb(res_orig, items, args.src_lang)
+    result_span = [calc_coverage_tb(tests, items, args.src_lang)
+                   for tests in tqdm(zip(*res_span), desc='Evaluating',
+                                     total=len(res_span[0]), leave=False)]
+    comp_span = [result.comp_rate for result in result_span]
+    pass_span = [result.pass_rate for result in result_span]
+    line_cov_span = [result.line_cov for result in result_span]
+    branch_cov_span = [result.branch_cov for result in result_span]
+    mut_score_span = [result.mut_score for result in result_span]
+    return {
+        'comp_orig': result_orig.comp_rate,
+        'comp_span': comp_span,
+        'comp_span_avg': np.mean(comp_span),
+        'pass_orig': result_orig.pass_rate,
+        'pass_span': pass_span,
+        'pass_span_avg': np.mean(pass_span),
+        'line_cov_orig': result_orig.line_cov,
+        'line_cov_span': line_cov_span,
+        'line_cov_span_avg': np.mean(line_cov_span),
+        'branch_cov_orig': result_orig.branch_cov,
+        'branch_cov_span': branch_cov_span,
+        'branch_cov_span_avg': np.mean(branch_cov_span),
+        'mut_score_orig': result_orig.mut_score,
+        'mut_score_span': mut_score_span,
+        'mut_score_span_avg': np.mean(mut_score_span),
+    }
+
+  snippets = benchmark.load_for_test_generation(args.src_lang)
   _evaluate_task_template(snippets, evaluate_metrics)
 
 

@@ -7,6 +7,7 @@ from .io_reasoning import IOReasoning
 from .mcq_answering import MCQAnswering
 from .tag_classification import TagClassification
 from .test_generation import TestGeneration
+from .testbench import TestGenerationTB
 
 __all__ = [
     'BaseTask',
@@ -19,4 +20,5 @@ __all__ = [
     'MCQAnswering',
     'TagClassification',
     'TestGeneration',
+    'TestGenerationTB',
 ]

@@ -2,12 +2,13 @@ datasets:
   xcodeeval_root: data/xCodeEval
   codescope_root: data/CodeScope
   classeval_t_root: data/ClassEval-T
+  testbench_root: data/TestBench
 
 transformer:
   max_workers: 4
 
 agent:
-  max_new_tokens: 32768
+  max_new_tokens: 65536
 
   ######### settings for remote API #########
   timeout: 180
