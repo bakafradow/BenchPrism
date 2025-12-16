@@ -35,7 +35,7 @@ def parse_args() -> Namespace:
                       help='Set the random seed for reproducibility.')
   parser.add_argument('-j', '--job', type=str, required=True,
                       help='Specify the job name returned by the API platform.')
-  parser.add_argument('--retry-interval', type=int, required=False, default=30,
+  parser.add_argument('--retry-interval', type=int, required=False, default=60,
                       help='Specify retry interval (in seconds) in case the job is not ready.')
   args = parser.parse_args()
   eval_id = get_eval_id(args)
