@@ -3,6 +3,7 @@ Modified from CoderUJB repository (https://github.com/ZZR0/CoderUJB).
 """
 
 import os
+import signal
 import subprocess
 import tempfile
 from collections import Counter
@@ -60,20 +61,27 @@ def _validate_all_patches(patch: str, item: dict[str, Any]) -> Correctness:
       logger.verbose(f'{e.__class__.__name__} occurred while compiling on {item["project"]}.')
       return Correctness.FAIL_COMP
 
-    for method in tqdm(item['testmethods'], desc=f'Testing {item["project"]}',
-                       total=len(item['testmethods']), leave=False):
-      cmd_test = ['defects4j', 'test', '-w', tmpdir, '-t', method.strip()]
-      try:
-        completed = subprocess.run(cmd_test, env=_get_d4j_env(), capture_output=True, check=True,
-                                   encoding='utf-8', timeout=setting_dict['agent']['timeout'])
-        if 'Failing tests: 0\n' not in completed.stdout:
+    cmd_test = ['defects4j', 'test', '-w', tmpdir]
+    try:
+      with subprocess.Popen(
+          cmd_test, env=_get_d4j_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+          encoding='utf-8', start_new_session=True,
+      ) as process:
+        try:
+          stdout, stderr = process.communicate(timeout=setting_dict['agent']['timeout'])
+          if process.returncode != 0 or 'Failing tests: 0\n' not in stdout:
+            logger.verbose(f'Failed to test on {item["project"]} {item["bug_id"]}:\n{stderr}')
+            return Correctness.FAIL_EXEC
+        except subprocess.TimeoutExpired:
+          logger.verbose(f'Test timed out on {item["project"]} {item["bug_id"]}.')
+          try:
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+          except ProcessLookupError:
+            pass
           return Correctness.FAIL_EXEC
-      except subprocess.CalledProcessError as e:
-        logger.verbose(f'Failed to test `{method}` on {item["project"]}:\n{e.stderr}')
-        return Correctness.FAIL_COMP
-      except subprocess.TimeoutExpired:
-        logger.verbose(f'Test `{method}` timed out on {item["project"]}.')
-        return Correctness.FAIL_EXEC
+    except Exception as e:
+      logger.verbose(f'Failed to test on {item["project"]} {item["bug_id"]}:\n{str(e)}')
+      return Correctness.FAIL_COMP
     return Correctness.PASS
 
 
