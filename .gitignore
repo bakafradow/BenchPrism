@@ -1,6 +1,5 @@
 # Manually downloaded data
 data/*
-!data/xCodeEval/
 
 # Generated things
 logs/
