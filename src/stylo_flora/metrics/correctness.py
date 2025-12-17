@@ -23,9 +23,9 @@ def pass_at_1(code_list: Seq[str], tc_lists: Seq[Seq[IOTestCase]], lang: str) ->
   tester = getattr(sys.modules[__name__], f'test_io_{lang}', None)
   if not tester:
     raise ValueError(f'Unsupported language: {lang}')
-  counter = Counter(tester(code, tc_list)
-                    for code, tc_list in tqdm(zip(code_list, tc_lists), desc='Calculating Pass@1',
-                                              total=len(code_list), leave=False))
+  with ThreadPoolExecutor(max_workers=setting_dict['metrics']['max_workers']) as executor:
+    counter = Counter(tqdm(executor.map(tester, code_list, tc_lists),
+                           desc='Calculating Pass@1', total=len(code_list), leave=False))
   total = sum(counter.values())
   return CorrectnessResult(
       comp_rate=(total - counter[Correctness.FAIL_COMP]) / total,
@@ -50,7 +50,7 @@ def test_io_java(code: str, tc_list: Seq[IOTestCase]) -> Correctness:
       logger.verbose(f'Failed to compile {f.name}:\n{e.stderr}')
       return Correctness.FAIL_COMP
     cmd = ['java', '-classpath', classdir, classname]
-    return _run_with_io(cmd, tc_list)
+    return _run_with_io(cmd, tc_list, tmpdir)
 
 
 def test_io_cpp(code: str, tc_list: Seq[IOTestCase]) -> Correctness:
@@ -66,7 +66,7 @@ def test_io_cpp(code: str, tc_list: Seq[IOTestCase]) -> Correctness:
       logger.verbose(f'Failed to compile:\n{e.stderr}')
       return Correctness.FAIL_COMP
     cmd = [exe_path]
-    return _run_with_io(cmd, tc_list)
+    return _run_with_io(cmd, tc_list, tmpdir)
 
 
 def test_io_python(code: str, tc_list: Seq[IOTestCase]) -> Correctness:
@@ -80,14 +80,14 @@ def test_io_python(code: str, tc_list: Seq[IOTestCase]) -> Correctness:
     with open(src_path, 'w') as f:
       f.write(code)
     cmd = ['python', src_path]
-    return _run_with_io(cmd, tc_list)
+    return _run_with_io(cmd, tc_list, tmpdir)
 
 
-def _run_with_io(cmd: Seq[str], tc_list: Seq[IOTestCase]) -> Correctness:
+def _run_with_io(cmd: Seq[str], tc_list: Seq[IOTestCase], cwd: str) -> Correctness:
   def worker(test: IOTestCase) -> bool:
     try:
-      completed = subprocess.run(cmd, input=test.input, capture_output=True, encoding='utf-8',
-                                 timeout=setting_dict['metrics']['timeout'])
+      completed = subprocess.run(cmd, cwd=cwd, capture_output=True, encoding='utf-8',
+                                 input=test.input, timeout=setting_dict['metrics']['timeout'])
       if completed.returncode != 0:
         logger.verbose(f'{completed.returncode} was returned.\n'
                        f'Input:\n{test.input.strip()}\n'
@@ -113,6 +113,4 @@ def _run_with_io(cmd: Seq[str], tc_list: Seq[IOTestCase]) -> Correctness:
       return False
     return True
 
-  with ThreadPoolExecutor(max_workers=setting_dict['metrics']['max_workers']) as executor:
-    passed = all(tqdm(executor.map(worker, tc_list), total=len(tc_list), leave=False))
-  return Correctness.PASS if passed else Correctness.FAIL_EXEC
+  return Correctness.PASS if all(map(worker, tc_list)) else Correctness.FAIL_EXEC
