@@ -4,7 +4,6 @@ import tempfile
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from functools import cached_property
 from io import StringIO
 from typing import ParamSpec
 from uuid import uuid4
@@ -96,12 +95,11 @@ def retry(retries: int = 3, interval: float = 30) -> Callable[[Callable[P, str]]
 
 
 class OpenAIAgent(BaseAgent):
-  @cached_property
-  def client(self):
-    client = OpenAI(base_url=os.getenv('BASE_URL'), api_key=os.getenv('API_KEY'))
-    if self.name not in {model.id for model in client.models.list()}:
-      raise TypeError(f'{self.name} is not available from {client.base_url}.')
-    return client
+  def __init__(self, name: str):
+    super().__init__(name)
+    self.client = OpenAI(base_url=os.getenv('BASE_URL'), api_key=os.getenv('API_KEY'))
+    if self.name not in {model.id for model in self.client.models.list()}:
+      raise TypeError(f'{self.name} is not available from {self.client.base_url}.')
 
   @retry(retries=setting_dict['agent']['retries'],
          interval=setting_dict['agent']['retry_interval'])
@@ -111,7 +109,7 @@ class OpenAIAgent(BaseAgent):
       messages += [{'role': 'system', 'content': sys_prompt}]
     completion = self.client.chat.completions.create(
         model=self.name,
-        messages=messages,
+        messages=messages,  # type: ignore[arg-type]
         max_completion_tokens=setting_dict['agent']['max_new_tokens'],
         timeout=setting_dict['agent']['timeout'],
     )
@@ -188,9 +186,9 @@ class OpenAIAgent(BaseAgent):
               continue
         return result
       case 'failed':
-        errors = '\n'.join(f'{error.code}@{error.line}: {error.message}'
-                           for error in batch.errors.data)
-        logger.warning(f'Batch {batch.id} failed. Errors:\n{errors}')
+        details = '\n'.join(f'{error.code}@{error.line}: {error.message}'
+                            for error in batch.errors and batch.errors.data or [])
+        logger.warning(f'Batch {batch.id} failed. Errors:\n{details}')
       case 'cancelled':
         logger.warning(f'Batch {batch.id} canceled.')
       case 'expired':
@@ -202,17 +200,16 @@ class OpenAIAgent(BaseAgent):
 
 
 class GeminiAgent(BaseAgent):
-  @cached_property
-  def client(self):
-    client = genai.Client(
+  def __init__(self, name: str):
+    super().__init__(name)
+    self.client = genai.Client(
         api_key=os.getenv('API_KEY'),
         http_options=gtypes.HttpOptions(
             timeout=setting_dict['agent']['timeout'] * 1000,
         ),
     )
-    if 'models/' + self.name not in {model.name for model in client.models.list()}:
+    if 'models/' + self.name not in {model.name for model in self.client.models.list()}:
       raise TypeError(f'{self.name} is not available from Google API.')
-    return client
 
   @retry(retries=setting_dict['agent']['retries'],
          interval=setting_dict['agent']['retry_interval'])
@@ -298,9 +295,10 @@ class GeminiAgent(BaseAgent):
               continue
         return result
       case gtypes.JobState.JOB_STATE_FAILED:
-        details = '\n'.join(job.error.details)
-        logger.warning(f'Batch job {job.name} failed. {job.error.code}: {job.error.message}\n'
-                    f'Details:\n{details}')
+        if job.error:
+          details = '\n'.join(job.error.details or [])
+          logger.warning(f'Batch job {job.name} failed. {job.error.code}: {job.error.message}\n'
+                         f'Details:\n{details}')
       case gtypes.JobState.JOB_STATE_CANCELLED:
         logger.warning(f'Batch job {job.name} canceled.')
       case _:
@@ -321,21 +319,17 @@ class TimeoutCriteria(StoppingCriteria):
 
 
 class LocalAgent(BaseAgent):
-  @cached_property
-  def tokenizer(self):
+  def __init__(self, name: str):
+    super().__init__(name)
     logger.info(f'Loading tokenizer from {self.name}...')
-    tokenizer = AutoTokenizer.from_pretrained(
+    self.tokenizer = AutoTokenizer.from_pretrained(
         self.name,
         trust_remote_code=True,
     )
-    if not tokenizer.pad_token_id:
-      tokenizer.pad_token_id = tokenizer.eos_token_id
-    return tokenizer
-
-  @cached_property
-  def model(self):
+    if not self.tokenizer.pad_token_id:
+      self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
     logger.info(f'Loading model from {self.name}...')
-    return AutoModelForCausalLM.from_pretrained(
+    self.model = AutoModelForCausalLM.from_pretrained(
         pretrained_model_name_or_path=self.name,
         trust_remote_code=True,
         torch_dtype=torch.bfloat16,

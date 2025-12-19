@@ -48,6 +48,7 @@ module = [
   "datasets",
   "evaluate",
   "google.*",
+  "java.*",
   "javalang",
   "jpype.*",
   "jsonlines",

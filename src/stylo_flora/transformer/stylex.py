@@ -1,4 +1,5 @@
 import atexit
+import gc
 import math
 import os
 import shutil
@@ -33,12 +34,16 @@ from org.example.myException import ApplyException, ExtractException
 from org.example.controller import (Applicator, Extractor, StylerContainer,
                                     TokenAugmentor)
 from org.example import Configuration
+from java.lang import System
 GlobalInfo = jp.JClass('org.example.global.GlobalInfo')  # cannot import directly due to package name
+
 
 def shutdown():
   if jp.isJVMStarted():
     jp.shutdownJVM()
     logger.info('JVM shutdown successfully.')
+
+
 atexit.register(shutdown)
 
 with open('configs/stylex_options.yaml', 'r') as f:
@@ -63,12 +68,19 @@ class StyleX(BaseTransformer):
     self.lock = Lock()
     self.executor = ThreadPoolExecutor(max_workers=setting_dict['transformer']['max_workers'])
 
+    self._count = 0
+
   def transform(
       self,
       snippet: Snippet,
       *,
       seqs_to_skip: set[int] = set(),
   ) -> list[str | None]:
+    self._count += 1
+    if self._count == 50:
+      gc.collect()
+      System.gc()
+
     def worker(seq_idx: int, styler_container: jp.JObject) -> str | None:
       if seq_idx in seqs_to_skip:
         return None
@@ -90,9 +102,8 @@ class StyleX(BaseTransformer):
       logger.debug(f'Successfully transformed snippet {snippet.id}.')
       return variant
 
-    variants = list(tqdm(self.executor.map(worker, range(len(self.seqs)), self.styler_containers),
-                        desc=f'Spanning {snippet.id}', total=len(self.seqs), leave=False))
-    return variants
+    return list(tqdm(self.executor.map(worker, range(len(self.seqs)), self.styler_containers),
+                     desc=f'Spanning {snippet.id}', total=len(self.seqs), leave=False))
 
   def is_processable(self, snippet: Snippet) -> bool:
     parser = MyParserFactory.createParser(self.lang)
