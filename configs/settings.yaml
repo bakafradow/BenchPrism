@@ -2,6 +2,7 @@ datasets:
   xcodeeval_root: data/xCodeEval
   codescope_root: data/CodeScope
   classeval_t_root: data/ClassEval-T
+  coderujb_root: data/CoderUJB
   testbench_root: data/TestBench
 
 transformer:

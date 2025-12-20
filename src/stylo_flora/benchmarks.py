@@ -406,6 +406,7 @@ class CoderUJB(BaseBenchmark):
   supported_langs = frozenset({
       'java',
   })
+  _data_dir = Path(setting_dict['datasets']['coderujb_root'])
 
   @staticmethod
   def _extract_prefix(prompt: str) -> str:
@@ -433,15 +434,17 @@ class CoderUJB(BaseBenchmark):
   @check_lang_support
   def load_for_defect_detection(self, lang: str) -> Seq[Snippet]:
     """
-    :Note: In the HF dataset, `prompt_chat` field stands for FS0 prompt without program context.
+    :Note: In the HF dataset, `prompt_chat` field stands for FS0 prompt without program context. Thus we use manually constructed dataset instead.
     """
-    ds = load_dataset('ZHENGRAN/code_ujb_defectdetection', trust_remote_code=True)
+    with open(self._data_dir / 'datasets' / 'data' /
+              'task_defectdetection_bench_1111|2048.json', 'r') as f:
+      ds = json.load(f)
     return [Snippet(id=row['task_id'], data={
         'code': f'public class Dummy {{\n{row["code"]}\n}}',
         'prompt_prefix': self._extract_prefix(row['prompt_chat']),
         'function_signature': row['function_signature'],
         'defective': row['defective'],
-    }) for row in ds['train']]
+    }) for row in ds['code_ujb_defectdetection']]
 
 
 class TestBench(BaseBenchmark):
