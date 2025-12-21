@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from tqdm import tqdm
 
-from .. import setting_dict
+from .. import Snippet, setting_dict
 from ..logger import logger
 from . import utils
 from .utils import Correctness
@@ -37,6 +37,48 @@ class CorrectnessResultCET(NamedTuple):
 
 PATTERN_MAVEN_TEST = re.compile(r'@Test')
 PATTERN_MAVEN_STAT = re.compile(r'Tests run: (\d+), Failures: (\d+), Errors: (\d+)')
+
+
+def checker_classeval(snippet: Snippet, lang: str) -> bool:
+  result = pass_at_1_classeval([snippet.data['code']], [snippet.data[f'test_{lang}']], lang)
+  return bool(result.pass_rate_class)
+
+
+def pass_at_1_classeval(
+    code_list: Seq[str],
+    test_list: Seq[str],
+    lang: str
+) -> CorrectnessResultCET:
+  initializer = getattr(sys.modules[__name__], f'initialize_{lang}', None)
+  if initializer:
+    initializer()
+  tester = getattr(sys.modules[__name__], f'test_classeval_{lang}', None)
+  if not tester:
+    raise ValueError(f'Unsupported language: {lang}')
+  with ThreadPoolExecutor(max_workers=setting_dict['metrics']['max_workers']) as executor:
+    tuples = list(tqdm(executor.map(tester, code_list, test_list), desc='Calculating Pass@1',
+                       total=len(code_list), leave=False))
+  counter = Counter([t.corr for t in tuples])
+  total = sum(counter.values())
+  return CorrectnessResultCET(
+      comp_rate=(total - counter[Correctness.FAIL_COMP]) / total,
+      pass_rate_method=sum([t.passed for t in tuples]) / sum([t.total for t in tuples]),
+      pass_rate_class=counter[Correctness.PASS] / total,
+  )
+
+
+@cache
+def initialize_cpp() -> None:
+  logger.info('Initializing C++ testing environment for ClassEval-T.')
+  with open(f'{utils.get_msys_tmpdir()}/common.h', 'w') as f:
+    f.write('#include <bits/stdc++.h>\n#include <sqlite3.h>\n')
+  cmd_pch = ['g++', '-std=c++20', '-x', 'c++-header', f'{utils.get_msys_tmpdir()}/common.h',
+             '-o', f'{utils.get_msys_tmpdir()}/common.h.pch']
+  try:
+    subprocess.run(cmd_pch, cwd=utils.get_msys_tmpdir_abs(), capture_output=True, check=True,
+                   encoding='utf-8', errors='replace')
+  except subprocess.CalledProcessError as e:
+    raise ValueError(f'Failed to compile common.h:\n{e.stderr}')
 
 
 def test_classeval_java(code: str, test: str) -> CorrectnessCET:
@@ -209,40 +251,3 @@ def test_classeval_python(code: str, test: str) -> CorrectnessCET:
   errors = int(matched_error.group(1)) if matched_error else 0
   passed = total - fails - errors
   return CorrectnessCET(Correctness.FAIL_EXEC, passed, total)
-
-
-@cache
-def initialize_cpp() -> None:
-  logger.info('Initializing C++ testing environment for ClassEval-T.')
-  with open(f'{utils.get_msys_tmpdir()}/common.h', 'w') as f:
-    f.write('#include <bits/stdc++.h>\n#include <sqlite3.h>\n')
-  cmd_pch = ['g++', '-std=c++20', '-x', 'c++-header', f'{utils.get_msys_tmpdir()}/common.h',
-             '-o', f'{utils.get_msys_tmpdir()}/common.h.pch']
-  try:
-    subprocess.run(cmd_pch, cwd=utils.get_msys_tmpdir_abs(), capture_output=True, check=True,
-                   encoding='utf-8', errors='replace')
-  except subprocess.CalledProcessError as e:
-    raise ValueError(f'Failed to compile common.h:\n{e.stderr}')
-
-
-def pass_at_1_classeval(
-    code_list: Seq[str],
-    test_list: Seq[str],
-    lang: str
-) -> CorrectnessResultCET:
-  initializer = getattr(sys.modules[__name__], f'initialize_{lang}', None)
-  if initializer:
-    initializer()
-  tester = getattr(sys.modules[__name__], f'test_classeval_{lang}', None)
-  if not tester:
-    raise ValueError(f'Unsupported language: {lang}')
-  with ThreadPoolExecutor(max_workers=setting_dict['metrics']['max_workers']) as executor:
-    tuples = list(tqdm(executor.map(tester, code_list, test_list), desc='Calculating Pass@1',
-                       total=len(code_list), leave=False))
-  counter = Counter([t.corr for t in tuples])
-  total = sum(counter.values())
-  return CorrectnessResultCET(
-      comp_rate=(total - counter[Correctness.FAIL_COMP]) / total,
-      pass_rate_method=sum([t.passed for t in tuples]) / sum([t.total for t in tuples]),
-      pass_rate_class=counter[Correctness.PASS] / total,
-  )

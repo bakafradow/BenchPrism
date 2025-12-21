@@ -14,7 +14,7 @@ from typing import Any, NamedTuple
 import numpy as np
 from tqdm import tqdm
 
-from .. import setting_dict
+from .. import Snippet, setting_dict
 from ..logger import logger
 from .utils import Correctness, extract_classname_java
 
@@ -27,6 +27,80 @@ class CoverageResultTB(NamedTuple):
   line_cov: float
   branch_cov: float
   mut_score: float
+
+
+PATTERN_FUNC = re.compile(r'class\s+[\w\$]+[^\{]+\{\n(.+)\n\}', re.S)
+PATTERN_MAVEN_STAT = re.compile(r'Tests run: (\d+), Failures: (\d+), Errors: (\d+)')
+
+
+def checker_testbench(snippet: Snippet, lang: str) -> bool:
+  item = snippet.data
+  identifier = f'{item["class_name"]}::{item["method_name"]}'
+  proj_root = PROJ_PATH / item['project_name']
+  test_dir = PROJ_PATH / item['relative_path'].replace('main', 'test').rsplit('/', 1)[0]
+
+  matched = PATTERN_FUNC.search(item['code'])
+  if not matched:
+    logger.warning(f'Failed to unwrap function while checking {snippet.id}.')
+    return False
+  variant_code = matched.group(1)
+  variant_src = _replace_code(item['full_context'], item['source_code'], variant_code)
+  if not variant_src:
+    logger.warning(f'Failed to replace function while checking {snippet.id}.')
+    return False
+  src_path = PROJ_PATH / item['relative_path']
+  _clean_repo(proj_root)
+  with open(src_path, 'w') as f:
+    f.write(variant_src)
+
+  try:
+    mvn_prefix = ['mvn', '-B', '-Dmaven.compiler.showWarnings=false']
+    submodule = _get_submodule(item['relative_path'])
+    if submodule:
+      mvn_prefix += ['-pl', submodule, '-am']  # avoid building unnecessary modules
+    test_pattern = str(test_dir).split('src/test/java/', 1)[-1].rstrip('/').replace('/', '.') + '.**'
+    cmd_test = mvn_prefix + ['clean', 'test', '-DskipPitest=True',
+                             '-Dsurefire.failIfNoSpecifiedTests=false',
+                             '-Dcheckstyle.skip', f'-Dtest={test_pattern}']
+    try:
+      completed = subprocess.run(cmd_test, cwd=proj_root, capture_output=True, check=True,
+                                 encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
+      matched = PATTERN_MAVEN_STAT.search(completed.stdout)
+      if not matched:
+        logger.verbose(f'{identifier} has no test result. Skipping.')
+        return True
+      fails = int(matched.group(2))
+      errors = int(matched.group(3))
+      if fails or errors:
+        logger.verbose(f'Test of {identifier} has {fails} fails, {errors} errors.')
+        return False
+    except subprocess.CalledProcessError as e:
+      logger.verbose(f'Test of {identifier} failed.\n{e.stdout}')
+      return False
+    except subprocess.TimeoutExpired:
+      logger.verbose(f'Test of {identifier} timed out.')
+      return False
+  finally:
+    with open(src_path, 'w') as f:
+      f.write(item['full_context'])  # revert to original source code
+  return True
+
+
+def _replace_code(full_context: str, source_code: str, variant_code: str) -> str | None:
+  ctx_lines = full_context.splitlines(keepends=True)
+  src_lines = source_code.strip().splitlines()
+
+  start_idx = next(i for i in range(len(ctx_lines))
+                   if ctx_lines[i].strip() == src_lines[0].strip() and
+                   ctx_lines[i + 1].strip() == src_lines[1].strip())
+  end_idx = start_idx + len(src_lines)
+
+  first_line = ctx_lines[start_idx]
+  indent = first_line[:first_line.find(src_lines[0].strip())]
+
+  variant_lines = [indent + line + '\n' if line.strip() else '\n'
+                   for line in variant_code.splitlines()]
+  return ''.join(ctx_lines[:start_idx] + variant_lines + ctx_lines[end_idx:])
 
 
 def calc_coverage_tb(tests: Seq[str], items: Seq[dict[str, Any]], lang: str) -> CoverageResultTB:
@@ -46,26 +120,24 @@ def calc_coverage_tb(tests: Seq[str], items: Seq[dict[str, Any]], lang: str) -> 
   )
 
 
-PATTERN_MAVEN_STAT = re.compile(r'Tests run: (\d+), Failures: (\d+), Errors: (\d+)')
-
-
 def _worker(test: str, item: dict[str, Any]) -> dict[str, Any]:
   result: dict[str, Any] = {'correctness': Correctness.FAIL_COMP}
   identifier = f'{item["class_name"]}::{item["method_name"]}'
   proj_root = PROJ_PATH / item['project_name']
   test_dir = PROJ_PATH / item['relative_path'].replace('main', 'test').rsplit('/', 1)[0]
-  test_dir.mkdir(parents=True, exist_ok=True)
   classname = extract_classname_java(test)
   if not classname:
     logger.verbose(f'Failed to extract class name for {identifier} test.')
     return result
 
   _clean_repo(proj_root)
+  test_dir.mkdir(parents=True, exist_ok=True)
   with open(test_dir / f'{classname}.java', 'w') as f:
     f.write(test)
+
   mvn_prefix = ['mvn', '-B', '-Dmaven.compiler.showWarnings=false']
-  if matched := re.match(r'^[\w-]+/(.+)/src', item['relative_path']):
-    submodule = matched.group(1)
+  submodule = _get_submodule(item['relative_path'])
+  if submodule:
     mvn_prefix += ['-pl', submodule, '-am']  # avoid building unnecessary modules
   else:
     submodule = ''
@@ -82,7 +154,7 @@ def _worker(test: str, item: dict[str, Any]) -> dict[str, Any]:
     return result
   result['correctness'] = Correctness.FAIL_EXEC
 
-  cmd_test = mvn_prefix + ['clean', 'test', '-DskipPitest=True',
+  cmd_test = mvn_prefix + ['clean', 'test', '-DskipPitest=True', '-Drat.skip=true',
                            '-Dsurefire.failIfNoSpecifiedTests=false',
                            '-Dcheckstyle.skip', f'-Dtest={classname}']
   try:
@@ -152,6 +224,12 @@ def _clean_repo(proj_root: os.PathLike) -> None:
         subprocess.run(cmd_clean, cwd=proj_root, capture_output=True, check=True, encoding='utf-8')
       except subprocess.CalledProcessError as e:
         logger.warning(f'Failed to clean {path}:\n{e.stderr}')
+
+
+def _get_submodule(relative_path: str) -> str:
+  if matched := re.match(r'^[\w-]+/(.+)/src', relative_path):
+    return matched.group(1)
+  return ''
 
 
 def _extract_coverage(report_path: str, item: dict[str, Any]) -> tuple[float | None, float | None]:

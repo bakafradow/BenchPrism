@@ -69,9 +69,11 @@ To evaluate code repair tasks, `defects4j` environment is required. See README i
 
 #### TestBench
 
-The dataset can be cloned from https://github.com/iSEngLab/TestBench with Java projects downloaded from the link in the README.
+The dataset can be cloned from https://github.com/iSEngLab/TestBench; the `java_project` directory can be downloaded from the link in TestBench README and should be placed to `${testbench_root}/java_project`.
 
 To evaluate model generated unit tests, `jacoco` tool and `pitest` tool are required. The JAR paths of `jacocoagent.jar`, `jacococli.jar` and `pitest.jar` should be added to `CLASSPATH` environment variable.
+
+Note that the evaluated repositories are unique so that any concurrency should be avoided. Due to Maven environment problems, especially those related to versions of dependencies such as `junit-jupiter-api` and `junit-jupiter-engine`, the `pom.xml` files in the repositories may need manual adjustment. JDK 17 is recommended for minimal adjustments.
 
 ### Styler
 

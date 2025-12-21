@@ -10,7 +10,7 @@ import jsonlines
 from datasets import load_dataset
 
 from . import IOTestCase, Snippet, setting_dict
-from .metrics import pass_at_1, pass_at_1_classeval
+from .metrics import checker_classeval, checker_io, checker_testbench
 
 
 def check_lang_support(func: Callable) -> Callable:
@@ -19,16 +19,6 @@ def check_lang_support(func: Callable) -> Callable:
       raise TypeError(f'{lang} is not supported in current benchmark. Supported languages: {self.supported_langs}')
     return func(self, lang, *args, **kwargs)
   return wrapper
-
-
-def _checker_io(snippet: Snippet, lang: str) -> bool:
-  result = pass_at_1([snippet.data['code']], [snippet.data['io_tests']], lang=lang)
-  return bool(result.pass_rate)
-
-
-def _checker_classeval(snippet: Snippet, lang: str) -> bool:
-  result = pass_at_1_classeval([snippet.data['code']], [snippet.data[f'test_{lang}']], lang)
-  return bool(result.pass_rate_class)
 
 
 class BaseBenchmark(ABC):
@@ -148,7 +138,7 @@ class XCodeEval(BaseBenchmark):
     return [Snippet(id=code_uid, data={
         'code': source,
         'io_tests': testcase,
-        'checker': _checker_io,
+        'checker': checker_io,
     }) for code_uid, source, testcase in zip(code_uids, sources, testcases)]
 
   def load_for_repair(self, lang):
@@ -239,7 +229,7 @@ class CodeScope(BaseBenchmark):
     return [Snippet(id=row['src_uid'], data={
         'code': row['source_code'],
         'io_tests': self._normalize_test(row['testcases']),
-        'checker': _checker_io,
+        'checker': checker_io,
     }) for row in ds['train']]
 
   @check_lang_support
@@ -269,7 +259,7 @@ class CodeScope(BaseBenchmark):
         'sample_outputs': row['sample_outputs'],
         'notes': row['notes'],
         'io_tests': self._normalize_test(row['human_testcases']),  # used by the checker
-        'checker': _checker_io,
+        'checker': checker_io,
     }) for row in ds['train']]
 
   @check_lang_support
@@ -333,7 +323,7 @@ class CruxEvalX(BaseBenchmark):
         'input_reasoning': row['input_reasoning'],
         'output_reasoning': row['output_reasoning'],
         'io_tests': [IOTestCase(input='', outputs=[''])],  # tests by assertion
-        'checker': _checker_io,
+        'checker': checker_io,
     }) for row in ds[self._lang_to_name[lang]]]
 
 
@@ -369,7 +359,7 @@ class ClassEvalT(BaseBenchmark):
         'code': file.read_text(),
         f'test_{src_lang}': self._load_test(file.stem, src_lang),
         f'test_{dst_lang}': self._load_test(file.stem, dst_lang),
-        'checker': _checker_classeval,
+        'checker': checker_classeval,
     }) for file in sorted(src_dir.iterdir())
         if file.is_file() and file.suffix == f'.{self.lang_to_name[src_lang]}']
 
@@ -475,6 +465,8 @@ class TestBench(BaseBenchmark):
           'class_name': row['class_name'],
           'method_name': row['method_name'],
           'relative_path': row['relative_path'],
+          'checker': checker_testbench,
+          'source_code': row['source_code'],  # redundant for checker
       }) for row in data])
     return snippets
 

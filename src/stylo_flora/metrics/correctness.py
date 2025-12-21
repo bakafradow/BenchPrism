@@ -9,7 +9,7 @@ from typing import NamedTuple
 
 from tqdm import tqdm
 
-from .. import IOTestCase, setting_dict
+from .. import IOTestCase, Snippet, setting_dict
 from ..logger import logger
 from .utils import Correctness, extract_classname_java
 
@@ -17,6 +17,11 @@ from .utils import Correctness, extract_classname_java
 class CorrectnessResult(NamedTuple):
   comp_rate: float
   pass_rate: float
+
+
+def checker_io(snippet: Snippet, lang: str) -> bool:
+  result = pass_at_1([snippet.data['code']], [snippet.data['io_tests']], lang=lang)
+  return bool(result.pass_rate)
 
 
 def pass_at_1(code_list: Seq[str], tc_lists: Seq[Seq[IOTestCase]], lang: str) -> CorrectnessResult:
