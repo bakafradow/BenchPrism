@@ -12,7 +12,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from scripts.stylex.utils import find_seq, span_single, stylex
+from scripts.dev.stylex.utils import find_seq, span_single, stylex
 
 
 def reduce_seq(lang: str, snippet: str, seq: list[int]) -> None:

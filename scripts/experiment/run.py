@@ -412,6 +412,9 @@ def _evaluate_task_template(
   assert all(res_orig_filtered)
   assert all(res for responses in res_span_to_eval for res in responses)
 
+  if not res_orig_filtered:
+    logger.warning('No valid responses to evaluate.')
+    return
   logger.info('Calculating metrics for the responses...')
   num_styles = len(corpus[0]) if corpus else 0
   result = metrics_evaluator(res_orig_filtered, res_span_to_eval, snippets_filtered)
