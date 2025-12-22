@@ -5,7 +5,7 @@ import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from io import StringIO
-from typing import ParamSpec
+from typing import ParamSpec, cast
 from uuid import uuid4
 
 import jsonlines
@@ -16,6 +16,8 @@ from openai import OpenAI  # type: ignore[attr-defined]
 from requests.exceptions import Timeout
 from transformers import (AutoModelForCausalLM, AutoTokenizer,
                           GenerationConfig, StoppingCriteria)
+from zai import ZhipuAiClient
+from zai.types.chat import Completion
 
 from .. import setting_dict
 from ..logger import logger
@@ -305,6 +307,31 @@ class GeminiAgent(BaseAgent):
         logger.info(f'Batch job {job.name} not completed yet. State: {job.state}')
         return None
     return {}
+
+
+class ZhipuAgent(BaseAgent):
+  def __init__(self, name: str):
+    super().__init__(name)
+    self.client = ZhipuAiClient(
+        base_url=os.getenv('BASE_URL'),
+        api_key=os.getenv('API_KEY'),
+    )
+
+  @retry(retries=setting_dict['agent']['retries'],
+         interval=setting_dict['agent']['retry_interval'])
+  def generate(self, sys_prompt: str, user_prompt: str) -> str:
+    messages = [{'role': 'user', 'content': user_prompt}]
+    if sys_prompt:
+      messages += [{'role': 'system', 'content': sys_prompt}]
+    completion = self.client.chat.completions.create(
+        model=self.name,
+        messages=messages,  # type: ignore[arg-type]
+    )
+    completion = cast(Completion, completion)
+    if completion.usage:
+      self.token_count += completion.usage.total_tokens
+    time.sleep(setting_dict['agent']['sleep'])
+    return completion.choices[0].message.content or ''
 
 
 class TimeoutCriteria(StoppingCriteria):

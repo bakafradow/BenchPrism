@@ -5,7 +5,7 @@ import torch
 
 from .. import Snippet
 from ..logger import logger
-from .agents import BaseAgent, GeminiAgent, LocalAgent, OpenAIAgent
+from .agents import BaseAgent, GeminiAgent, LocalAgent, OpenAIAgent, ZhipuAgent
 from .tasks import (BaseTask, CodeRepair, CodeRepairUJB, CodeSummarization,
                     CodeTranslation, DefectDetectionUJB, IOReasoning,
                     MCQAnswering, TagClassification, TestGeneration,
@@ -50,6 +50,8 @@ def agent_factory(name: str) -> BaseAgent:
       return OpenAIAgent(model)
     case 'gemini':
       return GeminiAgent(model)
+    case 'zhipu':
+      return ZhipuAgent(model)
     case _:
       raise ValueError(f'Unsupported platform {platform}.')
 

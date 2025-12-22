@@ -59,7 +59,7 @@ def parse_args() -> Namespace:
   parser.add_argument('-d', '--dataset', type=str, required=True,
                       help='Specify one dataset to evaluate.')
   parser.add_argument('-m', '--model', type=str, required=True,
-                      help='Specify the model to use. For proprietary models, API platform should be specified; for open source model, HF/local path should be provided. Format: <openai|gemini>:model_name|model_path')
+                      help='Specify the model to use. For proprietary models, API platform should be specified; for open source model, HF/local path should be provided. Format: <openai|gemini|zhipu>:model_name|model_path')
   parser.add_argument('-t', '--task', type=str, required=True,
                       choices=SUPPORTED_TASKS,
                       help='Specify the code task to evaluate on.')
