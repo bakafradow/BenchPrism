@@ -34,15 +34,17 @@ class CorrectnessResultCET(NamedTuple):
   pass_rate_class: float
 
 
+PATTERN_MAVEN_TEST = re.compile(r'@Test')
 PATTERN_MAVEN_STAT = re.compile(r'Tests run: (\d+), Failures: (\d+), Errors: (\d+)')
 
 
 def test_classeval_java(code: str, test: str) -> CorrectnessCET:
   classname = utils.extract_classname_java(code)
+  total = len(PATTERN_MAVEN_TEST.findall(test))
   test_classes = utils.PATTERN_JAVA_CLASS.findall(test)
   if not test_classes:
     logger.verbose('No test classes found in the test code.')
-    return CorrectnessCET()
+    return CorrectnessCET(total=total)
   with tempfile.TemporaryDirectory(dir=utils.get_windows_tmpdir()) as tmpdir:
     shutil.copy(POM_PATH, f'{tmpdir}/pom.xml')
     os.makedirs(f'{tmpdir}/src/main/java', exist_ok=True)
@@ -58,7 +60,7 @@ def test_classeval_java(code: str, test: str) -> CorrectnessCET:
                      encoding='gbk', errors='replace')
     except subprocess.CalledProcessError as e:
       logger.verbose(f'Failed to compile {classname}:\n{e.stderr}')
-      return CorrectnessCET()
+      return CorrectnessCET(total=total)
     cmd_test = ['cmd.exe', '/c', 'mvn.cmd', 'test', f'-Dtest={",".join(test_classes)}']
     try:
       completed = subprocess.run(cmd_test, cwd=tmpdir, capture_output=True, check=True,
@@ -74,8 +76,7 @@ def test_classeval_java(code: str, test: str) -> CorrectnessCET:
   matched = PATTERN_MAVEN_STAT.search(stdout)
   if not matched:
     logger.warning(f'Failed to parse test result for {classname}.')
-    return CorrectnessCET(Correctness.FAIL_EXEC)
-  total = int(matched.group(1))
+    return CorrectnessCET(Correctness.FAIL_EXEC, total=total)
   fails = int(matched.group(2))
   errors = int(matched.group(3))
   passed = total - fails - errors
@@ -83,6 +84,7 @@ def test_classeval_java(code: str, test: str) -> CorrectnessCET:
   return CorrectnessCET(corr, passed, total)
 
 
+PATTERN_GTEST_TEST = re.compile(r'TEST(?:_F)?\s*\(')
 PATTERN_GTEST_TOTAL = re.compile(r'\[={10}\] (\d+) tests? from')
 PATTERN_GTEST_PASS = re.compile(r'\[ {2}PASSED {2}\] (\d+) tests?')
 
@@ -95,6 +97,7 @@ def test_classeval_cpp(code: str, test: str) -> CorrectnessCET:
       test = test.replace('#include "pch.h"', '# include "pch.h"\nusing namespace org::example;')
     with open(f'{tmpdir}/test.cpp', 'w') as f:
       f.write(test)
+    total = len(PATTERN_GTEST_TEST.findall(test))
     tmpdir_rel = os.path.relpath(tmpdir, utils.get_msys_root())
     cmd_compile = ['g++', f'/{tmpdir_rel}/test.cpp', '-o', f'/{tmpdir_rel}/test.exe',
                    '-std=c++20', '-fuse-ld=lld',  # lld is slightly faster than default ld
@@ -106,7 +109,7 @@ def test_classeval_cpp(code: str, test: str) -> CorrectnessCET:
                      encoding='utf-8', errors='replace')
     except subprocess.CalledProcessError as e:
       logger.verbose(f'Compilation Error:\n{e.stderr}')
-      return CorrectnessCET()
+      return CorrectnessCET(total=total)
     cmd_exe = [f'/{tmpdir_rel}/test.exe']
     try:
       completed = utils.run_msys(cmd_exe, cwd=tmpdir, capture_output=True, check=True,
@@ -122,7 +125,7 @@ def test_classeval_cpp(code: str, test: str) -> CorrectnessCET:
   matched_total = PATTERN_GTEST_TOTAL.search(stdout)
   if not matched_total:
     logger.warning('Failed to parse test result.')
-    return CorrectnessCET(Correctness.FAIL_EXEC)
+    return CorrectnessCET(Correctness.FAIL_EXEC, total=total)
   total = int(matched_total.group(1))
   matched_pass = PATTERN_GTEST_PASS.search(stdout)
   passed = int(matched_pass.group(1)) if matched_pass else 0
@@ -130,6 +133,7 @@ def test_classeval_cpp(code: str, test: str) -> CorrectnessCET:
   return CorrectnessCET(corr, passed, total)
 
 
+PATTERN_UNITTEST_TEST = re.compile(r'^\s*def\s+test', re.M)
 PATTERN_UNITTEST_TOTAL = re.compile(r'Ran (\d+) tests?')
 PATTERN_UNITTEST_FAIL = re.compile(r'failures=(\d+)')
 PATTERN_UNITTEST_ERROR = re.compile(r'errors=(\d+)')
@@ -145,10 +149,16 @@ def test_classeval_python(code: str, test: str) -> CorrectnessCET:
   - python~=3.10
   - scipy~=1.8.1
   """
+  total = len(PATTERN_UNITTEST_TEST.findall(test))
+  try:
+    compile(code, '<string>', 'exec')
+  except SyntaxError as e:
+    logger.verbose(f'Syntax error:\n{e.msg}')
+    return CorrectnessCET(total=total)
   matched = utils.PATTERN_PYTHON_CLASS.search(code)
   if not matched:
     logger.verbose('Class name not found.')
-    return CorrectnessCET()
+    return CorrectnessCET(total=total)
   module_name = matched.group(1)
   with tempfile.TemporaryDirectory(dir=utils.get_msys_tmpdir_abs()) as tmpdir:
     path = os.path.join(tmpdir, f'{module_name}.py')
@@ -170,7 +180,7 @@ def test_classeval_python(code: str, test: str) -> CorrectnessCET:
   matched_total = PATTERN_UNITTEST_TOTAL.search(stderr)
   if not matched_total:
     logger.warning(f'Failed to parse test result for {module_name}.')
-    return CorrectnessCET()
+    return CorrectnessCET(total=total)
   total = int(matched_total.group(1))
   if 'OK' in stderr:
     return CorrectnessCET(Correctness.PASS, total, total)
