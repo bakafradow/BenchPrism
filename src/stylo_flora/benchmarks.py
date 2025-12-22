@@ -439,7 +439,7 @@ class CoderUJB(BaseBenchmark):
     with open(self._data_dir / 'datasets' / 'data' /
               'task_defectdetection_bench_1111|2048.json', 'r') as f:
       ds = json.load(f)
-    return [Snippet(id=row['task_id'], data={
+    return [Snippet(id=f'{row["task_id"]}-{row["bug_id"]}', data={
         'code': f'public class Dummy {{\n{row["code"]}\n}}',
         'prompt_prefix': self._extract_prefix(row['prompt_chat']),
         'function_signature': row['function_signature'],
