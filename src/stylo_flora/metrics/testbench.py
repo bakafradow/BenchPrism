@@ -41,9 +41,9 @@ def calc_coverage_tb(tests: Seq[str], items: Seq[dict[str, Any]], lang: str) -> 
   return CoverageResultTB(
       comp_rate=(total - counter[Correctness.FAIL_COMP]) / total,
       pass_rate=counter[Correctness.PASS] / total,
-      line_cov=np.mean([d['line_cov'] for d in dicts if d.get('line_cov')]),
-      branch_cov=np.mean([d['branch_cov'] for d in dicts if d.get('branch_cov')]),
-      mut_score=np.mean([d['mut_score'] for d in dicts if d.get('mut_score')]),
+      line_cov=np.mean([d.get('line_cov') or 0 for d in dicts]),
+      branch_cov=np.mean([d.get('branch_cov') or 0 for d in dicts]),
+      mut_score=np.mean([d.get('mut_score') or 0 for d in dicts]),
   )
 
 
@@ -56,10 +56,16 @@ def _worker(test: str, item: dict[str, Any]) -> dict[str, Any]:
   if not classname:
     logger.verbose(f'Failed to extract class name for {identifier} test.')
     return result
+
+  cmd_clean = ['git', 'clean', '-f', test_dir]
+  try:
+    subprocess.run(cmd_clean, capture_output=True, check=True, encoding='utf-8')
+  except subprocess.CalledProcessError as e:
+    logger.warning(f'Failed to clean up test directory for {identifier}:\n{e.stderr}')
   with open(test_dir / f'{classname}.java', 'w') as f:
     f.write(test)
-  proj_root = PROJ_PATH / item['project_name']
 
+  proj_root = PROJ_PATH / item['project_name']
   mvn_prefix = ['mvn']
   if matched := re.match(r'^[\w-]+/(.+)/src', item['relative_path']):
     submodule = matched.group(1)
@@ -69,10 +75,10 @@ def _worker(test: str, item: dict[str, Any]) -> dict[str, Any]:
   cmd_compile = mvn_prefix + ['test-compile', '-Drat.skip=true',
                               '-Dsurefire.failIfNoSpecifiedTests=false', '-Dcheckstyle.skip']
   try:
-    completed = subprocess.run(cmd_compile, cwd=proj_root, capture_output=True, check=True,
-                               encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
+    subprocess.run(cmd_compile, cwd=proj_root, capture_output=True, check=True,
+                   encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
   except subprocess.CalledProcessError as e:
-    logger.verbose(f'Failed to compile {identifier}\n{e.stderr}')
+    logger.verbose(f'Failed to compile {identifier}\n{e.stdout}')
     return result
   except subprocess.TimeoutExpired:
     logger.verbose(f'Compilation of {identifier} timed out.')
@@ -85,14 +91,14 @@ def _worker(test: str, item: dict[str, Any]) -> dict[str, Any]:
     subprocess.run(cmd_test, cwd=proj_root, capture_output=True, check=True,
                    encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
   except subprocess.CalledProcessError as e:
-    logger.verbose(f'Failed to test {identifier}:\n{e.stderr}')
+    logger.verbose(f'Failed to test {identifier}:\n{e.stdout}')
     return result
   except subprocess.TimeoutExpired:
     logger.verbose(f'Test of {identifier} timed out.')
     return result
   report_path = os.path.join(proj_root, submodule, 'target/site/jacoco/jacoco.xml')
   if not os.path.exists(report_path):
-    logger.verbose(f'Failed to find coverage report for {identifier}.')
+    logger.warning(f'Failed to find coverage report for {identifier}.')
     return result
   result['correctness'] = Correctness.PASS
   result['line_cov'], result['branch_cov'] = _extract_coverage(report_path, item)
@@ -100,13 +106,13 @@ def _worker(test: str, item: dict[str, Any]) -> dict[str, Any]:
   cmd_mutate = mvn_prefix + ['test-compile', 'org.pitest:pitest-maven:mutationCoverage',
                              '-Drat.skip=true', '-Dsurefire.failIfNoSpecifiedTests=false',
                              '-Dcheckstyle.skip',
-                             f'-DtargetClasses="{item["package"]}.{item["class_name"]}"',
-                             f'-DtargetTests="{item["package"]}.{classname}"']
+                             f'-DtargetClasses={item["package"]}.{item["class_name"]}',
+                             f'-DtargetTests={item["package"]}.{classname}']
   try:
-    subprocess.run(cmd_mutate, cwd=proj_root, capture_output=True, check=True,
-                   encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
+    completed = subprocess.run(cmd_mutate, cwd=proj_root, capture_output=True, check=True,
+                               encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
   except subprocess.CalledProcessError as e:
-    logger.verbose(f'Failed to run mutation test on {identifier}:\n{e.stderr}')
+    logger.verbose(f'Failed to run mutation test on {identifier}:\n{e.stdout}')
     return result
   except subprocess.TimeoutExpired:
     logger.verbose(f'Mutation test of {identifier} timed out.')
@@ -116,7 +122,11 @@ def _worker(test: str, item: dict[str, Any]) -> dict[str, Any]:
 
 
 def _extract_coverage(report_path: str, item: dict[str, Any]) -> tuple[float | None, float | None]:
-  tree = ET.parse(report_path)
+  try:
+    tree = ET.parse(report_path)
+  except ET.ParseError as e:
+    logger.warning(f'Failed to parse coverage report:\n{e}')
+    return None, None
   root = tree.getroot()
   try:
     package = next(p for p in root.findall(".//package")
@@ -136,6 +146,7 @@ def _extract_coverage(report_path: str, item: dict[str, Any]) -> tuple[float | N
     return (line_cov / line_cnt if line_cnt else .0,
             branch_cov / branch_cnt if branch_cnt else .0)
   except StopIteration:
+    logger.verbose(f'Failed to find coverage info for {item["class_name"]}::{item["method_name"]}.')
     return None, None
 
 
