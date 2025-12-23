@@ -528,17 +528,19 @@ def evaluate_test_generation() -> None:
   def load_snippets(benchmark: BaseBenchmark) -> Seq[Snippet]:
     return benchmark.load_for_test_generation(args.src_lang)
 
+  def res_to_tc_list(res) -> list[IOTestCase]:
+    if not isinstance(res, list):
+      return []
+    return [IOTestCase.from_list(l) for l in res if isinstance(l, list)]
+
   def evaluate_metrics(
       res_orig: Seq[Seq[list[str | list[str]] | str]],
       res_span: Seq[Seq[Seq[list[str | list[str]] | str]]],
       snippets: Seq[Snippet],
   ) -> dict[str, Any]:
     code_list = [snippet.data['code'] for snippet in snippets]
-    dummy = IOTestCase.from_dict({'input': '', 'output': ['']})
-    tc_list_orig = [[IOTestCase.from_list(l) if isinstance(l, list) else dummy for l in res]
-                    for res in res_orig]
-    tc_lists_span = [[[IOTestCase.from_list(l) if isinstance(l, list) else dummy for l in res]
-                      for res in res_list]
+    tc_list_orig = [res_to_tc_list(res) for res in res_orig]
+    tc_lists_span = [[res_to_tc_list(res) for res in res_list]
                      for res_list in res_span]
     result_orig = calc_coverage(code_list, tc_list_orig, args.src_lang)
     result_span = [calc_coverage(code_list, tc_list, args.src_lang)

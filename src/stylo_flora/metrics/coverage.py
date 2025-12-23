@@ -27,15 +27,16 @@ def calc_coverage(code_list: Seq[str], tc_lists: Seq[Seq[IOTestCase]], lang: str
   coverage_func = getattr(sys.modules[__name__], f'calc_coverage_{lang}', None)
   if not coverage_func:
     raise TypeError(f'Unsupported language: {lang}')
-  dicts = list(tqdm((coverage_func(code, tc_list) for code, tc_list in zip(code_list, tc_lists)),
-                    desc='Calculating coverage', total=len(code_list), leave=False))
+  with ThreadPoolExecutor(max_workers=setting_dict['metrics']['max_workers']) as executor:
+    dicts = list(tqdm(executor.map(coverage_func, code_list, tc_lists),
+                      desc='Calculating coverage', total=len(code_list), leave=False))
   counter = Counter([d['correctness'] for d in dicts])
   total = sum(counter.values())
   return CoverageResult(
       comp_rate=(total - counter[Correctness.FAIL_COMP]) / total,
-      pass_rate=np.mean([d['pass_rate'] for d in dicts if d.get('pass_rate')]),
-      line_cov=np.mean([d['line_cov'] for d in dicts if d.get('line_cov')]),
-      branch_cov=np.mean([d['branch_cov'] for d in dicts if d.get('branch_cov')]),
+      pass_rate=np.mean([d.get('pass_rate') or .0 for d in dicts]),
+      line_cov=np.mean([d.get('line_cov') or .0 for d in dicts]),
+      branch_cov=np.mean([d.get('branch_cov') or .0 for d in dicts]),
   )
 
 
@@ -61,12 +62,16 @@ def calc_coverage_java(code: str, tc_list: Seq[IOTestCase]) -> dict[str, Any]:
       logger.verbose(f'Failed to compile {classname}:\n{e.stderr}')
       return result
 
-    cmd_instrument = ['java', 'org.jacoco.cli.internal.Main', 'instrument',
-                      original_dir, '--dest', instrument_dir]
+    cmd_inst = ['java', 'org.jacoco.cli.internal.Main', 'instrument',
+                original_dir, '--dest', instrument_dir]
     try:
-      subprocess.run(cmd_instrument, cwd=temp_dir, capture_output=True, check=True, encoding='utf-8')
+      subprocess.run(cmd_inst, cwd=temp_dir, capture_output=True, check=True,
+                     encoding='utf-8', timeout=setting_dict['agent']['timeout'])
     except subprocess.CalledProcessError as e:
       logger.verbose(f'Failed to instrument {classname} with jacocoagent:\n{e.stderr}')
+      return result
+    except subprocess.TimeoutExpired:
+      logger.verbose(f'Instrumentation of {classname} timed out.')
       return result
     result['correctness'] = Correctness.FAIL_EXEC
 
@@ -75,26 +80,33 @@ def calc_coverage_java(code: str, tc_list: Seq[IOTestCase]) -> dict[str, Any]:
 
     def worker(testcase: IOTestCase) -> bool:
       try:
-        completed = subprocess.run(cmd_exec, cwd=instrument_dir, input=testcase.input,
-                                   capture_output=True, encoding='utf-8')
-        if completed.returncode != 0:
-          logger.verbose(f'Failed to execute {classname} with jacocoagent:\n{completed.stderr}')
-          return False
+        completed = subprocess.run(cmd_exec, cwd=instrument_dir, capture_output=True,
+                                   check=True, encoding='utf-8', input=testcase.input,
+                                   timeout=setting_dict['agent']['timeout'])
         return completed.stdout.strip() in (output.strip() for output in testcase.outputs)
-      except Exception as e:
-        logger.warning(f'{e.__class__.__name__} occurred while executing instrumented {classname}.')
+      except subprocess.CalledProcessError as e:
+        logger.verbose(f'Failed to execute {classname} with jacocoagent:\n{e.stderr}')
+        return False
+      except subprocess.TimeoutExpired:
+        logger.verbose(f'Test of {classname} timed out.')
         return False
 
-    with ThreadPoolExecutor(max_workers=setting_dict['metrics']['max_workers']) as executor:
-      num_pass = sum(tqdm(executor.map(worker, tc_list), total=len(tc_list), leave=False))
+    if not tc_list:
+      logger.verbose(f'No test cases found for {classname}.')
+      return result
+    num_pass = sum(tqdm(map(worker, tc_list), total=len(tc_list), leave=False))
     result['pass_rate'] = num_pass / len(tc_list)
 
     cmd_report = ['java', 'org.jacoco.cli.internal.Main', 'report', exec_path,
                   '--classfiles', original_dir, '--sourcefiles', '.', '--csv', report_path]
     try:
-      subprocess.run(cmd_report, cwd=temp_dir, capture_output=True, check=True, encoding='utf-8')
+      subprocess.run(cmd_report, cwd=temp_dir, capture_output=True, check=True,
+                     encoding='utf-8', timeout=setting_dict['agent']['timeout'])
     except subprocess.CalledProcessError as e:
-      logger.warning(f'Failed to generate coverage report for {classname}:\n{e.stderr}')
+      logger.verbose(f'Failed to generate coverage report for {classname}:\n{e.stderr}')
+      return result
+    except subprocess.TimeoutExpired:
+      logger.verbose(f'Generating coverage report for {classname} timed out.')
       return result
     result['line_cov'], result['branch_cov'] = _extract_coverage(report_path)
     return result
