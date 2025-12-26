@@ -59,8 +59,16 @@ def get_msys_root() -> str:
 
 
 def run_msys(cmd: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
-  cmd = [os.path.join(get_msys_root(), 'usr', 'bin', 'env.exe'),
-         'MSYSTEM=UCRT64', '/usr/bin/bash', '-l', '-c', ' '.join(cmd)]
+  cmd_in_bash = (
+      'export MSYSTEM=UCRT64 && '
+      'export CHERE_INVOCATION=1 && '
+      'CWD="$(pwd)" && '
+      'source /etc/profile && '
+      'cd "$CWD" && '
+      'unset CWD && '
+      f'exec {" ".join(cmd)}'
+  )
+  cmd = [os.path.join(get_msys_root(), 'usr', 'bin', 'bash.exe'), '-c', cmd_in_bash]
   return subprocess.run(cmd, **kwargs)
 
 
