@@ -62,7 +62,8 @@ def test_classeval_java(code: str, test: str) -> CorrectnessCET:
     except subprocess.CalledProcessError as e:
       logger.verbose(f'Failed to compile {classname}:\n{e.stderr}')
       return CorrectnessCET(total=total)
-    cmd_test = ['cmd.exe', '/c', 'mvn.cmd', 'test', f'-Dtest={",".join(test_classes)}']
+    cmd_test = ['cmd.exe', '/c', 'mvn.cmd', '-B', '-Dmaven.compiler.showWarnings=false',
+                'test', f'-Dtest={",".join(test_classes)}']
     try:
       completed = subprocess.run(cmd_test, cwd=tmpdir, capture_output=True, check=True,
                                  encoding='gbk', errors='replace',

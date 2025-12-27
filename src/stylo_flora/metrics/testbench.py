@@ -41,10 +41,13 @@ def calc_coverage_tb(tests: Seq[str], items: Seq[dict[str, Any]], lang: str) -> 
   return CoverageResultTB(
       comp_rate=(total - counter[Correctness.FAIL_COMP]) / total,
       pass_rate=counter[Correctness.PASS] / total,
-      line_cov=np.mean([d.get('line_cov') or 0 for d in dicts]),
-      branch_cov=np.mean([d.get('branch_cov') or 0 for d in dicts]),
-      mut_score=np.mean([d.get('mut_score') or 0 for d in dicts]),
+      line_cov=np.mean([d.get('line_cov') or .0 for d in dicts]),
+      branch_cov=np.mean([d.get('branch_cov') or .0 for d in dicts]),
+      mut_score=np.mean([d.get('mut_score') or .0 for d in dicts]),
   )
+
+
+PATTERN_MAVEN_STAT = re.compile(r'Tests run: (\d+), Failures: (\d+), Errors: (\d+)')
 
 
 def _worker(test: str, item: dict[str, Any]) -> dict[str, Any]:
@@ -57,6 +60,9 @@ def _worker(test: str, item: dict[str, Any]) -> dict[str, Any]:
     logger.verbose(f'Failed to extract class name for {identifier} test.')
     return result
 
+  cmd_checkout = ['git', 'checkout', '-f', test_dir]
+  subprocess.run(cmd_checkout, stdout=subprocess.DEVNULL,
+                 stderr=subprocess.DEVNULL, encoding='utf-8')  # not check
   cmd_clean = ['git', 'clean', '-f', test_dir]
   try:
     subprocess.run(cmd_clean, capture_output=True, check=True, encoding='utf-8')
@@ -66,7 +72,7 @@ def _worker(test: str, item: dict[str, Any]) -> dict[str, Any]:
     f.write(test)
 
   proj_root = PROJ_PATH / item['project_name']
-  mvn_prefix = ['mvn']
+  mvn_prefix = ['mvn', '-B', '-Dmaven.compiler.showWarnings=false']
   if matched := re.match(r'^[\w-]+/(.+)/src', item['relative_path']):
     submodule = matched.group(1)
     mvn_prefix += ['-pl', submodule, '-am']  # avoid building unnecessary modules
@@ -88,19 +94,25 @@ def _worker(test: str, item: dict[str, Any]) -> dict[str, Any]:
   cmd_test = mvn_prefix + ['test', '-DskipPitest=True', '-Dsurefire.failIfNoSpecifiedTests=false',
                            '-Dcheckstyle.skip', f'-Dtest={classname}']
   try:
-    subprocess.run(cmd_test, cwd=proj_root, capture_output=True, check=True,
-                   encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
-  except subprocess.CalledProcessError as e:
-    logger.verbose(f'Failed to test {identifier}:\n{e.stdout}')
-    return result
+    completed = subprocess.run(cmd_test, cwd=proj_root, capture_output=True, encoding='utf-8',
+                               timeout=setting_dict['metrics']['timeout'])
+    matched = PATTERN_MAVEN_STAT.search(completed.stdout)
+    if not matched:
+      logger.warning(f'Failed to parse test result for {identifier}.')
+      return result
+    fails = int(matched.group(2))
+    errors = int(matched.group(3))
+    if fails or errors:
+      logger.verbose(f'Test of {identifier} has {fails} fails, {errors} errors.')
+      return result
   except subprocess.TimeoutExpired:
     logger.verbose(f'Test of {identifier} timed out.')
     return result
+  result['correctness'] = Correctness.PASS
   report_path = os.path.join(proj_root, submodule, 'target/site/jacoco/jacoco.xml')
   if not os.path.exists(report_path):
     logger.warning(f'Failed to find coverage report for {identifier}.')
     return result
-  result['correctness'] = Correctness.PASS
   result['line_cov'], result['branch_cov'] = _extract_coverage(report_path, item)
 
   cmd_mutate = mvn_prefix + ['test-compile', 'org.pitest:pitest-maven:mutationCoverage',
@@ -112,12 +124,12 @@ def _worker(test: str, item: dict[str, Any]) -> dict[str, Any]:
     completed = subprocess.run(cmd_mutate, cwd=proj_root, capture_output=True, check=True,
                                encoding='utf-8', timeout=setting_dict['metrics']['timeout'])
   except subprocess.CalledProcessError as e:
-    logger.verbose(f'Failed to run mutation test on {identifier}:\n{e.stdout}')
+    logger.warning(f'Failed to run mutation test on {identifier}:\n{e.stdout}')
     return result
   except subprocess.TimeoutExpired:
-    logger.verbose(f'Mutation test of {identifier} timed out.')
+    logger.warning(f'Mutation test of {identifier} timed out.')
     return result
-  result['mutation_score'] = _extract_mutation_score(completed.stdout)
+  result['mut_score'] = _extract_mutation_score(completed.stdout)
   return result
 
 
@@ -137,10 +149,11 @@ def _extract_coverage(report_path: str, item: dict[str, Any]) -> tuple[float | N
     line_cov, branch_cov = .0, .0
     for method in clazz.findall('method'):
       if method.get('name') == item['method_name']:
-        if line_ctr := method.find('counter[@type="LINE"]'):
+        # Element.__bool__ stands for whether it has children
+        if (line_ctr := method.find('counter[@type="LINE"]')) is not None:
           line_cnt += 1
           line_cov += _calculate_coverage(line_ctr)
-        if branch_ctr := method.find('counter[@type="BRANCH"]'):
+        if (branch_ctr := method.find('counter[@type="BRANCH"]')) is not None:
           branch_cnt += 1
           branch_cov += _calculate_coverage(branch_ctr)
     return (line_cov / line_cnt if line_cnt else .0,
@@ -157,7 +170,7 @@ def _calculate_coverage(counter: ET.Element) -> float:
   return covered / total if total else .0
 
 
-def _extract_mutation_score(stdout: str) -> int | None:
+def _extract_mutation_score(stdout: str) -> float | None:
   if matches := re.search(r'Generated \d+ mutations Killed \d+ \((\d{1,3})%\)', stdout):
-    return int(matches.group(1))
+    return int(matches.group(1)) / 100
   return None
