@@ -16,8 +16,8 @@ from openai import OpenAI  # type: ignore[attr-defined]
 from requests.exceptions import Timeout
 from transformers import (AutoModelForCausalLM, AutoTokenizer,
                           GenerationConfig, StoppingCriteria)
-from zai import ZhipuAiClient
-from zai.types.chat import Completion
+from zhipuai import ZhipuAI
+from zhipuai.types.chat.chat_completion import Completion
 
 from .. import setting_dict
 from ..logger import logger
@@ -312,7 +312,7 @@ class GeminiAgent(BaseAgent):
 class ZhipuAgent(BaseAgent):
   def __init__(self, name: str):
     super().__init__(name)
-    self.client = ZhipuAiClient(
+    self.client = ZhipuAI(
         base_url=os.getenv('BASE_URL'),
         api_key=os.getenv('API_KEY'),
     )
@@ -326,6 +326,8 @@ class ZhipuAgent(BaseAgent):
     completion = self.client.chat.completions.create(
         model=self.name,
         messages=messages,  # type: ignore[arg-type]
+        max_tokens=setting_dict['agent']['max_new_tokens'],
+        timeout=setting_dict['agent']['timeout'],
     )
     completion = cast(Completion, completion)
     if completion.usage:
