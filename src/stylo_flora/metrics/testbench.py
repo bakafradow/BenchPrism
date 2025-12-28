@@ -8,7 +8,6 @@ import subprocess
 import xml.etree.ElementTree as ET
 from collections import Counter
 from collections.abc import Sequence as Seq
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -33,9 +32,9 @@ class CoverageResultTB(NamedTuple):
 def calc_coverage_tb(tests: Seq[str], items: Seq[dict[str, Any]], lang: str) -> CoverageResultTB:
   if lang != 'java':
     raise ValueError(f'Unsupported language: {lang}')
-  with ThreadPoolExecutor(max_workers=setting_dict['metrics']['max_workers']) as executor:
-    dicts = list(tqdm(executor.map(_worker, tests, items),
-                      desc='Calculating coverage', total=len(tests), leave=False))
+  # concurrecy may introduce error
+  dicts = list(tqdm(map(_worker, tests, items),
+                    desc='Calculating coverage', total=len(tests), leave=False))
   counter = Counter([d['correctness'] for d in dicts])
   total = sum(counter.values())
   return CoverageResultTB(
@@ -53,6 +52,7 @@ PATTERN_MAVEN_STAT = re.compile(r'Tests run: (\d+), Failures: (\d+), Errors: (\d
 def _worker(test: str, item: dict[str, Any]) -> dict[str, Any]:
   result: dict[str, Any] = {'correctness': Correctness.FAIL_COMP}
   identifier = f'{item["class_name"]}::{item["method_name"]}'
+  proj_root = PROJ_PATH / item['project_name']
   test_dir = PROJ_PATH / item['relative_path'].replace('main', 'test').rsplit('/', 1)[0]
   test_dir.mkdir(parents=True, exist_ok=True)
   classname = extract_classname_java(test)
@@ -60,25 +60,16 @@ def _worker(test: str, item: dict[str, Any]) -> dict[str, Any]:
     logger.verbose(f'Failed to extract class name for {identifier} test.')
     return result
 
-  cmd_checkout = ['git', 'checkout', '-f', test_dir]
-  subprocess.run(cmd_checkout, stdout=subprocess.DEVNULL,
-                 stderr=subprocess.DEVNULL, encoding='utf-8')  # not check
-  cmd_clean = ['git', 'clean', '-f', test_dir]
-  try:
-    subprocess.run(cmd_clean, capture_output=True, check=True, encoding='utf-8')
-  except subprocess.CalledProcessError as e:
-    logger.warning(f'Failed to clean up test directory for {identifier}:\n{e.stderr}')
+  _clean_repo(proj_root)
   with open(test_dir / f'{classname}.java', 'w') as f:
     f.write(test)
-
-  proj_root = PROJ_PATH / item['project_name']
   mvn_prefix = ['mvn', '-B', '-Dmaven.compiler.showWarnings=false']
   if matched := re.match(r'^[\w-]+/(.+)/src', item['relative_path']):
     submodule = matched.group(1)
     mvn_prefix += ['-pl', submodule, '-am']  # avoid building unnecessary modules
   else:
     submodule = ''
-  cmd_compile = mvn_prefix + ['test-compile', '-Drat.skip=true',
+  cmd_compile = mvn_prefix + ['-q', 'clean', 'test-compile', '-Drat.skip=true',
                               '-Dsurefire.failIfNoSpecifiedTests=false', '-Dcheckstyle.skip']
   try:
     subprocess.run(cmd_compile, cwd=proj_root, capture_output=True, check=True,
@@ -91,7 +82,8 @@ def _worker(test: str, item: dict[str, Any]) -> dict[str, Any]:
     return result
   result['correctness'] = Correctness.FAIL_EXEC
 
-  cmd_test = mvn_prefix + ['test', '-DskipPitest=True', '-Dsurefire.failIfNoSpecifiedTests=false',
+  cmd_test = mvn_prefix + ['clean', 'test', '-DskipPitest=True',
+                           '-Dsurefire.failIfNoSpecifiedTests=false',
                            '-Dcheckstyle.skip', f'-Dtest={classname}']
   try:
     completed = subprocess.run(cmd_test, cwd=proj_root, capture_output=True, encoding='utf-8',
@@ -115,7 +107,7 @@ def _worker(test: str, item: dict[str, Any]) -> dict[str, Any]:
     return result
   result['line_cov'], result['branch_cov'] = _extract_coverage(report_path, item)
 
-  cmd_mutate = mvn_prefix + ['test-compile', 'org.pitest:pitest-maven:mutationCoverage',
+  cmd_mutate = mvn_prefix + ['clean', 'test-compile', 'org.pitest:pitest-maven:mutationCoverage',
                              '-Drat.skip=true', '-Dsurefire.failIfNoSpecifiedTests=false',
                              '-Dcheckstyle.skip',
                              f'-DtargetClasses={item["package"]}.{item["class_name"]}',
@@ -131,6 +123,35 @@ def _worker(test: str, item: dict[str, Any]) -> dict[str, Any]:
     return result
   result['mut_score'] = _extract_mutation_score(completed.stdout)
   return result
+
+
+SKIP_FILES = {'pom.xml', 'DynamicRouteService.java'}
+
+
+def _clean_repo(proj_root: os.PathLike) -> None:
+  cmd_status = ['git', 'status', '--porcelain']
+  try:
+    completed = subprocess.run(cmd_status, cwd=proj_root, capture_output=True,
+                               check=True, encoding='utf-8')
+  except subprocess.CalledProcessError as e:
+    logger.warning(f'Failed to check git status:\n{e.stderr}')
+    return
+  for status, path in [line.split() for line in completed.stdout.splitlines()]:
+    if any(s in path for s in SKIP_FILES):
+      continue
+    if status == 'M':
+      cmd_checkout = ['git', 'checkout', '-f', path]
+      try:
+        subprocess.run(cmd_checkout, cwd=proj_root, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, check=True, encoding='utf-8')
+      except subprocess.CalledProcessError as e:
+        logger.warning(f'Failed to checkout {path}:\n{e.stderr}')
+    elif status == '??':
+      cmd_clean = ['git', 'clean', '-f', path]
+      try:
+        subprocess.run(cmd_clean, cwd=proj_root, capture_output=True, check=True, encoding='utf-8')
+      except subprocess.CalledProcessError as e:
+        logger.warning(f'Failed to clean {path}:\n{e.stderr}')
 
 
 def _extract_coverage(report_path: str, item: dict[str, Any]) -> tuple[float | None, float | None]:
