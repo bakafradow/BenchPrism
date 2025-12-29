@@ -123,6 +123,7 @@ def test_classeval_java(code: str, test: str) -> CorrectnessCET:
   matched = PATTERN_MAVEN_STAT.search(stdout)
   if not matched:
     logger.warning(f'Failed to parse test result for {classname}.')
+    logger.debug(stdout)
     return CorrectnessCET(Correctness.FAIL_EXEC, total=total)
   fails = int(matched.group(2))
   errors = int(matched.group(3))
@@ -175,6 +176,7 @@ def test_classeval_cpp(code: str, test: str) -> CorrectnessCET:
   matched_total = PATTERN_GTEST_TOTAL.search(stdout)
   if not matched_total:
     logger.warning('Failed to parse test result.')
+    logger.debug(stdout)
     return CorrectnessCET(Correctness.FAIL_EXEC, total=total)
   total = int(matched_total.group(1))
   matched_pass = PATTERN_GTEST_PASS.search(stdout)
@@ -241,6 +243,7 @@ def test_classeval_python(code: str, test: str) -> CorrectnessCET:
   matched_total = PATTERN_UNITTEST_TOTAL.search(stderr)
   if not matched_total:
     logger.warning(f'Failed to parse test result for {module_name}.')
+    logger.debug(stderr)
     return CorrectnessCET(total=total)
   total = int(matched_total.group(1))
   if 'OK' in stderr:
