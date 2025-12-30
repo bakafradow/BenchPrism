@@ -3,6 +3,7 @@ Modified from CoderUJB repository (https://github.com/ZZR0/CoderUJB).
 """
 
 import os
+import re
 import signal
 import subprocess
 import tempfile
@@ -37,6 +38,9 @@ def pass_at_1_ujb(
   )
 
 
+PATTERN_D4J_STAT = re.compile(r'Failing tests: (\d+)')
+
+
 def _validate_all_patches(patch: str, item: dict[str, Any]) -> Correctness:
   with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
     cmd_checkout = ['defects4j', 'checkout', '-p', item['project'],
@@ -62,27 +66,27 @@ def _validate_all_patches(patch: str, item: dict[str, Any]) -> Correctness:
       return Correctness.FAIL_COMP
 
     cmd_test = ['defects4j', 'test', '-w', tmpdir]
-    try:
-      with subprocess.Popen(
-          cmd_test, env=_get_d4j_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-          encoding='utf-8', start_new_session=True,
-      ) as process:
+    with subprocess.Popen(
+        cmd_test, env=_get_d4j_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        encoding='utf-8', start_new_session=True,
+    ) as process:
+      try:
+        stdout, stderr = process.communicate(timeout=setting_dict['agent']['timeout'])
+        matched = PATTERN_D4J_STAT.search(stdout)
+        if not matched:
+          logger.verbose(f'Compilation failed on {item["project"]} {item["bug_id"]}:\n{stderr}')
+          return Correctness.FAIL_COMP
+        fails = int(matched.group(1))
+        if not fails:
+          return Correctness.PASS
+        logger.verbose(f'Test on {item["project"]} {item["bug_id"]} has {fails} failures:\n{stderr}')
+      except subprocess.TimeoutExpired:
+        logger.verbose(f'Test timed out on {item["project"]} {item["bug_id"]}.')
         try:
-          stdout, stderr = process.communicate(timeout=setting_dict['agent']['timeout'])
-          if process.returncode != 0 or 'Failing tests: 0\n' not in stdout:
-            logger.verbose(f'Failed to test on {item["project"]} {item["bug_id"]}:\n{stderr}')
-            return Correctness.FAIL_EXEC
-        except subprocess.TimeoutExpired:
-          logger.verbose(f'Test timed out on {item["project"]} {item["bug_id"]}.')
-          try:
-            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-          except ProcessLookupError:
-            pass
-          return Correctness.FAIL_EXEC
-    except Exception as e:
-      logger.verbose(f'Failed to test on {item["project"]} {item["bug_id"]}:\n{str(e)}')
-      return Correctness.FAIL_COMP
-    return Correctness.PASS
+          os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        except ProcessLookupError:
+          pass
+    return Correctness.FAIL_EXEC
 
 
 def _get_d4j_env() -> dict[str, str]:
