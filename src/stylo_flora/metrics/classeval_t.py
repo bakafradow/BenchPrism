@@ -88,7 +88,8 @@ def test_classeval_java(code: str, test: str) -> CorrectnessCET:
   if not test_classes:
     logger.verbose('No test classes found in the test code.')
     return CorrectnessCET(total=total)
-  with tempfile.TemporaryDirectory(dir=utils.get_windows_tmpdir()) as tmpdir:
+  with tempfile.TemporaryDirectory(dir=utils.get_windows_tmpdir(),
+                                   ignore_cleanup_errors=True) as tmpdir:
     shutil.copy(POM_PATH, f'{tmpdir}/pom.xml')
     os.makedirs(f'{tmpdir}/src/main/java', exist_ok=True)
     os.makedirs(f'{tmpdir}/src/test/java', exist_ok=True)
@@ -100,7 +101,7 @@ def test_classeval_java(code: str, test: str) -> CorrectnessCET:
                    f'{tmpdir}/src/main/java/{classname}.java']
     try:
       subprocess.run(cmd_compile, cwd=tmpdir, capture_output=True, check=True,
-                     encoding='gbk', errors='replace')
+                     encoding='utf-8', errors='replace')
     except subprocess.CalledProcessError as e:
       logger.verbose(f'Failed to compile {classname}:\n{e.stderr}')
       return CorrectnessCET(total=total)
@@ -108,7 +109,7 @@ def test_classeval_java(code: str, test: str) -> CorrectnessCET:
                 'test', f'-Dtest={",".join(test_classes)}']
     try:
       completed = subprocess.run(cmd_test, cwd=tmpdir, capture_output=True, check=True,
-                                 encoding='gbk', errors='replace',
+                                 encoding='utf-8', errors='replace',
                                  timeout=setting_dict['metrics']['timeout'])
       stdout = completed.stdout
     except subprocess.CalledProcessError as e:
@@ -116,7 +117,7 @@ def test_classeval_java(code: str, test: str) -> CorrectnessCET:
       stdout = e.stdout
     except subprocess.TimeoutExpired as e:
       logger.verbose(f'Test of {classname} timed out.')
-      stdout = e.stdout  # type: ignore[assignment]
+      stdout = e.stdout.decode('utf-8') if e.stdout else ''
   if not stdout:
     logger.warning(f'Failed to get Maven output for {classname}.')
     return CorrectnessCET(Correctness.FAIL_EXEC, total=total)
@@ -138,11 +139,12 @@ PATTERN_GTEST_PASS = re.compile(r'\[ {2}PASSED {2}\] (\d+) tests?')
 
 
 def test_classeval_cpp(code: str, test: str) -> CorrectnessCET:
-  with tempfile.TemporaryDirectory(dir=utils.get_msys_tmpdir_abs()) as tmpdir:
+  with tempfile.TemporaryDirectory(dir=utils.get_msys_tmpdir_abs(),
+                                   ignore_cleanup_errors=True) as tmpdir:
     with open(f'{tmpdir}/pch.h', 'w') as f:
       f.write(code)
     if 'namespace example' in code:
-      test = test.replace('#include "pch.h"', '# include "pch.h"\nusing namespace org::example;')
+      test = test.replace('#include "pch.h"', '#include "pch.h"\nusing namespace org::example;')
     with open(f'{tmpdir}/test.cpp', 'w') as f:
       f.write(test)
     total = len(PATTERN_GTEST_TEST.findall(test))
@@ -169,7 +171,15 @@ def test_classeval_cpp(code: str, test: str) -> CorrectnessCET:
       stdout = e.stdout
     except subprocess.TimeoutExpired as e:
       logger.verbose('Test timed out.')
-      stdout = e.stdout  # type: ignore[assignment]
+      stdout = e.stdout.decode('utf-8') if e.stdout else ''
+      cmd_kill = ['powershell.exe', '-NoProfile', '-Command',
+                  f'Get-CimInstance Win32_Process | '
+                  f'Where-Object {{ $_.CommandLine -like "*{os.path.basename(tmpdir)}*" }} | '
+                  f'Invoke-CimMethod -MethodName Terminate']
+      completed = subprocess.run(cmd_kill, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, encoding='utf-8')
+      if completed.returncode != 0:
+        logger.warning(f'Failed to kill C++ process from {tmpdir}.')
   if not stdout:
     logger.warning('Failed to get GTest output.')
     return CorrectnessCET(total=total)
@@ -212,7 +222,8 @@ def test_classeval_python(code: str, test: str) -> CorrectnessCET:
     logger.verbose('Class name not found.')
     return CorrectnessCET(total=total)
   module_name = f'{matched.group(1)}_{uuid4().hex}'
-  with tempfile.TemporaryDirectory(dir=utils.get_msys_tmpdir_abs()) as tmpdir:
+  with tempfile.TemporaryDirectory(dir=utils.get_msys_tmpdir_abs(),
+                                   ignore_cleanup_errors=True) as tmpdir:
     path = os.path.join(tmpdir, f'{module_name}.py')
     with open(path, 'w') as f:
       f.write(f'{code}\n{test}')
@@ -227,7 +238,7 @@ def test_classeval_python(code: str, test: str) -> CorrectnessCET:
       stderr = e.stderr
     except subprocess.TimeoutExpired as e:
       logger.verbose(f'Test timed out for {module_name}.')
-      stderr = e.stderr  # type: ignore[assignment]
+      stderr = e.stderr.decode('utf-8') if e.stderr else ''
       cmd_kill = ['powershell.exe', '-NoProfile', '-Command',
                   f'Get-CimInstance Win32_Process | '
                   f'Where-Object {{ $_.CommandLine -like "*{module_name}*" -and '
