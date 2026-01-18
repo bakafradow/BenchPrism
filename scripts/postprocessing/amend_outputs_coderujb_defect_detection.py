@@ -6,32 +6,21 @@ import jsonlines
 from tqdm import tqdm
 
 from scripts.postprocessing import utils
+from scripts.postprocessing.amend_outputs_codemmlu import PATTERNS
 from stylo_flora.inference import agent_factory
 
-PATTERNS = [
-    re.compile(r'\$\\boxed\{([A-D])\}\$$'),
-    re.compile(r'\n+([A-D])$'),
-    re.compile(r'^([A-D]).[\w ]*$'),
-    re.compile(r'^([A-D])\s*\n+'),
-    re.compile(r'^([A-D])\s*\([^)]+\)\s*\n+'),
-    re.compile(r'^([A-D])\.(?: [\w ]*?\.?)?\s*\n+'),
-    re.compile(r'the (?:most|correct) .*?(?:is|be):\s+(?:\*\*)?([A-D])'),
-    re.compile(r'correct answer is ([A-D])'),
-    re.compile(r'I would respond with "([A-D])"'),
-]
-
 SYS_PROMPT = """
-An LLM was instructed to answer a choice question. It should have responded with a single letter, A, B, C or D. However, it failed to do so.
-Given its output, your task is to recognize and extract its answer. Do NOT return anything else. If you think that part doesn't exist in the output, ONLY return `N`.
+An LLM was instructed to detect defects in a code snippet. It should have responded with a single letter, A for defects or B for no defects. However, it failed to do so.
+Given its output, your task is to recognize and extract its answer. Do NOT return anything else.
 
 Examples:
-1. Given output "The most probable behavior is a Compile Error.\n\nHere's why: ...\n\nTherefore, ...\n\nThe final answer is $\\boxed{A}$", you should return "A".
-2. Given output "The most probable behavior is a Runtime Error. And", you should return "N".
+1. Given output "I would classify the provided Java function as having defects. Therefore, the correct answer is \"A\".", you should return "A".
+2. Given output "Based on my analysis, there are no defects in the provided Java function.", you should return "B".
 """
 
 
 def ok(output: str) -> bool:
-  return output in ['A', 'B', 'C', 'D']
+  return output in ['A', 'B']
 
 
 def _amend_offline(output: str) -> str:

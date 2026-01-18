@@ -2,12 +2,22 @@ from ... import Snippet
 from .base import BaseTask
 
 
+CANDIDATES = [
+    '2-sat', 'binary search', 'bitmasks', 'brute force', 'combinatorics',
+    'constructive algorithms', 'data structures', 'dfs and similar', 'divide and conquer', 'dp',
+    'dsu', 'expression parsing', 'fft', 'flows', 'games',
+    'geometry', 'graph matchings', 'graphs', 'greedy', 'implementation',
+    'interactive', 'math', 'matrices', 'meet-in-the-middle', 'number theory',
+    'probabilities', 'shortest paths', 'sortings', 'strings', 'trees', 'two pointers',
+]
+
+
 class TagClassification(BaseTask):
-  SYSTEM_PROMPT = """<task>
+  SYSTEM_PROMPT = f"""<task>
 Classify code into one or more categories from the following candidates.
 </task>
 <candidates>
-2-sat,binary search,bitmasks,brute force,combinatorics,constructive algorithms,data structures,dfs and similar,divide and conquer,dp,dsu,expression parsing,fft,flows,games,geometry,graph matchings,graphs,greedy,implementation,interactive,math,matrices,meet-in-the-middle,number theory,probabilities,shortest paths,sortings,strings,trees,two pointers
+{','.join(CANDIDATES)}
 </candidates>
 <constraint>
 Your output MUST only contain the exact list of categories separated by commas, not enclosed by any quotes or brackets, without any explanation.
