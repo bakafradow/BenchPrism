@@ -27,15 +27,15 @@ import pandas as pd
 from tqdm import tqdm
 
 from scripts.experiment.utils import get_data_id, get_eval_id
-from stylo_flora import IOTestCase, Snippet
-from stylo_flora.benchmarks import BaseBenchmark, benchmark_factory
-from stylo_flora.inference import agent_factory, task_factory, task_worker
-from stylo_flora.logger import init_logger, logger
-from stylo_flora.metrics import (calc_bertscore, calc_bleu, calc_codebleu,
+from benchprism import IOTestCase, Snippet
+from benchprism.benchmarks import BaseBenchmark, benchmark_factory
+from benchprism.inference import agent_factory, task_factory, task_worker
+from benchprism.logger import init_logger, logger
+from benchprism.metrics import (calc_bertscore, calc_bleu, calc_codebleu,
                                  calc_coverage, calc_coverage_tb,
                                  calc_macro_f1, calc_meteor, calc_rouge,
                                  pass_at_1, pass_at_1_classeval, pass_at_1_ujb)
-from stylo_flora.transformer import BaseTransformer, transformer_factory
+from benchprism.transformer import BaseTransformer, transformer_factory
 
 _SnippetsLoader = Callable[[BaseBenchmark], Seq[Snippet]]
 _MetricsEvaluator = Callable[[Seq[str], Seq[Seq[str]], Seq[Snippet]], dict[str, Any]]
@@ -644,7 +644,7 @@ def _evaluate_io_reasoning() -> None:
       res_span: Seq[Seq[str]],
       snippets: Seq[Snippet],
   ) -> dict[str, Any]:
-    from stylo_flora.inference.tasks.io_reasoning import (MASK, ReasoningType,
+    from benchprism.inference.tasks.io_reasoning import (MASK, ReasoningType,
                                                           mask)
 
     type_ = ReasoningType(args.task)

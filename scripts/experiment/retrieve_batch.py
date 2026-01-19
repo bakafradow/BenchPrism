@@ -12,8 +12,8 @@ from tqdm import tqdm
 
 from scripts.experiment.run import SUPPORTED_TASKS
 from scripts.experiment.utils import get_eval_id
-from stylo_flora.inference import agent_factory, task_factory
-from stylo_flora.logger import init_logger, logger
+from benchprism.inference import agent_factory, task_factory
+from benchprism.logger import init_logger, logger
 
 
 def parse_args() -> Namespace:

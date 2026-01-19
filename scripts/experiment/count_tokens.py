@@ -9,7 +9,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 
 from scripts.experiment.utils import load_snippets
-from stylo_flora.inference import task_factory
+from benchprism.inference import task_factory
 
 
 def count_tokens_gpt5mini(sys_prompt: str, user_prompt: str) -> int:

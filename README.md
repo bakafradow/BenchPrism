@@ -1,8 +1,8 @@
-# StyloFlora
+# BenchPrism
 
 ## Introduction
 
-StyloFlora is a framework to augment and evaluate benchmarks for various LLM code tasks.
+BenchPrism is a framework to augment and evaluate benchmarks for various LLM code tasks.
 
 ## Structure
 
@@ -15,21 +15,21 @@ StyloFlora is a framework to augment and evaluate benchmarks for various LLM cod
 │   ├── experiment      # scripts for research experiments
 │   ├── postprocessing  # scripts normalizing model outputs, used after inference
 │   ├── preprocessing   # scripts fixing dataset issues, used before experiments
-└── src                 # source code of StyloFlora module
+└── src                 # source code of BenchPrism module
 ```
 
 ## Setup
 
 ### Python Environment
 
-Simply install the StyloFlora module by running:
+Simply install the BenchPrism module by running:
 ```bash
 pip install -e .
 ```
 
 ### Datasets
 
-StyloFlora currently supports 7 benchmarks: xCodeEval, CodeScope, CodeMMLU, CRUXEval-X, ClassEval-T, CoderUJB and TestBench.
+BenchPrism currently supports 7 benchmarks: xCodeEval, CodeScope, CodeMMLU, CRUXEval-X, ClassEval-T, CoderUJB and TestBench.
 
 Some of them are pulled from HuggingFace Hub automatically, while others need to be downloaded manually with paths specified in configuration file (see below).
 
@@ -101,6 +101,6 @@ Example usage:
 ```bash
 python -m scripts.experiment.run \
   -d xCodeEval -m gemini-2.5-flash -t code_translation \
-  --src-lang java --dst-lang python --result-dir results --log-path logs/StyloFlora.log \
+  --src-lang java --dst-lang python --result-dir results --log-path logs/BenchPrism.log \
   --seed 42 -rvTI -i :1000
 ```

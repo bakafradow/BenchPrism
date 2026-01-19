@@ -1,8 +1,8 @@
 import re
 from argparse import Namespace
 
-from stylo_flora import Snippet
-from stylo_flora.benchmarks import benchmark_factory
+from benchprism import Snippet
+from benchprism.benchmarks import benchmark_factory
 
 
 def get_data_id(args: Namespace) -> str:

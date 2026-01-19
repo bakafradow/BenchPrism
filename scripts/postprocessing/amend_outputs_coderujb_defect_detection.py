@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from scripts.postprocessing import utils
 from scripts.postprocessing.amend_outputs_codemmlu import PATTERNS
-from stylo_flora.inference import agent_factory
+from benchprism.inference import agent_factory
 
 SYS_PROMPT = """
 An LLM was instructed to detect defects in a code snippet. It should have responded with a single letter, A for defects or B for no defects. However, it failed to do so.

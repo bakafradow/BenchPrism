@@ -6,7 +6,7 @@ import jsonlines
 from tqdm import tqdm
 
 from scripts.postprocessing import utils
-from stylo_flora.inference import agent_factory
+from benchprism.inference import agent_factory
 
 PATTERNS = [
     re.compile(r'\$\\boxed\{([A-D])\}\$$'),

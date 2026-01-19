@@ -1,5 +1,5 @@
 [project]
-name = "stylo-flora"
+name = "benchprism"
 requires-python = ">=3.10"
 dependencies = [
   "absl-py",

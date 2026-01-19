@@ -5,7 +5,7 @@ from collections.abc import Mapping
 import jpype as jp
 from dotenv import load_dotenv
 
-from stylo_flora.transformer.stylex import StyleX
+from benchprism.transformer.stylex import StyleX
 
 load_dotenv()
 

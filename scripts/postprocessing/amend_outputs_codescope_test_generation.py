@@ -6,7 +6,7 @@ from pathlib import Path
 import jsonlines
 
 from scripts.postprocessing import utils
-from stylo_flora import IOTestCase
+from benchprism import IOTestCase
 
 PATTERN_MULTILINE = re.compile(r'Input:\s*(?:```\s*(.*?)\s*```|([^\n]+)|\n((?:\w+\s*=\s*[^\n]+\s*)+))\n+Output:\s*(?:```\s*(.*?)\s*```|([^\n]+)|\n((?:\w+\s*=\s*[^\n]+\s*)+))', re.S)
 PATTERN_SINGLELINE = re.compile(r'Input:\s*([^\n]*?),?\s*Output:\s*([^\n]*)', re.M)

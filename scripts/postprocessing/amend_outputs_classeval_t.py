@@ -115,10 +115,10 @@ if __name__ == '__main__':
   args = parser.parse_args()
 
   if args.model:
-    from stylo_flora import Snippet
-    from stylo_flora.benchmarks import ClassEvalT
-    from stylo_flora.inference import agent_factory
-    from stylo_flora.inference.tasks import CodeTranslation
+    from benchprism import Snippet
+    from benchprism.benchmarks import ClassEvalT
+    from benchprism.inference import agent_factory
+    from benchprism.inference.tasks import CodeTranslation
 
     benchmark = ClassEvalT()
     snippets = benchmark.load_for_translation(args.src_lang, args.dst_lang)

@@ -6,8 +6,8 @@ import jsonlines
 from tqdm import tqdm
 
 from scripts.postprocessing import utils
-from stylo_flora.inference import agent_factory
-from stylo_flora.inference.tasks.tag_classification import CANDIDATES
+from benchprism.inference import agent_factory
+from benchprism.inference.tasks.tag_classification import CANDIDATES
 
 SYS_PROMPT = f"""
 An LLM was instructed to tag a code snippet. It should have responded with a sequence of tags strictly selected from the following candidates separated by commas. However, it failed to do so.

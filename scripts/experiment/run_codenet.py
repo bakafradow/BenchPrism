@@ -14,11 +14,11 @@ load_dotenv()
 
 from evaluate_translation import evaluate_translation
 
-from stylo_flora import Snippet
-from stylo_flora.agent.base import agent_factory
-from stylo_flora.benchmarks import benchmark_factory
-from stylo_flora.logger import init_logger, logger
-from stylo_flora.metrics.similarity import calculate_codebleu
+from benchprism import Snippet
+from benchprism.agent.base import agent_factory
+from benchprism.benchmarks import benchmark_factory
+from benchprism.logger import init_logger, logger
+from benchprism.metrics.similarity import calculate_codebleu
 
 
 def parse_args() -> argparse.Namespace:

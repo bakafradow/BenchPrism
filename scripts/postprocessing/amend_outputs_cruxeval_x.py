@@ -6,7 +6,7 @@ import jsonlines
 from tqdm import tqdm
 
 from scripts.postprocessing import utils
-from stylo_flora.inference import agent_factory
+from benchprism.inference import agent_factory
 
 SYS_PROMPT = """
 An LLM was instructed to reason about the missing part of a program. Specifically, given a Java assertion statement `assert(f(x).equals(y))` or `assert(f(x) == y)`, It should have responded with the exact content of `{part}`. However, it failed to do so.

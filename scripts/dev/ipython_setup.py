@@ -21,8 +21,8 @@ from tqdm import tqdm
 
 from scripts.experiment.run import SUPPORTED_TASKS
 from scripts.experiment.utils import load_snippets
-from stylo_flora.logger import init_logger
-from stylo_flora.transformer.stylex import StyleX
+from benchprism.logger import init_logger
+from benchprism.transformer.stylex import StyleX
 
 SRC_PATH = Path('~/playground/research/samples/src.java').expanduser()
 CHOICE_DICT_PATH = Path('~/playground/research/samples/choices.json').expanduser()

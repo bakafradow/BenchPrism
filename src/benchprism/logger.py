@@ -35,7 +35,7 @@ class ColorFormatter(logging.Formatter):
     return f'{self.COLORS[record.levelname]}{super().format(record)}{self.COLORS["ENDC"]}'
 
 
-logger = cast(VerboseLogger, logging.getLogger('stylo_flora'))
+logger = cast(VerboseLogger, logging.getLogger('benchprism'))
 for handler in logger.handlers:
   logger.removeHandler(handler)
 logger.setLevel(logging.CRITICAL)
