@@ -2,20 +2,21 @@
 
 ## Introduction
 
-BenchPrism is a framework to augment and evaluate benchmarks for various LLM code tasks.
+BenchPrism is a framework to automatically disperse benchmarks towards diverse coding styles and evaluate LLMs on them.
 
 ## Structure
 
 ```
 .
 ├── configs             # configurations
-├── README.md
+├── README.md           # this file
 ├── scripts             # scripts with program entries
 │   ├── dev             # scripts assisting module development
 │   ├── experiment      # scripts for research experiments
 │   ├── postprocessing  # scripts normalizing model outputs, used after inference
 │   ├── preprocessing   # scripts fixing dataset issues, used before experiments
-└── src                 # source code of BenchPrism module
+├── src                 # source code of BenchPrism module
+└── STYLES.md           # full descriptions of involved coding styles
 ```
 
 ## Setup
@@ -59,7 +60,7 @@ Automatically pulled from HuggingFace Hub.
 
 The dataset can be cloned from https://github.com/wLinHoo/ClassEval-T.
 
-To evaluate model generated code, Windows environment is required due to some libraries used in ClassEval-T. The neatest way is to use WSL2 with MSYS2 configured on Windows. It's recommended to specify `MSYS2_ROOT` environment variable in dotenv file.
+To evaluate model generated code, Windows environment is required due to some libraries used in ClassEval-T. The neatest way is to use WSL2 with MSYS2 configured on Windows. It's required to specify `MSYS2_ROOT` environment variable in dotenv file.
 
 #### CoderUJB
 
@@ -73,17 +74,22 @@ The dataset can be cloned from https://github.com/iSEngLab/TestBench; the `java_
 
 To evaluate model generated unit tests, `jacoco` tool and `pitest` tool are required. The JAR paths of `jacocoagent.jar`, `jacococli.jar` and `pitest.jar` should be added to `CLASSPATH` environment variable.
 
-Note that the evaluated repositories are unique so that any concurrency should be avoided. Due to Maven environment problems, especially those related to versions of dependencies such as `junit-jupiter-api` and `junit-jupiter-engine`, the `pom.xml` files in the repositories may need manual adjustment. JDK 17 is recommended for minimal adjustments.
+Due to Maven environment problems, especially those related to versions of dependencies such as `junit-jupiter-api` and `junit-jupiter-engine`, the `pom.xml` files in the repositories may need manual adjustment. JDK 17 is recommended for minimal adjustments.
 
-### Styler
+### Style Transformer
 
-#### StyleX
+#### Tool
 
-Add StyleX JAR path to `CLASSPATH` environment variable and ensure JDK version is at least 17.
+A Java tool that performs style transfer across widely-investigated coding styles in an extract-and-apply manner is provided.
+It is glued together with BenchPrism by the `transformer` module and the specifications in `configs/stylex_options.yaml`.
+
+Add the JAR path to `CLASSPATH` environment variable and ensure JDK version is at least 17.
+When `--no-transform` flag is set while running an experiment, the transformer is unused and the configuration is not necessary.
 
 #### PICT
 
 PICT executable can be built from source at https://github.com/microsoft/pict. After building, add its path to `PATH` environment variable.
+Also, experiments can be run without it when `--no-transform` flag is set.
 
 ### Configuration
 
@@ -94,13 +100,23 @@ Base URL and API key for remote models should be specified in dotenv file. See `
 ## Usage
 
 All scripts are recommended to be run in `python -m` manner staying in the root directory.
+Use `--help` flag to see their available options.
 
-Specifically, for the experiment script `scripts/experiment/run.py`, transformer
+## How to Reproduce
 
-Example usage:
+The experiment results in the paper can be found in `results/` directory.
+
+The rough steps to reproduce experiments are shown in `scripts/experiment/run_all.sh`, and the settings in `configs/settings.yaml` are aligned with the paper.
+
+For convenience, transformation, inference and evaluation can be done separately for flexibility using `--no-transform`/`-T`, `--no-inference`/`-I` and `--no-evaluation`/`-E` flags.
+Here's an example:
 ```bash
-python -m scripts.experiment.run \
-  -d xCodeEval -m gemini-2.5-flash -t code_translation \
-  --src-lang java --dst-lang python --result-dir results --log-path logs/BenchPrism.log \
-  --seed 42 -rvTI -i :1000
+# only pick candidates and transform, producing a candidate cache file and a variant cache file
+python3 -m scripts.experiment.run -d CodeScope -m openai:gpt-5-mini -t code_translation --src-lang java --dst-lang cpp --result-dir results --log-path logs/BenchPrism.log --seed 42 -IE
+# only inference, requiring cached candidates and variants and producing a output cache file
+python3 -m scripts.experiment.run -d CodeScope -m openai:gpt-5-mini -t code_translation --src-lang java --dst-lang cpp --result-dir results --log-path logs/BenchPrism.log --seed 42 -TE
+# only evaluation, requiring cached candidates, variants, and outputs, producing a result file
+python3 -m scripts.experiment.run -d CodeScope -m openai:gpt-5-mini -t code_translation --src-lang java --dst-lang cpp --result-dir results --log-path logs/BenchPrism.log --seed 42 -TI
 ```
+All the cache files are stored in the directory specified by `--result-dir`, so it's recommended to use a fixed directory to utilize cache files.
+In particular, if one wants to only reproduce the evaluation results without re-transforming and re-infering, place corresponding candidate file, variant file, and output file to the directory specified by `--result-dir` and make use of `--no-transform` and `--no-inference` flags.

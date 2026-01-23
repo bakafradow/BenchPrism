@@ -93,13 +93,11 @@ def main():
 
 if __name__ == '__main__':
   parser = ArgumentParser()
-  parser.add_argument('-t', '--task', type=str, required=True,
-                      choices=SUPPORTED_TASKS,
-                      help='Specify the code task to evaluate on.')
   parser.add_argument('-f', '--file', type=Path, required=True,
                       help='Specify the path to the jsonl file that contains model outputs.')
   args = parser.parse_args()
   args.dataset = 'coderujb'
+  args.task = 'code_repair'
   args.src_lang = 'java'
 
   snippets = load_snippets(args)

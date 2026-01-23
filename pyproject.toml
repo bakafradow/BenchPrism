@@ -26,9 +26,9 @@ dependencies = [
   "tree-sitter-python<0.23",
   "zhipuai"
 ]
-version = "0.1.0"
+version = "1.0.0"
 readme = {file = "README.md", content-type = "text/markdown"}
-description = "A Python package for spanning code corpus to variants with code style transformations and evaluating them."
+description = "A framework to automatically disperse benchmarks towards diverse coding styles and evaluate LLMs on them."
 
 [project.optional-dependencies]
 dev = [
@@ -54,7 +54,7 @@ module = [
   "jpype.*",
   "jsonlines",
   "nltk.*",
-  "org.*", # modules from StyleX
+  "org.*", # modules brought by JPype
   "pandas",
   "torch",
   "tqdm",

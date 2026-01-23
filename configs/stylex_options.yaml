@@ -1,5 +1,5 @@
 - IndentionStyler:
-  - indention_unit:  # control `indentionUnit` and `indentionType` simultaneously
+  - indention_unit:
       option_type: enum
       options:
         - TAB
