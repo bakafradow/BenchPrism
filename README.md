@@ -2,21 +2,25 @@
 
 ## Introduction
 
+This is the official repository for the paper *The Stylistic Blind Spot: Uncovering the Hidden Implicit Bias of Coding Style on LLM Code Evaluation*, accepted by FSE-IVR '26.
+
 BenchPrism is a framework to automatically disperse benchmarks towards diverse coding styles and evaluate LLMs on them.
 
 ## Structure
 
 ```
 .
+├── artifacts           # additional artifacts not fully presented in the paper
+│   ├── RANKING.pdf     # full version of Figure 2 in the paper
+│   └── STYLES.md       # complete list of supported coding styles
 ├── configs             # configurations
 ├── README.md           # this file
 ├── scripts             # scripts with program entries
 │   ├── dev             # scripts assisting module development
 │   ├── experiment      # scripts for research experiments
 │   ├── postprocessing  # scripts normalizing model outputs, used after inference
-│   ├── preprocessing   # scripts fixing dataset issues, used before experiments
-├── src                 # source code of BenchPrism module
-└── STYLES.md           # full descriptions of involved coding styles
+│   └── preprocessing   # scripts fixing dataset issues, used before experiments
+└── src                 # source code of BenchPrism module
 ```
 
 ## Setup
@@ -34,9 +38,8 @@ BenchPrism currently supports 7 benchmarks: xCodeEval, CodeScope, CodeMMLU, CRUX
 
 Some of them are pulled from HuggingFace Hub automatically, while others need to be downloaded manually with paths specified in configuration file (see below).
 
-> If you're working with PyCharm, it's recommended to exclude your data directories from indexing in
-`File | Settings | Project: PROJECT_NAME | Project Structure` and from SonarLint analysis in
-`File | Settings | Other Settings | SonarLint | File Exclusions` to avoid heavy analysis.
+> [!tip]
+> If you're working with PyCharm, it's recommended to exclude your data directories from indexing in `File | Settings | Project: PROJECT_NAME | Project Structure` and from SonarLint analysis in `File | Settings | Other Settings | SonarLint | File Exclusions` to avoid heavy analysis.
 
 #### xCodeEval
 
@@ -81,9 +84,9 @@ Due to Maven environment problems, especially those related to versions of depen
 #### Tool
 
 A Java tool that performs style transfer across widely-investigated coding styles in an extract-and-apply manner is provided.
-It is glued together with BenchPrism by the `transformer` module and the specifications in `configs/stylex_options.yaml`.
+It is glued together with BenchPrism by the `transformer` module and the specifications in `configs/style_options.yaml`.
 
-Add the JAR path to `CLASSPATH` environment variable and ensure JDK version is at least 17.
+Add the path of JAR (available below) to `CLASSPATH` environment variable and ensure JDK version is at least 17.
 When `--no-transform` flag is set while running an experiment, the transformer is unused and the configuration is not necessary.
 
 #### PICT
@@ -104,7 +107,8 @@ Use `--help` flag to see their available options.
 
 ## How to Reproduce
 
-The experiment results in the paper can be found in `results/` directory.
+> [!important]
+> Due to GitHub storage limits, the zipped experiment results in the paper and the JAR of style transformer are hosted at https://zenodo.org/records/18348861.
 
 The rough steps to reproduce experiments are shown in `scripts/experiment/run_all.sh`, and the settings in `configs/settings.yaml` are aligned with the paper.
 

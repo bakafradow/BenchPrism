@@ -1,6 +1,6 @@
 # Styles Supported by BenchPrism
 
-Here are all the supported coding styles mentioned in the paper, in consistent with `settings/style_options.yaml`.
+Here are all 41 supported coding styles mentioned in the paper, in consistent with `settings/style_options.yaml`.
 
 ## Formatting
 
