@@ -4,6 +4,22 @@
 
 This is the official repository for the paper *The Stylistic Blind Spot: Uncovering the Hidden Implicit Bias of Coding Style on LLM Code Evaluation*, accepted by FSE-IVR '26.
 
+```bibtex
+@inproceedings{10.1145/3803437.3805590,
+  author = {Zhiyuan Liu, Yingying Jiang, Huiyan Wang},
+  title = {The Stylistic Blind Spot: Uncovering the Hidden Implicit Bias of Coding Style on LLM Code Evaluation},
+  year = {2026},
+  isbn = {9798400726361},
+  publisher = {Association for Computing Machinery},
+  address = {New York, NY, USA},
+  doi = {10.1145/3803437.3805590},
+  booktitle = {34th ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering},
+  keywords = {large language models, code tasks, benchmarking, coding style},
+  location = {Montreal, QC, Canada},
+  series = {FSE Companion '26}
+}
+```
+
 BenchPrism is a framework to automatically disperse benchmarks towards diverse coding styles and evaluate LLMs on them.
 
 ## Structure
